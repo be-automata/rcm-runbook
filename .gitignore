@@ -1,0 +1,70 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Agno agent runtime artifacts ---
+# Local agent/session storage (SQLite, LanceDB, ChromaDB, etc.)
+*.db
+*.sqlite
+*.sqlite3
+tmp/
+storage/
+.agno/
+agent_storage/
+memory/
+sessions/
+
+# Vector store / knowledge base local caches
+.chroma/
+.lancedb/
+*.faiss
+*.index
+
+# --- Model / cache artifacts ---
+.cache/
+*.log
+logs/
+
+# --- Testing / coverage ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Claude Code ---
+.claude/
+.claude-flow/
