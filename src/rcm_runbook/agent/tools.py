@@ -29,7 +29,7 @@ from rcm_runbook.engine.ffi import calculate_ffi as _calculate_ffi
 from rcm_runbook.engine.scoring import anchor_es, summarize
 from rcm_runbook.export.excel import export_xlsx
 from rcm_runbook.knowledge.handbook import consult
-from rcm_runbook.models.catalogs import fixture, iso_code_info
+from rcm_runbook.models.catalogs import DataSource, fixture, iso_code_info
 from rcm_runbook.models.domain import (
     FunctionKind,
     MaintenanceTask,
@@ -222,7 +222,9 @@ def record_failure_mode(
     session = _load(run_context)
     tpef = None
     if tpef_hours:
-        tpef = TPEFEstimate(value_hours=tpef_hours, fuente=tpef_fuente, note=tpef_note)
+        tpef = TPEFEstimate(
+            value_hours=tpef_hours, fuente=DataSource(tpef_fuente), note=tpef_note
+        )
     fm = session.add_failure_mode(
         functional_failure_id,
         description=description,
