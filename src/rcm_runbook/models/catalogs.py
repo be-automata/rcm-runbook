@@ -125,6 +125,35 @@ class DataSource(StrEnum):
     FABRICANTE = "Fabricante"
 
 
+def normalize_data_source(v: str) -> DataSource:
+    """'OREDA (bombas API...)' → OREDA; 'Historial CMMS — 2 reemplazos...' → HISTORIAL.
+    Acepta el valor canónico contenido al inicio del texto; rechaza lo ambiguo."""
+    folded = _fold(v)
+    matches = [
+        ds for ds in DataSource
+        if folded == _fold(ds.value) or folded.startswith(_fold(ds.value))
+        or _fold(ds.value).split()[0] in folded.split("(")[0].split("—")[0].split()
+    ]
+    if len(set(matches)) == 1:
+        return matches[0]
+    valid = [ds.value for ds in DataSource]
+    raise ValueError(f"Fuente de dato desconocida: {v!r}. Válidas: {valid}")
+
+
+def normalize_failure_pattern(v: str) -> str:
+    """'Fin de Vida Útil — degradación por...' → 'Fin de Vida Útil'. El patrón
+    canónico debe aparecer al inicio; el combinado gana sobre sus componentes."""
+    folded = _fold(str(v))
+    candidates = sorted(
+        (p for p in FailurePattern if folded.startswith(_fold(p.value))),
+        key=lambda p: -len(p.value),
+    )
+    if candidates:
+        return candidates[0].value
+    valid = [p.value for p in FailurePattern]
+    raise ValueError(f"Patrón de falla desconocido: {v!r}. Válidos: {valid}")
+
+
 class EvidentRoute(StrEnum):
     """Decision-diagram route letters for evident failures (client dialect: ABCD)."""
 
@@ -155,20 +184,42 @@ def _valid_iso_code(v: str) -> str:
     return v
 
 
+def _fold(s: str) -> str:
+    import unicodedata
+
+    nfd = unicodedata.normalize("NFD", s.strip().casefold())
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
 def _valid_frequency(v: str) -> str:
-    if v not in fixture().menu.frequencies:
-        raise ValueError(
-            f"Frecuencia desconocida: {v!r}. Válidas: {fixture().menu.frequencies}"
-        )
-    return v
+    """Normaliza mayúsculas/acentos contra el catálogo; rechaza lo desconocido."""
+    folded = _fold(v)
+    for canonical in fixture().menu.frequencies:
+        if _fold(canonical) == folded:
+            return canonical
+    raise ValueError(
+        f"Frecuencia desconocida: {v!r}. Válidas: {fixture().menu.frequencies}"
+    )
 
 
 def _valid_discipline(v: str) -> str:
-    if v not in fixture().menu.disciplines:
-        raise ValueError(
-            f"Disciplina desconocida: {v!r}. Válidas: {fixture().menu.disciplines}"
-        )
-    return v
+    """Normaliza contra el catálogo: match exacto (casefold) o el input contiene
+    exactamente una disciplina canónica ('Técnico Predictivo' → 'Predictivo',
+    'Instrumentación' → 'Instrumentista' vía prefijo)."""
+    folded = _fold(v)
+    disciplines = fixture().menu.disciplines
+    for canonical in disciplines:
+        if _fold(canonical) == folded:
+            return canonical
+    contained = [
+        c for c in disciplines
+        if _fold(c) in folded or folded.startswith(_fold(c)[:8])
+    ]
+    if len(contained) == 1:
+        return contained[0]
+    raise ValueError(
+        f"Disciplina desconocida: {v!r}. Válidas: {disciplines}"
+    )
 
 
 # Distinct types so mode-code / frequency / discipline can't cross-assign silently.

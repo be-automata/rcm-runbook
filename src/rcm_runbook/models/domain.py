@@ -15,9 +15,9 @@ from __future__ import annotations
 
 import hashlib
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator, model_validator
 
 from rcm_runbook.models.catalogs import (
     ConsequenceClass,
@@ -29,6 +29,7 @@ from rcm_runbook.models.catalogs import (
     Frequency,
     HiddenRoute,
     MaintenancePolicy,
+    normalize_failure_pattern,
 )
 
 
@@ -90,7 +91,7 @@ class FailureMode(BaseModel):
     iso_code: FailureModeCode  # Código ISO 14224 (modo de falla, MENU-authoritative)
     cause: str = Field(min_length=3, description="Causa de la Falla (ISO 14224 B.3)")
     root_cause: str = Field(min_length=3, description="Causa Raíz")
-    failure_pattern: FailurePattern
+    failure_pattern: Annotated[FailurePattern, BeforeValidator(normalize_failure_pattern)]
     credible: bool = True
     non_credible_discard: str = Field(
         default="",
