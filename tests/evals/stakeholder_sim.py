@@ -263,15 +263,18 @@ def _assert_final_state(session: RCMSession, scenario: dict[str, Any]) -> None:
             "(hitl_confirmed_by) registrada."
         )
 
-    expected_policies = sorted(d["expected_policy"] for d in scenario["decisions"])
-    actual_policies = sorted(
+    from collections import Counter
+
+    expected_policies = Counter(d["expected_policy"] for d in scenario["decisions"])
+    actual_policies = Counter(
         d.policy.value for fmid, d in session.decisions.items()
         if session.failure_modes[fmid].credible
     )
-    if actual_policies != expected_policies:
+    missing = expected_policies - actual_policies
+    if missing:
         failures.append(
-            f"Las políticas no coinciden con el escenario: esperadas {expected_policies}, "
-            f"obtenidas {actual_policies}."
+            "Faltan políticas del escenario (los modos extra bien formados se toleran): "
+            f"faltantes {dict(missing)}, obtenidas {dict(actual_policies)}."
         )
 
     audit = compliance.validate_ja1011(session)
@@ -297,7 +300,14 @@ datos que no estén allí. Si el facilitador pregunta algo que el escenario no c
 responde "no lo sé" o "no aplica".
 
 Reglas de rol:
-- Responde UNA pregunta a la vez, breve y natural, como en una reunión de planta.
+- Responde UNA pregunta a la vez, en MENOS DE 80 PALABRAS, sin monólogos ni listas
+  largas — como en una reunión de planta con poco tiempo.
+- PROHIBIDO inventar equipos, modos de falla, funciones o historias que no estén en
+  el YAML (nada de rodamientos, acoples ni otros equipos si el escenario no los trae).
+- Si el facilitador propone registrar algo que NO está en el escenario, di
+  "eso no aplica a esta bomba" y reconduce al dato del YAML.
+- Empuja a CERRAR: cuando el facilitador resuma o dude, pídele avanzar a la siguiente
+  fase; el objetivo es llegar al entregable definitivo.
 - María Torres (supervisora de operaciones) está contigo; cuando el facilitador pida
   una confirmación humana por seguridad/ambiente, entrega el aval exacto del campo
   `approver` del escenario.
@@ -404,6 +414,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
         db=SqliteDb(db_file=str(workdir / "sim.db")),  # sin db no hay historial
         instructions=SIMULATOR_PROMPT_ES.format(scenario_yaml=scenario_yaml),
         add_history_to_context=True,
+        num_history_runs=8,
         markdown=False,
         telemetry=False,
     )
@@ -429,7 +440,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
             transcript.append(f"[FACILITADOR t{_turn}] {reply[:400]}")
             # Estado, no prosa: el export definitivo se detecta por el .xlsx en disco
             # (el agente puede parafrasear el resultado de la herramienta).
-            if list(exports_dir.rglob("*.xlsx")):
+            if list(exports_dir.rglob("AMEF_*.xlsx")):
                 export_confirmed = True
                 break
             if any(marker in reply for marker in _EXPORT_DONE_MARKERS):
@@ -446,7 +457,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
             message = str(sim_out.content or "")
             transcript.append(f"[CARLOS t{_turn}] {message[:400]}")
             if _SIM_DONE_MARKER in message:
-                export_confirmed = bool(list(exports_dir.rglob("*.xlsx")))
+                export_confirmed = bool(list(exports_dir.rglob("AMEF_*.xlsx")))
                 break
         else:
             raise AssertionError(

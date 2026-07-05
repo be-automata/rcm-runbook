@@ -280,15 +280,18 @@ def safe_export_name(tag: str) -> str:
 
 
 def export_xlsx(
-    session: RCMSession, output_dir: str | Path, session_id: str = ""
+    session: RCMSession, output_dir: str | Path, session_id: str = "", draft: bool = False
 ) -> Path:
     """Write the deliverable under a per-session subdirectory (no cross-session
-    overwrites; the download route scopes by session_id)."""
+    overwrites; the download route scopes by session_id). Drafts are visually
+    distinct: `BORRADOR_` filename prefix — a borrador must never pass for el
+    entregable definitivo."""
     out_dir = Path(output_dir)
     if session_id:
         out_dir = out_dir / safe_export_name(session_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     tag = safe_export_name(session.scope.tag or "SIN-TAG")
-    path = out_dir / f"AMEF_{tag}.xlsx"
+    prefix = "BORRADOR_AMEF" if draft else "AMEF"
+    path = out_dir / f"{prefix}_{tag}.xlsx"
     build_workbook(session).save(path)
     return path

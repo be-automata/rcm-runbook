@@ -613,7 +613,7 @@ def export_excel(run_context: Any, draft: bool = False) -> str:
                 "definitivo (use draft=True para un borrador):\n- " + "\n- ".join(blockers[:12])
             )
     session_id = getattr(run_context, "session_id", "") or "session"
-    path = export_xlsx(session, settings.exports_dir, session_id=session_id)
+    path = export_xlsx(session, settings.exports_dir, session_id=session_id, draft=draft)
     audit = compliance.validate_ja1011(session)
     warn = ("\n⚠ Advertencias JA1011: " + "; ".join(audit)) if audit else ""
     kind = "BORRADOR" if draft else "definitivo"
