@@ -15,6 +15,7 @@ Both raise AssertionError with a Spanish summary of what failed.
 from __future__ import annotations
 
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -323,6 +324,39 @@ def _tail(transcript: list[str], n: int = 8) -> str:
     return "Últimos turnos:\n" + "\n".join(transcript[-n:]) if transcript else ""
 
 
+_RATE_LIMIT_MARKERS = ("rate_limit_error", "Error code: 429")
+# Backoff ante 429 (ventana de suscripción saturada): espera hasta ~25 min en total.
+_BACKOFF_SCHEDULE_S = (60, 120, 240, 480, 600)
+
+
+def _is_rate_limited(output: Any) -> bool:
+    content = str(getattr(output, "content", "") or "")
+    return any(m in content for m in _RATE_LIMIT_MARKERS)
+
+
+def _run_with_backoff(agent: Any, message: str, session_id: str) -> Any:
+    """Ejecuta un turno; ante 429 espera y REINTENTA el mismo turno (no lo consume).
+
+    agno captura el error del proveedor y lo devuelve como contenido del RunOutput,
+    así que se detecta por contenido, no por excepción. Si la ventana de la
+    suscripción no se recupera tras el backoff completo, aborta con un mensaje claro
+    en vez de quemar turnos conversando con errores.
+    """
+    out = agent.run(message, session_id=session_id)
+    if not _is_rate_limited(out):
+        return out
+    for wait in _BACKOFF_SCHEDULE_S:
+        time.sleep(wait)
+        out = agent.run(message, session_id=session_id)
+        if not _is_rate_limited(out):
+            return out
+    raise AssertionError(
+        "EVAL ABORTADO — la ventana de uso de la suscripción sigue saturada (429) "
+        f"tras {sum(_BACKOFF_SCHEDULE_S) // 60} minutos de backoff. "
+        "Reintente cuando la ventana se recupere."
+    )
+
+
 def _tokens_of(run_output: Any) -> int:
     metrics = getattr(run_output, "metrics", None)
     if metrics is None:
@@ -361,10 +395,13 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
     exports_dir.mkdir()
     cfg = Settings(db_path=str(workdir / "eval.db"), exports_dir=str(exports_dir))
 
+    from agno.db.sqlite import SqliteDb
+
     facilitator = build_agent(cfg)
     simulator = Agent(
         name="Carlos (simulador de interesado)",
         model=build_model(cfg),
+        db=SqliteDb(db_file=str(workdir / "sim.db")),  # sin db no hay historial
         instructions=SIMULATOR_PROMPT_ES.format(scenario_yaml=scenario_yaml),
         add_history_to_context=True,
         markdown=False,
@@ -386,7 +423,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
     transcript: list[str] = []
     try:
         for _turn in range(max_turns):
-            fac_out = facilitator.run(message, session_id=session_id)
+            fac_out = _run_with_backoff(facilitator, message, session_id)
             tokens_used += _tokens_of(fac_out)
             reply = str(fac_out.content or "")
             transcript.append(f"[FACILITADOR t{_turn}] {reply[:400]}")
@@ -404,7 +441,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
                     f"({tokens_used} > {token_budget}) antes de completar la sesión.\n"
                     + _tail(transcript)
                 )
-            sim_out = simulator.run(reply, session_id=sim_session_id)
+            sim_out = _run_with_backoff(simulator, reply, sim_session_id)
             tokens_used += _tokens_of(sim_out)
             message = str(sim_out.content or "")
             transcript.append(f"[CARLOS t{_turn}] {message[:400]}")
