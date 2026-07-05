@@ -39,6 +39,7 @@ from rcm_runbook.models.domain import (
 )
 from rcm_runbook.models.session import (
     PHASE_NAMES_ES,
+    SCHEMA_VERSION,
     Phase,
     RCMSession,
     ScopeMeta,
@@ -60,6 +61,13 @@ def _load(run_context: Any) -> RCMSession:
         session = RCMSession()
         state[SESSION_KEY] = session.model_dump(mode="json")
         return session
+    stored_version = raw.get("schema_version", 0) if isinstance(raw, dict) else 0
+    if stored_version > SCHEMA_VERSION:
+        raise ValueError(
+            f"La sesión guardada usa un esquema más nuevo (v{stored_version}) que esta "
+            f"versión de la aplicación (v{SCHEMA_VERSION}). Actualice rcm-runbook antes "
+            "de reanudar esta sesión."
+        )
     return RCMSession.model_validate(raw)
 
 

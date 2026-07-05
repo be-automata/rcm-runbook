@@ -1,0 +1,52 @@
+"""AgentOS entrypoint — FastAPI runtime + chat UI + export download endpoint.
+
+Run: `uv run rcm-runbook` (or `uvicorn rcm_runbook.app:app`).
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from agno.os import AgentOS
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
+
+from rcm_runbook.agent.factory import build_agent
+from rcm_runbook.config import settings
+from rcm_runbook.observability import setup_observability
+
+setup_observability(settings)
+
+agent = build_agent(settings)
+agent_os = AgentOS(agents=[agent])
+app = agent_os.get_app()
+
+_SAFE_NAME = re.compile(r"^[\w.\-]+$")
+
+
+@app.get("/exports/{session_id}/{filename}")
+def download_export(session_id: str, filename: str) -> FileResponse:
+    """Serve a generated deliverable. Path-sanitized: names only, no separators."""
+    if not (_SAFE_NAME.match(session_id) and _SAFE_NAME.match(filename)):
+        raise HTTPException(status_code=400, detail="Nombre inválido.")
+    if not filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Solo se sirven archivos .xlsx.")
+    path = (Path(settings.exports_dir) / filename).resolve()
+    if not path.is_file() or Path(settings.exports_dir).resolve() not in path.parents:
+        raise HTTPException(status_code=404, detail="Entregable no encontrado.")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+    )
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run("rcm_runbook.app:app", host=settings.host, port=settings.port)
+
+
+if __name__ == "__main__":
+    main()
