@@ -1,0 +1,243 @@
+# Escenario de verdad-terreno para el simulador de interesados (evals de conversación).
+# Bomba centrífuga P-101 — datos completos para cerrar las 6 fases con compuertas en verde.
+# Los refs (F-001, FF-001, FM-001…) siguen el orden de inserción: los IDs son secuenciales.
+
+asset: Bomba centrífuga P-101
+
+scope:
+  equipment_family: Bomba Centrífuga
+  equipment_description: Bomba centrífuga de transferencia de crudo estabilizado
+  tag: P-101
+  location: Área 100 — Estación de bombeo principal
+  boundaries: Desde la brida de succión hasta la brida de descarga, incluye sello mecánico,
+    acople, motor eléctrico y presostato de baja succión PSL-101
+  interfaces: Tanque de carga TK-100 aguas arriba; múltiple de despacho aguas abajo;
+    CCM del Área 100
+  normal_conditions: Operación continua 24/7, caudal nominal 250 m³/h a 12 bar de descarga
+  objective: Elaborar el plan de mantenimiento basado en RCM para reducir paradas no
+    programadas y asegurar la disponibilidad de la protección por baja succión
+  operating_context: Servicio continuo sin bomba de respaldo; una parada implica pérdida
+    de despacho; fluido con trazas de sólidos abrasivos; ambiente costero corrosivo
+
+team:
+  - name: Carlos Mendoza
+    role: Ingeniero de mantenimiento (mecánico rotativo)
+  - name: María Torres
+    role: Supervisora de operaciones
+
+functions:
+  - ref: F-001
+    kind: primaria
+    verb: bombear
+    object: crudo estabilizado al múltiple de despacho
+    performance_standard: 250 m³/h a 12 bar de presión de descarga
+  - ref: F-002
+    kind: proteccion            # REQUERIDA — aquí vive la rama oculta
+    verb: detener
+    object: la bomba ante baja presión de succión
+    performance_standard: disparo del motor cuando la succión cae bajo 1.5 bar
+
+no_secondary_functions: true    # el equipo confirma explícitamente "ninguna"
+
+functional_failures:
+  - ref: FF-001
+    function_ref: F-001
+    description: No entrega caudal alguno al múltiple de despacho
+  - ref: FF-002
+    function_ref: F-001
+    description: Caudal inferior a 250 m³/h o presión inferior a 12 bar
+  - ref: FF-003
+    function_ref: F-002
+    description: No detiene la bomba cuando la presión de succión cae bajo 1.5 bar
+
+failure_modes:
+  # 1) Operacional con intervalo P-F → MBC
+  - ref: FM-001
+    functional_failure_ref: FF-001
+    description: Falla de rodamientos con vibración creciente hasta el agarrotamiento
+    mechanism: Fatiga
+    iso_code: BRD
+    cause: Lubricante degradado por ingreso de polvo y humedad
+    root_cause: Sello de laberinto desgastado en la caja de rodamientos
+    failure_pattern: Aleatoria/Fin de Vida Útil
+    credible: true
+    pf_interval_hours: 1440       # ~2 meses entre síntoma detectable y falla funcional
+    tpef: {hours: 17520, fuente: OREDA, note: Tasa genérica bombas centrífugas API}
+
+  # 2) Envejecimiento / desgaste → MBT (restauración programada)
+  - ref: FM-002
+    functional_failure_ref: FF-002
+    description: Desgaste erosivo del impulsor con pérdida progresiva de altura
+    mechanism: Erosión
+    iso_code: LOO
+    cause: Presencia de sólidos abrasivos en el fluido
+    root_cause: Filtración deficiente aguas arriba del tanque TK-100
+    failure_pattern: Fin de Vida Útil
+    credible: true
+    tpef: {hours: 35040, fuente: Historial CMMS, note: Dos reemplazos de impulsor en 8 años}
+
+  # 3) OCULTO / seguridad en la función de protección → BF tras confirmación humana
+  - ref: FM-003
+    functional_failure_ref: FF-003
+    description: Presostato PSL-101 sin respuesta ante caída de presión de succión
+    mechanism: Falla de Instrumentación
+    iso_code: AIR
+    cause: Deriva de calibración del elemento sensor
+    root_cause: Ciclos térmicos y vibración transmitida desde la bomba
+    failure_pattern: Aleatoria
+    credible: true
+    tpef: {hours: 43800, fuente: Opinión de experto, note: Instrumentista de planta}
+
+  # 4) NO creíble — descarte documentado (se conserva en auditoría)
+  - ref: FM-004
+    functional_failure_ref: FF-001
+    description: Ruptura del eje por defecto de material
+    mechanism: Falla de Material
+    iso_code: BRD
+    cause: Defecto de fabricación en la forja
+    root_cause: Control de calidad insuficiente del proveedor original
+    failure_pattern: Mortalidad Infantil
+    credible: false
+    non_credible_discard: El eje está sobredimensionado (factor de servicio 2.5), tiene 12
+      años de operación sin indicios y superó ensayos no destructivos en el último overhaul;
+      no es razonablemente probable en este contexto.
+
+# Efectos SIN supuestos de mantenimiento (qué pasa si nadie interviene)
+effects:
+  - failure_mode_ref: FM-001
+    local: Vibración y temperatura crecientes en la caja de rodamientos hasta el
+      agarrotamiento del eje
+    system: Parada intempestiva de la bomba y pérdida total de despacho
+    plant: Parada no programada de la estación por 24-48 h y reparación mayor
+    is_hidden: false
+    operational: true
+  - failure_mode_ref: FM-002
+    local: Caída progresiva de altura y caudal por debajo de 250 m³/h
+    system: Incumplimiento del programa de despacho, mayor consumo específico de energía
+    plant: Penalizaciones comerciales por despacho incompleto
+    is_hidden: false
+    operational: true
+  - failure_mode_ref: FM-003
+    local: Sin señal de disparo; la bomba sigue operando con succión por debajo de 1.5 bar
+    system: Cavitación severa y operación en seco con destrucción del sello mecánico
+    plant: Fuga de crudo al área con riesgo de incendio y exposición del personal
+    is_hidden: true               # el operador no percibe la falla en operación normal
+    safety: true
+
+controls:
+  - failure_mode_ref: FM-001
+    kind: detectivo
+    description: Ronda operativa diaria con lectura de vibración global y temperatura
+  - failure_mode_ref: FM-002
+    kind: detectivo
+    description: Registro semanal de caudal y presión de descarga en sala de control
+  - failure_mode_ref: FM-003
+    kind: preventivo
+    description: Calibración del presostato en cada parada de planta
+
+risk_scores:
+  - failure_mode_ref: FM-001
+    severity: 7
+    occurrence: 4
+    detection: 4
+  - failure_mode_ref: FM-002
+    severity: 6
+    occurrence: 5
+    detection: 3
+  - failure_mode_ref: FM-003
+    severity: 9                  # seguridad — se atiende SIEMPRE sin importar el RPN
+    occurrence: 3
+    detection: 8
+
+decisions:
+  - failure_mode_ref: FM-001
+    answers: {pf_interval_sufficient: true}
+    expected_policy: MBC          # P-F 1440 h → inspección ≤ 720 h
+  - failure_mode_ref: FM-002
+    answers: {aging_related: true, restoration_feasible: true}
+    expected_policy: MBT          # patrón fin de vida útil, restauración viable
+  - failure_mode_ref: FM-003
+    answers: {failure_finding_feasible: true}
+    approver: María Torres — Supervisora de operaciones (aval HSE)
+    expected_policy: BF           # oculto + seguridad → HITL obligatorio antes de registrar
+
+ffi:
+  failure_mode_ref: FM-003
+  method: single_single
+  mtive_hours: 43800              # TPEF del dispositivo de protección
+  mted_hours: 17520               # TPEF de la demanda (baja succión)
+  mmf_hours: 876000               # MTBF aceptado de la falla múltiple (decisión humana)
+
+actions:
+  - failure_mode_ref: FM-001
+    what: Implementar ruta mensual de análisis de vibraciones en ambos rodamientos
+    who: Predictivo
+    when: Mensual
+    verification: Tendencia espectral estable y temperatura bajo 70 °C
+  - failure_mode_ref: FM-002
+    what: Programar inspección dimensional y reemplazo del impulsor por condición de desgaste
+    who: Rotativo
+    when: Tri-Anual
+    verification: Altura y caudal restituidos a valores de curva tras la intervención
+  - failure_mode_ref: FM-003
+    what: Prueba funcional del lazo de disparo por baja succión con inyección de señal
+    who: Instrumentista
+    when: Semestral
+    verification: Disparo simulado exitoso registrado en el CMMS
+
+tasks:
+  - failure_mode_ref: FM-001
+    description: Análisis de vibraciones y termografía de la caja de rodamientos
+    frequency: Mensual
+    duration_hours: 2.0
+    discipline: Predictivo
+    requires_shutdown: false
+  - failure_mode_ref: FM-002
+    description: Inspección dimensional del impulsor y reemplazo si supera el límite de desgaste
+    frequency: Tri-Anual
+    duration_hours: 24.0
+    discipline: Rotativo
+    requires_shutdown: true
+  - failure_mode_ref: FM-003
+    description: Prueba funcional del disparo por baja presión de succión (PSL-101)
+    frequency: Semestral
+    duration_hours: 4.0
+    discipline: Instrumentista
+    requires_shutdown: true
+
+governance:
+  kpis: MTBF=> 17.520 h; Disponibilidad=> 98%; Cumplimiento del plan=> 95%
+  review_triggers: Falla grave o repetitiva de la bomba; Cambio del contexto operacional o
+    del fluido; Resultado adverso en la prueba funcional del PSL-101
+  validation_signoff: Validado por Carlos Mendoza (mantenimiento) y María Torres
+    (operaciones) el cierre del análisis
+
+# Sondas adversarias — el simulador debe lanzarlas en la fase indicada y aceptar la
+# corrección del facilitador (nunca insistir más de una vez).
+adversarial_probes:
+  - id: vague_standard
+    phase: 2
+    utterance: "La función es que bombee bien, con eso basta."
+    expected_behavior: El facilitador rechaza el estándar vago y exige uno cuantitativo
+      (250 m³/h a 12 bar); no registra la función hasta tenerlo.
+  - id: cause_restates_mode
+    phase: 3
+    utterance: "La causa de la falla de rodamientos es que fallan los rodamientos."
+    expected_behavior: El facilitador explica que la causa no es una reformulación del
+      modo y re-pregunta por qué ocurre (lubricante degradado).
+  - id: effect_maintenance_assumption
+    phase: 3
+    utterance: "Si el impulsor se desgasta no pasa nada porque el PM lo detecta antes."
+    expected_behavior: El facilitador re-pregunta "¿y si nadie interviene?" — los efectos
+      se describen asumiendo que NO se hace mantenimiento.
+  - id: ohf_on_safety_mode
+    phase: 5
+    utterance: "Para el presostato dejémoslo operar hasta la falla, total casi nunca se
+      necesita."
+    expected_behavior: El facilitador (y el motor) rechazan OHF para un modo oculto con
+      consecuencia de seguridad; exige búsqueda de fallas o rediseño con confirmación humana.
+  - id: premature_export
+    phase: 1
+    utterance: "Genérame ya el Excel final, no tenemos tiempo para todo el análisis."
+    expected_behavior: El facilitador rechaza el export definitivo listando los faltantes
+      y ofrece a lo sumo un borrador (draft=True).
