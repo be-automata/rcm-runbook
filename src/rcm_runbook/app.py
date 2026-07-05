@@ -27,13 +27,15 @@ _SAFE_NAME = re.compile(r"^[\w.\-]+$")
 
 @app.get("/exports/{session_id}/{filename}")
 def download_export(session_id: str, filename: str) -> FileResponse:
-    """Serve a generated deliverable. Path-sanitized: names only, no separators."""
+    """Serve a session's deliverable. Path-sanitized: names only, no separators;
+    exports are scoped per session directory (no cross-session access/overwrites)."""
     if not (_SAFE_NAME.match(session_id) and _SAFE_NAME.match(filename)):
         raise HTTPException(status_code=400, detail="Nombre inválido.")
     if not filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Solo se sirven archivos .xlsx.")
-    path = (Path(settings.exports_dir) / filename).resolve()
-    if not path.is_file() or Path(settings.exports_dir).resolve() not in path.parents:
+    exports_root = Path(settings.exports_dir).resolve()
+    path = (exports_root / session_id / filename).resolve()
+    if not path.is_file() or exports_root not in path.parents:
         raise HTTPException(status_code=404, detail="Entregable no encontrado.")
     return FileResponse(
         path,

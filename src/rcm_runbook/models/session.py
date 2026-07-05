@@ -230,21 +230,20 @@ class RCMSession(BaseModel):
 
     def current_snapshot(self, failure_mode_id: str) -> str:
         fm = self.failure_modes[failure_mode_id]
-        return failure_mode_snapshot(fm, self.effects.get(failure_mode_id))
+        return failure_mode_snapshot(
+            fm, self.effects.get(failure_mode_id), self.controls.get(failure_mode_id)
+        )
 
     def stale_decisions(self) -> list[str]:
         """Failure-mode ids whose score/decision inputs changed after computation."""
-        stale: list[str] = []
+        stale: set[str] = set()
         for fmid, decision in self.decisions.items():
             if decision.input_hash and decision.input_hash != self.current_snapshot(fmid):
-                stale.append(fmid)
-        for fmid, score in self.risk_scores.items():
-            if (
-                fmid not in stale
-                and score.input_hash
-                and score.input_hash != self.current_snapshot(fmid)
-            ):
-                stale.append(fmid)
+                stale.add(fmid)
+        for scores in (self.risk_scores, self.residual_scores):
+            for fmid, score in scores.items():
+                if score.input_hash and score.input_hash != self.current_snapshot(fmid):
+                    stale.add(fmid)
         return sorted(stale)
 
     # ------------------------------------------------------------------

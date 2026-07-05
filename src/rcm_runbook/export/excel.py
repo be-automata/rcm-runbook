@@ -8,6 +8,7 @@ agent/tools.py — never here.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from openpyxl import Workbook
@@ -37,8 +38,9 @@ THIN = Side(style="thin", color="9E9E9E")
 BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 WRAP = Alignment(wrap_text=True, vertical="top")
 
-AMEF_HEADER_ROW = 12
-PLAN_HEADER_ROW = 11
+# Header rows come from the frozen fixture (benchmark: AMEF!13, PLAN!12 in Excel terms)
+AMEF_HEADER_ROW = fixture().amef.header_row_excel
+PLAN_HEADER_ROW = fixture().plan.header_row_excel
 LOOKUPS_SHEET = "LOOKUPS"
 
 
@@ -194,6 +196,20 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ws.cell(row=row, column=6, value=residual.sod if residual else "")
         ws.cell(row=row, column=7, value=f"RPN residual {residual.rpn}" if residual else "")
         row += 1
+    row += 1
+    ws.cell(row=row, column=1, value="TPEF / frecuencia de fallas (tabla completa)").font = (
+        Font(bold=True)
+    )
+    row += 1
+    for fmid, fm in session.failure_modes.items():
+        if fm.tpef is None or not fm.credible:
+            continue
+        ws.cell(row=row, column=1, value=fmid)
+        ws.cell(row=row, column=2, value=f"{fm.tpef.value_hours:.0f} h")
+        ws.cell(row=row, column=3, value=f"{fm.tpef.value_years:.2f} años")
+        ws.cell(row=row, column=4, value=fm.tpef.fuente)
+        ws.cell(row=row, column=5, value=fm.tpef.note)
+        row += 1
     for col, width in (("A", 10), ("B", 14), ("C", 70), ("D", 12), ("E", 12), ("F", 12), ("G", 16)):
         ws.column_dimensions[col].width = width
 
@@ -229,14 +245,23 @@ def build_workbook(session: RCMSession) -> Workbook:
     _add_validation(plan_ws, headers_p, PLAN_HEADER_ROW, ranges, PLAN_COLUMN_VOCAB,
                     PLAN_HEADER_ROW + len(plan_rows))
 
-    # TPEF / frequency-of-failure block on PLAN (benchmark carries OREDA + expert provenance)
+    # TPEF / frequency-of-failure block on PLAN title area (benchmark layout).
+    # Bounded strictly above the header row — the full table lives in AUDITORIA RCM.
     tpef_row = 4
     tpef_cell = plan_ws.cell(row=tpef_row, column=14, value="FRECUENCIA DE FALLAS (TPEF)")
     tpef_cell.font = Font(bold=True, size=9)
     r = tpef_row + 1
-    for fmid, fm in session.failure_modes.items():
-        if fm.tpef is None or not fm.credible:
-            continue
+    max_tpef_row = PLAN_HEADER_ROW - 2
+    tpef_modes = [
+        (fmid, fm) for fmid, fm in session.failure_modes.items()
+        if fm.tpef is not None and fm.credible
+    ]
+    for fmid, fm in tpef_modes:
+        if r > max_tpef_row:
+            plan_ws.cell(row=max_tpef_row, column=14,
+                         value="… ver hoja AUDITORIA RCM (tabla TPEF completa)")
+            break
+        assert fm.tpef is not None
         plan_ws.cell(row=r, column=14, value=fmid)
         plan_ws.cell(row=r, column=15, value=f"{fm.tpef.value_hours:.0f} h")
         plan_ws.cell(row=r, column=16, value=f"{fm.tpef.value_years:.2f} años")
@@ -248,10 +273,22 @@ def build_workbook(session: RCMSession) -> Workbook:
     return wb
 
 
-def export_xlsx(session: RCMSession, output_dir: str | Path) -> Path:
+def safe_export_name(tag: str) -> str:
+    """Filename-safe tag matching the /exports route charset ([\\w.\\-] only)."""
+    cleaned = re.sub(r"[^\w.\-]+", "_", tag.strip()) or "SIN-TAG"
+    return cleaned.strip("._-") or "SIN-TAG"
+
+
+def export_xlsx(
+    session: RCMSession, output_dir: str | Path, session_id: str = ""
+) -> Path:
+    """Write the deliverable under a per-session subdirectory (no cross-session
+    overwrites; the download route scopes by session_id)."""
     out_dir = Path(output_dir)
+    if session_id:
+        out_dir = out_dir / safe_export_name(session_id)
     out_dir.mkdir(parents=True, exist_ok=True)
-    tag = (session.scope.tag or "SIN-TAG").replace("/", "-").replace(" ", "_")
+    tag = safe_export_name(session.scope.tag or "SIN-TAG")
     path = out_dir / f"AMEF_{tag}.xlsx"
     build_workbook(session).save(path)
     return path

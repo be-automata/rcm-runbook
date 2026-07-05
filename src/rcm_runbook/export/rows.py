@@ -15,6 +15,7 @@ from rcm_runbook.models.catalogs import (
     POLICY_PLAN_COLUMN,
     MaintenancePolicy,
 )
+from rcm_runbook.models.domain import MaintenanceTask
 from rcm_runbook.models.session import RCMSession
 
 X = "X"  # benchmark marks consequence/strategy flags with X
@@ -88,18 +89,21 @@ def _effect_text(session: RCMSession, fmid: str) -> str:
     return f"{effect.local}. {effect.system}. {effect.plant}."
 
 
+def _task_cells(task: MaintenanceTask | None) -> tuple[str, str, float | str, str, str]:
+    if task is None:
+        return "", "", "", "", ""
+    return (
+        task.description,
+        task.frequency,
+        task.duration_hours,
+        task.discipline,
+        "SI" if task.requires_shutdown else "NO",
+    )
+
+
 def _first_task(session: RCMSession, fmid: str) -> tuple[str, str, float | str, str, str]:
     tasks = session.tasks.get(fmid, [])
-    if not tasks:
-        return "", "", "", "", ""
-    t = tasks[0]
-    return (
-        t.description,
-        t.frequency,
-        t.duration_hours,
-        t.discipline,
-        "SI" if t.requires_shutdown else "NO",
-    )
+    return _task_cells(tasks[0] if tasks else None)
 
 
 def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
@@ -154,6 +158,8 @@ def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
 
 
 def to_plan_rows(session: RCMSession) -> list[PlanRow]:
+    """One PLAN row per (failure mode, task) — no task is ever dropped. Modes with a
+    decision but no scheduled task (e.g. OHF) still emit one row with empty task cells."""
     rows: list[PlanRow] = []
     for fmid, fm in session.failure_modes.items():
         if not fm.credible:
@@ -163,8 +169,12 @@ def to_plan_rows(session: RCMSession) -> list[PlanRow]:
             continue
         effect = session.effects.get(fmid)
         plan_col = POLICY_PLAN_COLUMN.get(MaintenancePolicy(decision.policy), "")
-        tarea, frecuencia, duracion, ejecutor, paro = _first_task(session, fmid)
-        rows.append(
+        tasks: list[MaintenanceTask | None] = list(session.tasks.get(fmid, []))
+        if not tasks:
+            tasks = [None]
+        for task in tasks:
+            tarea, frecuencia, duracion, ejecutor, paro = _task_cells(task)
+            rows.append(
             PlanRow.model_validate({
                     "Modo de Falla (ISO 14224)": fm.description,
                     "Codigo ISO 14224": fm.iso_code,

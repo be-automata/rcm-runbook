@@ -107,10 +107,13 @@ def _proactive_policy(
     if answers.automated_monitoring_available or (
         answers.pf_interval_sufficient and fm.pf_interval_hours
     ):
+        # Only cite the P-F interval when the team judged it sufficient — an
+        # automated-monitoring selection must not prescribe an inspection interval
+        # derived from a P-F the team declared insufficient.
         detail = (
             f"intervalo P-F de {fm.pf_interval_hours:.0f} h con inspección ≤ P-F/2 "
             f"({fm.pf_interval_hours / 2:.0f} h)"
-            if fm.pf_interval_hours
+            if answers.pf_interval_sufficient and fm.pf_interval_hours
             else "monitoreo automatizado disponible"
         )
         return MaintenancePolicy.MBC, f"Falla detectable antes del fallo funcional: {detail}."
@@ -188,10 +191,20 @@ def decide(fm: FailureMode, effect: Effect, answers: DecisionAnswers) -> Decisio
                 "operar hasta la falla, con justificación documentada."
             )
         else:
-            policy = MaintenancePolicy.BF if effect.is_hidden else MaintenancePolicy.OHF
-            rationale = (
-                "Sin tarea proactiva aplicable. Revise factibilidad de búsqueda de fallas "
-                "o rediseño; se propone la opción por defecto con reservas."
+            # No applicable task AND the team did not judge consequences tolerable
+            # (nor BF feasible for hidden modes): the engine must not invent a
+            # definitive policy — the facilitator needs more answers.
+            pending = (
+                "factibilidad de búsqueda de fallas (failure_finding_feasible), "
+                if effect.is_hidden
+                else ""
+            )
+            raise ValueError(
+                "No hay política determinable con las respuestas dadas: ninguna tarea "
+                "proactiva es aplicable y no se confirmó que las consecuencias sean "
+                f"tolerables. Aclare con el equipo: {pending}"
+                "posibilidad de rediseño (redesign_identified) o tolerabilidad económica "
+                "(consequences_tolerable), y vuelva a ejecutar la lógica de decisión."
             )
 
     # Guard: hidden or evident SE can never be OHF

@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     debug_mode: bool = False
     # Long-session history policy (facilitated interviews run hundreds of turns)
     num_history_runs: int = 10
-    host: str = "0.0.0.0"
+    # Bind localhost by default — no auth layer in the MVP; expose deliberately
+    # (RCM_HOST=0.0.0.0) only behind a reverse proxy that authenticates.
+    host: str = "127.0.0.1"
     port: int = 7777
 
 

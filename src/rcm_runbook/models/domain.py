@@ -251,7 +251,14 @@ def snapshot_hash(*parts: object) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
-def failure_mode_snapshot(fm: FailureMode, effect: Effect | None) -> str:
+def failure_mode_snapshot(
+    fm: FailureMode,
+    effect: Effect | None,
+    controls: list[Control] | None = None,
+) -> str:
+    """Digest of every decision-affecting input: the mode itself (incl. Weibull
+    parameters and credibility), its effect, and the current controls (they justify
+    the Detection rating)."""
     return snapshot_hash(
         fm.description,
         fm.mechanism,
@@ -259,7 +266,11 @@ def failure_mode_snapshot(fm: FailureMode, effect: Effect | None) -> str:
         fm.cause,
         fm.root_cause,
         fm.failure_pattern,
+        fm.credible,
         fm.tpef.model_dump_json() if fm.tpef else "",
         fm.pf_interval_hours,
+        fm.weibull_beta,
+        fm.weibull_eta_hours,
         effect.model_dump_json() if effect else "",
+        "|".join(f"{c.kind}:{c.description}" for c in (controls or [])),
     )

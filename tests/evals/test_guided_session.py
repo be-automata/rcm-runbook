@@ -11,7 +11,7 @@ def test_scenario_scripted_complete(tmp_path):
     every gate goes green and the definitive export lands in the tmp dir."""
     session = run_scripted_eval(exports_dir=str(tmp_path))
     assert session.phase == Phase.P6_PLAN
-    exported = list(tmp_path.glob("*.xlsx"))
+    exported = list(tmp_path.rglob("*.xlsx"))  # exports scoped per session subdir
     assert exported, "el export definitivo no generó ningún .xlsx"
     assert exported[0].name == "AMEF_P-101.xlsx"
 

@@ -612,12 +612,12 @@ def export_excel(run_context: Any, draft: bool = False) -> str:
                 "❌ El análisis está incompleto — no se puede exportar el entregable "
                 "definitivo (use draft=True para un borrador):\n- " + "\n- ".join(blockers[:12])
             )
-    path = export_xlsx(session, settings.exports_dir)
+    session_id = getattr(run_context, "session_id", "") or "session"
+    path = export_xlsx(session, settings.exports_dir, session_id=session_id)
     audit = compliance.validate_ja1011(session)
     warn = ("\n⚠ Advertencias JA1011: " + "; ".join(audit)) if audit else ""
     kind = "BORRADOR" if draft else "definitivo"
-    session_id = getattr(run_context, "session_id", "") or "session"
-    url = f"/exports/{session_id}/{path.name}"
+    url = f"/exports/{path.parent.name}/{path.name}"
     return (
         f"✔ Entregable {kind} exportado: {path}\n"
         f"Descarga: {url}{warn}"

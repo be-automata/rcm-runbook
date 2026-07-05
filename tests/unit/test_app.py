@@ -28,7 +28,7 @@ class TestApp:
         assert any("agent" in p or "run" in p or "session" in p for p in paths), paths
 
     def test_download_serves_golden_export(self, client):
-        path = export_xlsx(full_session(), settings.exports_dir)
+        path = export_xlsx(full_session(), settings.exports_dir, session_id="any-session")
         resp = client.get(f"/exports/any-session/{path.name}")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith(

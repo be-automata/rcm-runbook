@@ -152,14 +152,32 @@ class TestCascade:
             decide(f, effect(), DecisionAnswers())
 
     def test_justification_always_nonempty(self):
-        for answers in (
-            DecisionAnswers(pf_interval_sufficient=True),
-            DecisionAnswers(failure_finding_feasible=True),
-            DecisionAnswers(consequences_tolerable=True),
-            DecisionAnswers(),
-        ):
-            result = decide(fm(), effect(), answers)
+        cases = (
+            (effect(), DecisionAnswers(pf_interval_sufficient=True)),
+            (effect(is_hidden=True), DecisionAnswers(failure_finding_feasible=True)),
+            (effect(), DecisionAnswers(consequences_tolerable=True)),
+        )
+        for e, answers in cases:
+            result = decide(fm(), e, answers)
             assert len(result.justification) >= 15
+
+    def test_all_false_answers_refuses_definitive_policy(self):
+        """Engine must not invent BF/OHF when the team answered everything False."""
+        with pytest.raises(ValueError, match="No hay política determinable"):
+            decide(fm(), effect(), DecisionAnswers())
+        with pytest.raises(ValueError, match="failure_finding_feasible"):
+            decide(fm(), effect(is_hidden=True), DecisionAnswers())
+
+    def test_automated_monitoring_rationale_without_pf_claim(self):
+        """MBC via automated monitoring must not cite an insufficient P-F interval."""
+        result = decide(
+            fm(pf_interval_hours=48), effect(),
+            DecisionAnswers(automated_monitoring_available=True,
+                            pf_interval_sufficient=False),
+        )
+        assert result.policy == MaintenancePolicy.MBC
+        assert "monitoreo automatizado" in result.justification
+        assert "P-F de 48" not in result.justification
 
 
 class TestRouteDerivation:

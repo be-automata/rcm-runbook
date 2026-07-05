@@ -25,8 +25,12 @@ def _normalize(text: str) -> str:
 
 
 def _docs_dir() -> Path:
-    # repo layout: <root>/docs next to <root>/src
     here = Path(__file__).resolve()
+    # Installed as a wheel: docs are force-included at rcm_runbook/_docs
+    packaged = here.parent.parent / "_docs"
+    if (packaged / _SOURCES[0]).exists():
+        return packaged
+    # Repo layout: <root>/docs next to <root>/src
     for parent in here.parents:
         candidate = parent / "docs" / _SOURCES[0]
         if candidate.exists():
