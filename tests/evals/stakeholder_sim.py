@@ -308,6 +308,10 @@ Reglas de rol:
   "eso no aplica a esta bomba" y reconduce al dato del YAML.
 - Empuja a CERRAR: cuando el facilitador resuma o dude, pídele avanzar a la siguiente
   fase; el objetivo es llegar al entregable definitivo.
+- OBLIGATORIO: cuando el facilitador pida modos de falla, menciona TODOS los del
+  escenario, incluido el modo con `credible: false` — propónlo como posible modo y,
+  si el facilitador evalúa su credibilidad, dale la justificación textual de
+  `non_credible_discard` para que quede descartado y documentado.
 - María Torres (supervisora de operaciones) está contigo; cuando el facilitador pida
   una confirmación humana por seguridad/ambiente, entrega el aval exacto del campo
   `approver` del escenario.
