@@ -221,8 +221,8 @@ def build_workbook(session: RCMSession) -> Workbook:
     headers_p = plan_headers()
     _write_headers(plan_ws, headers_p, PLAN_HEADER_ROW)
     plan_rows = to_plan_rows(session)
-    for r, row_model in enumerate(plan_rows, start=PLAN_HEADER_ROW + 1):
-        for c, value in enumerate(row_model.model_dump(by_alias=True).values(), start=2):
+    for r, plan_model in enumerate(plan_rows, start=PLAN_HEADER_ROW + 1):
+        for c, value in enumerate(plan_model.model_dump(by_alias=True).values(), start=2):
             cell = plan_ws.cell(row=r, column=c, value=value)
             cell.border = BORDER
             cell.alignment = WRAP

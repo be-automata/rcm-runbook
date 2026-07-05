@@ -113,8 +113,7 @@ def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
         decision = session.decisions.get(fmid)
         tarea, frecuencia, duracion, ejecutor, paro = _first_task(session, fmid)
         rows.append(
-            AMEFRow(
-                **{
+            AMEFRow.model_validate({
                     "Familia del Equipo": session.scope.equipment_family,
                     "Descripción Equipo": session.scope.equipment_description,
                     "TAG": session.scope.tag,
@@ -166,8 +165,7 @@ def to_plan_rows(session: RCMSession) -> list[PlanRow]:
         plan_col = POLICY_PLAN_COLUMN.get(MaintenancePolicy(decision.policy), "")
         tarea, frecuencia, duracion, ejecutor, paro = _first_task(session, fmid)
         rows.append(
-            PlanRow(
-                **{
+            PlanRow.model_validate({
                     "Modo de Falla (ISO 14224)": fm.description,
                     "Codigo ISO 14224": fm.iso_code,
                     "Causa Raíz": fm.root_cause,
