@@ -51,6 +51,7 @@ apuntando a `http://localhost:7777`, o consuma la API directamente
 |---|---|
 | Variables de entorno | `.env` (prefijo `RCM_`): ver `.env.example` |
 | Autenticación Anthropic | **Suscripción Claude (recomendado)**: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...` en `.env` (bearer + header oauth; consume la suscripción, no créditos). **API key**: `ANTHROPIC_API_KEY` (requiere créditos). Si el token está presente, la API key se ignora (la API rechaza peticiones con ambas credenciales) |
+| 429 con suscripción | La suscripción limita por ventanas de 5 h y 7 días; superado el umbral de fallback (~50% semanal), sonnet/opus devuelven 429 y solo haiku responde. Mitigación: `RCM_MODEL_ID=claude-haiku-4-5` hasta que la ventana se recupere (los cálculos RCM son determinísticos — el modelo solo facilita la conversación) |
 | Cambiar de proveedor LLM | `RCM_PROVIDER=anthropic\|openai\|google` + `RCM_MODEL_ID=...` y la API key correspondiente; reiniciar |
 | Base de datos | SQLite en `RCM_DB_PATH` (default `data/rcm_runbook.db`); sesiones, historial y métricas de Agno. **Backup**: copiar el archivo con el servicio detenido |
 | Entregables | `RCM_EXPORTS_DIR` (default `data/exports/`); descarga vía `GET /exports/{session_id}/{archivo}.xlsx` |
