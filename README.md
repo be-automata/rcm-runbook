@@ -79,6 +79,9 @@ uv run pytest -m eval                  # eval conversacional (requiere API key)
   herramientas reales hasta exportar, sin LLM.
 - **Eval conversacional** (`tests/evals/`): un segundo agente simula a un ingeniero
   de mantenimiento (con sondas adversarias) y se valida el ESTADO final, no la prosa.
+  Las aserciones estrictas de fidelidad al escenario están calibradas para sonnet
+  (`RCM_MODEL_ID` por defecto); con haiku (modo degradado por ventana de suscripción)
+  el flujo completo se ejercita pero el guion puede desviarse en 1-2 detalles.
 - **UAT manual**: `docs/UAT_SCRIPT_ES.md` (45 min).
 
 ## Deltas conocidos vs el benchmark
