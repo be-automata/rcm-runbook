@@ -79,6 +79,13 @@ uv run pytest -m eval                  # eval conversacional (requiere API key)
   de mantenimiento (con sondas adversarias) y se valida el ESTADO final, no la prosa.
 - **UAT manual**: `docs/UAT_SCRIPT_ES.md` (45 min).
 
+## Deltas conocidos vs el benchmark
+
+- El benchmark usa celdas combinadas de dos columnas para Severidad/Ocurrecia/
+  Deteccion/RPN (columnas físicas 19-25 con huecos); el entregable escribe las
+  27 columnas contiguas en el mismo orden. Secuencia y textos de encabezado son
+  idénticos; solo difiere el relleno de celdas combinadas.
+
 ## Pendientes de confirmación con el cliente
 
 - Semántica de los códigos de política **ExEd** (Exploración de edad) y **CC**
