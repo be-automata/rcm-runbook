@@ -50,6 +50,7 @@ apuntando a `http://localhost:7777`, o consuma la API directamente
 | Qué | Cómo |
 |---|---|
 | Variables de entorno | `.env` (prefijo `RCM_`): ver `.env.example` |
+| Autenticación Anthropic | **Suscripción Claude (recomendado)**: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...` en `.env` (bearer + header oauth; consume la suscripción, no créditos). **API key**: `ANTHROPIC_API_KEY` (requiere créditos). Si el token está presente, la API key se ignora (la API rechaza peticiones con ambas credenciales) |
 | Cambiar de proveedor LLM | `RCM_PROVIDER=anthropic\|openai\|google` + `RCM_MODEL_ID=...` y la API key correspondiente; reiniciar |
 | Base de datos | SQLite en `RCM_DB_PATH` (default `data/rcm_runbook.db`); sesiones, historial y métricas de Agno. **Backup**: copiar el archivo con el servicio detenido |
 | Entregables | `RCM_EXPORTS_DIR` (default `data/exports/`); descarga vía `GET /exports/{session_id}/{archivo}.xlsx` |
