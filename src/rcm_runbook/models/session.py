@@ -131,9 +131,21 @@ class RCMSession(BaseModel):
     # Intention-revealing mutators
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _same_text(a: str, b: str) -> bool:
+        """Idempotency guard: LLM retries after validation errors must not create
+        near-duplicate entities."""
+        return a.strip().casefold() == b.strip().casefold()
+
     def add_function(self, **kwargs: Any) -> Function:
+        candidate = Function(id="F-000", **kwargs)
+        for existing in self.functions.values():
+            if existing.kind == candidate.kind and self._same_text(
+                f"{existing.verb} {existing.object}", f"{candidate.verb} {candidate.object}"
+            ):
+                return existing  # ya registrada — idempotente
         fid = self._next_id("F", self.functions)
-        fn = Function(id=fid, **kwargs)
+        fn = candidate.model_copy(update={"id": fid})
         self.functions[fid] = fn
         if fn.kind == FunctionKind.SECUNDARIA:
             self.secondary_functions_confirmed = True
@@ -150,6 +162,11 @@ class RCMSession(BaseModel):
 
     def add_functional_failure(self, function_id: str, description: str) -> FunctionalFailure:
         self._require("función", function_id, self.functions)
+        for existing in self.functional_failures.values():
+            if existing.function_id == function_id and self._same_text(
+                existing.description, description
+            ):
+                return existing  # idempotente
         ffid = self._next_id("FF", self.functional_failures)
         ff = FunctionalFailure(id=ffid, function_id=function_id, description=description)
         self.functional_failures[ffid] = ff
@@ -157,8 +174,16 @@ class RCMSession(BaseModel):
 
     def add_failure_mode(self, functional_failure_id: str, **kwargs: Any) -> FailureMode:
         self._require("falla funcional", functional_failure_id, self.functional_failures)
+        candidate = FailureMode(
+            id="FM-000", functional_failure_id=functional_failure_id, **kwargs
+        )
+        for existing in self.failure_modes.values():
+            if existing.functional_failure_id == functional_failure_id and self._same_text(
+                existing.description, candidate.description
+            ):
+                return existing  # idempotente — el reintento del LLM no duplica
         fmid = self._next_id("FM", self.failure_modes)
-        fm = FailureMode(id=fmid, functional_failure_id=functional_failure_id, **kwargs)
+        fm = candidate.model_copy(update={"id": fmid})
         self.failure_modes[fmid] = fm
         return fm
 
@@ -196,7 +221,11 @@ class RCMSession(BaseModel):
 
     def add_task(self, task: MaintenanceTask) -> None:
         self._require("modo de falla", task.failure_mode_id, self.failure_modes)
-        self.tasks.setdefault(task.failure_mode_id, []).append(task)
+        existing_tasks = self.tasks.setdefault(task.failure_mode_id, [])
+        for existing in existing_tasks:
+            if self._same_text(existing.description, task.description):
+                return  # idempotente
+        existing_tasks.append(task)
 
     # ------------------------------------------------------------------
     # HITL ledger (sole writers)
