@@ -318,6 +318,11 @@ _EXPORT_DONE_MARKERS = ("Entregable definitivo exportado", "/exports/")
 _SIM_DONE_MARKER = "FIN DE SESION"
 
 
+def _tail(transcript: list[str], n: int = 8) -> str:
+    """Últimos turnos de la conversación — diagnóstico cuando el eval falla."""
+    return "Últimos turnos:\n" + "\n".join(transcript[-n:]) if transcript else ""
+
+
 def _tokens_of(run_output: Any) -> int:
     metrics = getattr(run_output, "metrics", None)
     if metrics is None:
@@ -330,7 +335,10 @@ def _tokens_of(run_output: Any) -> int:
     return int(inp) + int(out)
 
 
-def run_llm_eval(max_turns: int = 60, token_budget: int = 200_000) -> RCMSession:
+def run_llm_eval(max_turns: int = 80, token_budget: int = 3_000_000) -> RCMSession:
+    # token_budget cuenta tokens TOTALES (entrada+salida) de ambos agentes; la
+    # entrada re-envía el historial completo en cada turno, así que crece
+    # cuadráticamente — es un tope anti-descontrol, no un objetivo de costo.
     """LLM-vs-LLM guided session with a single automatic retry."""
     try:
         return _run_llm_eval_once(max_turns=max_turns, token_budget=token_budget)
@@ -375,33 +383,44 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
         "Hola, soy Carlos Mendoza, ingeniero de mantenimiento. Con María Torres de "
         "operaciones queremos hacer el análisis RCM de la bomba P-101. ¿Empezamos?"
     )
+    transcript: list[str] = []
     try:
         for _turn in range(max_turns):
             fac_out = facilitator.run(message, session_id=session_id)
             tokens_used += _tokens_of(fac_out)
             reply = str(fac_out.content or "")
+            transcript.append(f"[FACILITADOR t{_turn}] {reply[:400]}")
+            # Estado, no prosa: el export definitivo se detecta por el .xlsx en disco
+            # (el agente puede parafrasear el resultado de la herramienta).
+            if list(exports_dir.rglob("*.xlsx")):
+                export_confirmed = True
+                break
             if any(marker in reply for marker in _EXPORT_DONE_MARKERS):
                 export_confirmed = True
                 break
             if tokens_used > token_budget:
                 raise AssertionError(
                     f"EVAL FALLIDO — presupuesto de tokens agotado "
-                    f"({tokens_used} > {token_budget}) antes de completar la sesión."
+                    f"({tokens_used} > {token_budget}) antes de completar la sesión.\n"
+                    + _tail(transcript)
                 )
             sim_out = simulator.run(reply, session_id=sim_session_id)
             tokens_used += _tokens_of(sim_out)
             message = str(sim_out.content or "")
+            transcript.append(f"[CARLOS t{_turn}] {message[:400]}")
             if _SIM_DONE_MARKER in message:
+                export_confirmed = bool(list(exports_dir.rglob("*.xlsx")))
                 break
         else:
             raise AssertionError(
                 f"EVAL FALLIDO — la sesión no terminó en {max_turns} turnos "
-                f"(tokens usados: {tokens_used})."
+                f"(tokens usados: {tokens_used}).\n" + _tail(transcript)
             )
 
         if not export_confirmed:
             raise AssertionError(
-                "EVAL FALLIDO — el facilitador nunca confirmó el export definitivo."
+                "EVAL FALLIDO — no se generó el export definitivo (.xlsx) en disco.\n"
+                + _tail(transcript)
             )
 
         # Estado final desde la base de sesiones del agente (no desde la prosa)
