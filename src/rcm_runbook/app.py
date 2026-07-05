@@ -18,6 +18,17 @@ from rcm_runbook.observability import setup_observability
 
 setup_observability(settings)
 
+if settings.provider == "anthropic" and not settings.claude_code_oauth_token:
+    import os as _os
+
+    if not _os.environ.get("ANTHROPIC_API_KEY"):
+        raise SystemExit(
+            "✗ Sin credencial Anthropic: defina CLAUDE_CODE_OAUTH_TOKEN (suscripción, "
+            "recomendado — `claude setup-token`) o ANTHROPIC_API_KEY en el .env de la "
+            "raíz del proyecto, y reinicie. El servidor no arranca sin credencial para "
+            "evitar errores en el primer mensaje del chat."
+        )
+
 agent = build_agent(settings)
 agent_os = AgentOS(agents=[agent])
 app = agent_os.get_app()

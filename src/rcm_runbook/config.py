@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# .env resolves against the project root too, not only the launch cwd —
+# `uv run rcm-runbook` must work from any directory.
+_PROJECT_ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="RCM_", env_file=".env", extra="ignore", populate_by_name=True
+        env_prefix="RCM_",
+        env_file=(str(_PROJECT_ROOT_ENV), ".env"),
+        extra="ignore",
+        populate_by_name=True,
     )
 
     provider: Literal["anthropic", "openai", "google"] = "anthropic"
