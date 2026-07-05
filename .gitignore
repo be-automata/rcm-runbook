@@ -23,6 +23,9 @@ ENV/
 *.pem
 *.key
 
+# --- Generated deliverables ---
+data/exports/
+
 # --- Agno agent runtime artifacts ---
 # Local agent/session storage (SQLite, LanceDB, ChromaDB, etc.)
 *.db
