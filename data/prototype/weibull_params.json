@@ -1,0 +1,42 @@
+{
+  "mechanical_seal": {
+    "beta": 1.4,
+    "eta": 25000,
+    "description": "API 682 Plan 53A"
+  },
+  "radial_bearing_de": {
+    "beta": 1.3,
+    "eta": 40000,
+    "description": "Angular contact DE"
+  },
+  "radial_bearing_nde": {
+    "beta": 1.3,
+    "eta": 45000,
+    "description": "Deep groove NDE"
+  },
+  "thrust_bearing": {
+    "beta": 1.5,
+    "eta": 50000,
+    "description": "Duplex thrust pair"
+  },
+  "impeller": {
+    "beta": 2.5,
+    "eta": 150000,
+    "description": "Enclosed impeller, A890 4A"
+  },
+  "coupling": {
+    "beta": 2.0,
+    "eta": 75000,
+    "description": "Spacer coupling"
+  },
+  "wear_ring": {
+    "beta": 2.2,
+    "eta": 100000,
+    "description": "Replaceable wear rings"
+  },
+  "shaft_sleeve": {
+    "beta": 2.8,
+    "eta": 120000,
+    "description": "Ceramic coated"
+  }
+}

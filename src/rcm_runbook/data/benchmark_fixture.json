@@ -1,0 +1,529 @@
+{
+  "source_file": "amef_benchmark.xls",
+  "sheets": [
+    "AMEF",
+    "PLAN DE MANTENIMIENTO",
+    "Diag. de Seleccion SAE-JA1012",
+    "SAE-J1739",
+    "MENU",
+    "Informe de compatibilidad"
+  ],
+  "amef": {
+    "header_row_excel": 13,
+    "title_rows": {
+      "1": [],
+      "2": [],
+      "3": [
+        "ANALISIS DE MODOS Y EFECTOS DE FALLAS"
+      ],
+      "4": [],
+      "5": [
+        "CAMPO:",
+        "INSTALACION:",
+        "FECHA DE ACTUALIZACION:"
+      ],
+      "6": [],
+      "7": [
+        "APLICACION:"
+      ],
+      "8": [
+        "REM:"
+      ],
+      "9": [
+        "UBICACION:"
+      ],
+      "10": [],
+      "11": [],
+      "12": [
+        "INFORMACION GENERAL",
+        "ANÁLISIS DE MODOS Y EFECTOS DE FALLAS",
+        "APLICACIÓN DEL DIAGRAMA DE SELECCIÓN DE LA NORMA SAE JA-1012.",
+        "APLICACIÓN  NORMA SAE J1739",
+        "PLAN DE MANTENIMIENTO"
+      ]
+    },
+    "headers": [
+      "Familia del Equipo",
+      "Descripción Equipo",
+      "TAG",
+      "Falla Funcional",
+      "Mecanismo de Falla (ISO 14224)",
+      "Modo de Falla (ISO 14224)",
+      "Causa de la Falla (ISO 14224)",
+      "Codigo ISO 14224",
+      "Causa Raíz",
+      "Patrón de Falla",
+      "Efecto de la Falla",
+      "Falla Evidente (ABCD)",
+      "Falla Oculta (AEFG)",
+      "Seguridad",
+      "Ambiente",
+      "Operacional",
+      "No Operacional",
+      "Estrategia de Mantenimiento",
+      "Severidad",
+      "Ocurrecia",
+      "Deteccion",
+      "RPN",
+      "TAREA DE MANTENIMIENTO",
+      "FRECUENCIA DE LA TAREA",
+      "DURACION DE LA TAREA (HORAS)",
+      "EJECUTOR (DISCIPLINA)",
+      "REQUIERE PARO DEL EQUIPO?"
+    ],
+    "od_npr_columns_present": true
+  },
+  "plan": {
+    "header_row_excel": 12,
+    "title_rows": {
+      "1": [],
+      "2": [],
+      "3": [
+        "PLAN DE MANTENIMIENTO"
+      ],
+      "4": [],
+      "5": [
+        "CAMPO:",
+        "INSTALACION:",
+        "FECHA:",
+        "FRECUENCIA DE FALLAS:"
+      ],
+      "6": [
+        "INFORMACION GENERICA",
+        "OPINION DE EXPERTOS (REPSOL)",
+        "DEFINITIVA"
+      ],
+      "7": [
+        "APLICACION:",
+        "FUENTE",
+        "TPEF (hrs)",
+        "TPEF (Años) 1año=8760hrs",
+        "TPEF (Años) 1año=8760hrs",
+        "FRECUENCIA  DE FALLAS (ANUAL)",
+        "FUENTE",
+        "RANGO DE FRECUENCIA DE FALLAS (ANUAL)"
+      ],
+      "8": [
+        "GRUPO DE EQUIPO 1:",
+        "OREDA",
+        "8185.985592665355",
+        "0.9344732411718443",
+        "FALLA EN ARRANQUE INICIAL (RECLAMO POR GARANTIA)",
+        "ES PROBABLE QUE OCURRA AL MENOS UN EVENTO ENTRE 1 Y 5 AÑOS\n(1 < TPPF ≤ 5 AÑOS)",
+        "OPINION DE EXPERTO",
+        "ES PROBABLE QUE OCURRA AL MENOS UN EVENTO ENTRE 1 Y 5 AÑOS\n(1 < TPPF ≤ 5 AÑOS)"
+      ],
+      "9": [],
+      "10": [],
+      "11": [
+        "ANALISIS DE MODOS Y EFECTOS DE FALLAS",
+        "APLICACIÓN DEL DIAGRAMA DE SELECCIÓN NORMA SAE JA-1012",
+        "PLAN DE MANTENIMIENTO"
+      ]
+    },
+    "headers": [
+      "Modo de Falla (ISO 14224)",
+      "Codigo ISO 14224",
+      "Causa Raíz",
+      "Patrón de Falla",
+      "Efecto de la Falla",
+      "Falla Evidente (ABCD)",
+      "Falla Oculta (AEFG)",
+      "Seguridad",
+      "Ambiente",
+      "Operacional",
+      "No Operacional",
+      "Basado en Condición",
+      "Preventivo",
+      "Detección de Fallas",
+      "Otros tipos de Estrategias (Rediseño, etc).",
+      "TAREA DE MANTENIMIENTO",
+      "FRECUENCIA DE LA TAREA",
+      "DURACION DE LA TAREA (HORAS)",
+      "EJECUTOR (DISCIPLINA)",
+      "REQUIERE PARO DEL EQUIPO?"
+    ]
+  },
+  "menu": {
+    "failure_patterns": [
+      "Mortalidad Infantil",
+      "Aleatoria",
+      "Fin de Vida Útil",
+      "Aleatoria/Fin de Vida Útil"
+    ],
+    "policies": [
+      {
+        "code": "MBC",
+        "label": "Mantenimiento basado en Condición"
+      },
+      {
+        "code": "MBT",
+        "label": "Mantenimiento basado en Tiempo"
+      },
+      {
+        "code": "OHF",
+        "label": "Operar hasta la falla"
+      },
+      {
+        "code": "Rd",
+        "label": "Rediseño"
+      },
+      {
+        "code": "BF",
+        "label": "Búsqueda de Falla"
+      },
+      {
+        "code": "ReP",
+        "label": "Relubricación programada"
+      },
+      {
+        "code": "ExEd",
+        "label": "Exploración de edad"
+      },
+      {
+        "code": "CC",
+        "label": "Control de Calidad"
+      }
+    ],
+    "effect_locals": [
+      "Interrupción Operación",
+      "Baja Eficiencia",
+      "Afecta Integridad Mecánica",
+      "Interrupción Operación y Afectación IME",
+      "Baja Eficiencia y Afectación IME",
+      "Afecta Seguridad e Higiene",
+      "Afecta Ambiente",
+      "Afecta Seguridad, Higiene y Ambiente",
+      "Interrupción de Operación y Afecta Seguridad, Higiene y Ambiente",
+      "Afecta Seguridad",
+      "Afecta Seguridad y Ambiente"
+    ],
+    "frequencies": [
+      "Diario",
+      "Semanal",
+      "Catorcenal",
+      "Quinquenal",
+      "Mensual",
+      "Bimestral",
+      "Trimestral",
+      "Tetramestral",
+      "Semestral",
+      "Anual",
+      "Bi-Anual",
+      "Tri-Anual",
+      "Tetra-Anual",
+      "Quinque-Annual",
+      "Parada de Planta",
+      "Arranque",
+      "Según sea el caso"
+    ],
+    "iso14224_failure_mode_codes": [
+      {
+        "code": "FTS",
+        "definition": "Falla en arrancar cuando es requerido",
+        "description": "Incapaz de activar la bomba"
+      },
+      {
+        "code": "STP",
+        "definition": "Falla para detenerse cuando es requerido",
+        "description": "Incapaz de detenerse o proceso de cierre incorrecto"
+      },
+      {
+        "code": "UST",
+        "definition": "Falsa Parada",
+        "description": "Parada inesperada del motor"
+      },
+      {
+        "code": "BRD",
+        "definition": "Averia o Ruptura",
+        "description": "Daño Grave (Obstruccion, Rotura, Fractura, Explosion etc.)"
+      },
+      {
+        "code": "HIO",
+        "definition": "Alta Salida",
+        "description": "Presion de salida/flujo fuera de especificacion"
+      },
+      {
+        "code": "LOO",
+        "definition": "Baja salida",
+        "description": "Presion de salida/flujo fuera de especificacion"
+      },
+      {
+        "code": "ERO",
+        "definition": "Error de salida",
+        "description": "Oscilacion o inestable presion/flujo"
+      },
+      {
+        "code": "FOV",
+        "definition": "Defectuoso voltage de salida",
+        "description": "Erroneo o inestable voltaje de salida"
+      },
+      {
+        "code": "ELU",
+        "definition": "Fuga Externa de Utilidades",
+        "description": "E.g. Aceite lubricante, refrigerante"
+      },
+      {
+        "code": "ELP",
+        "definition": "Fuga Externa de proceso",
+        "description": "Crudo, Gas, Condensado, Agua, etc."
+      },
+      {
+        "code": "INL",
+        "definition": "Fuga interna de utilidades",
+        "description": "E.g. Aceite lubricante en medio preceso"
+      },
+      {
+        "code": "VIB",
+        "definition": "Vibracion",
+        "description": "Vibracion excesiva"
+      },
+      {
+        "code": "NOI",
+        "definition": "Ruido",
+        "description": "Ruido excesivo"
+      },
+      {
+        "code": "OHE",
+        "definition": "Sobrecalentamiento",
+        "description": "Temperatura Excesiva"
+      },
+      {
+        "code": "PDE",
+        "definition": "Desviacion de parametros",
+        "description": "Tolerancias exceden el monitoreo de parametros"
+      },
+      {
+        "code": "AIR",
+        "definition": "Lectura anormal del instrumento",
+        "description": "E.g. Falsa alarma, lectura errada"
+      },
+      {
+        "code": "STD",
+        "definition": "Daño estructural",
+        "description": "Desgaste de material (grietas, revestimiento, fracturas, corrosión)"
+      },
+      {
+        "code": "SER",
+        "definition": "Problemas menores en servicio",
+        "description": "Perdida de elementos, descoloracion, sucio, etc."
+      },
+      {
+        "code": "OTH",
+        "definition": "Otros",
+        "description": "Especificar con comentarios"
+      },
+      {
+        "code": "UNK",
+        "definition": "Desconocido",
+        "description": "Inadecuada/Perdida de informacion"
+      }
+    ],
+    "disciplines": [
+      "Mecánico",
+      "Electricista",
+      "Rotativo",
+      "Predictivo",
+      "Estatico",
+      "Operador",
+      "Instrumentista"
+    ]
+  },
+  "sae_j1739_rows": [
+    [
+      "",
+      "",
+      "SAE J1739"
+    ],
+    [
+      "",
+      "R ISK PRIORIDAD NÚMERO (RPN) - El numero de prioridad riesgo es el producto de la Severidad (S), Ocurrencia (O), y la clasificación de detección (D).",
+      ""
+    ],
+    [
+      "",
+      "",
+      "RPN = SxOxD"
+    ],
+    [
+      "",
+      "TABLA 1 - PROPUESTAS CRITERIOS DE EVALUACIÓN DE SEVERIDAD (S)",
+      ""
+    ],
+    [
+      "",
+      "Efecto",
+      "Criterios: gravedad de los efectos"
+    ],
+    [
+      "",
+      "Peligroso sin previo aviso",
+      "Rango de muy  alto riesgo, cuando un modo de falla potencial afecta la operación segura del equipo y / o que implique el incumplimiento de la regulación gubernamental sin previo aviso."
+    ],
+    [
+      "",
+      "Peligroso con la advertencia",
+      "Rango de muy ralto riesgo, cuando un modo de falla potencial afecta la operación segura delequipo y / o que implique el incumplimiento de la regulación gubernamental sin previo aviso."
+    ],
+    [
+      "",
+      "Muy alta",
+      "El equipo no funciona, con la pérdida de la función primaria"
+    ],
+    [
+      "",
+      "Alta",
+      "Nivel de rendimiento menor del 55%. Operación deficiente"
+    ],
+    [
+      "",
+      "Moderado",
+      "Nivel de rendimiento menor del 60%. Operación deficiente"
+    ],
+    [
+      "",
+      "Moderada baja",
+      "Nivel de rendimiento menor 75%. Operación deficiente"
+    ],
+    [
+      "",
+      "Muy baja",
+      "Modo de falla notado por la mayoría de los operadores.no afecta la operciones del equipo"
+    ],
+    [
+      "",
+      "Menor",
+      "Modo de falla notado por solo operadores  de cierta experiencia.no afecta la operciones del equipo"
+    ],
+    [
+      "",
+      "Muy menor",
+      "Modo de falla notado por solo operadores  con mucha experiencia experiencia. no afecta la operciones del equipo"
+    ],
+    [
+      "",
+      "Ninguno",
+      "No afecta la operación del equipo."
+    ],
+    [
+      "",
+      "TABLA 2 - CRITERIOS DE EVALUACIÓN DE OCURRENCIA DEL MODO DE FALLA (O)",
+      ""
+    ],
+    [
+      "",
+      "Probabilidad de la Falla",
+      "Tasa de posibles Fallas"
+    ],
+    [
+      "",
+      "Muy Alto: La falla  es casi inevitable",
+      "≥ 1 a 2"
+    ],
+    [
+      "",
+      "",
+      "1 a 3"
+    ],
+    [
+      "",
+      "Alto: Fallas repetidas",
+      "1 a 8"
+    ],
+    [
+      "",
+      "",
+      "1 a 20"
+    ],
+    [
+      "",
+      "Moderado: Fallas ocasionales",
+      "1 a 80"
+    ],
+    [
+      "",
+      "",
+      "1 a 400"
+    ],
+    [
+      "",
+      "",
+      "1 a 2000"
+    ],
+    [
+      "",
+      "Baja: Relativamente pocas fallas",
+      "1 a 15000"
+    ],
+    [
+      "",
+      "",
+      "1 a 150000"
+    ],
+    [
+      "",
+      "Remoto: La falla es poco probable",
+      "≤ 1 a 1500000"
+    ],
+    [
+      "",
+      "TABLA 3 -CRITERIOS DE EVALUACIÓN PARA LA  DETECCIÓN DE MODO DE FALLA (D)",
+      ""
+    ],
+    [
+      "",
+      "Detección",
+      "Controles o Procedimientos"
+    ],
+    [
+      "",
+      "Casi imposible",
+      "No hay control conocido (s) disponibles para detectar el modo de falla."
+    ],
+    [
+      "",
+      "Muy remoto",
+      "Muy control de riesgo remoto de la corriente (s) detectará modo de falla."
+    ],
+    [
+      "",
+      "Remoto",
+      "Mando a distancia riesgo actual (s) detectará modo de falla."
+    ],
+    [
+      "",
+      "Muy bajo",
+      "Un control muy baja probabilidad de corriente (s) detectará modo de falla."
+    ],
+    [
+      "",
+      "Bajo",
+      "Bajo el control de riesgo en curso (s) detectará modo de falla."
+    ],
+    [
+      "",
+      "Moderado",
+      "Control de riesgo moderado en curso (s) será detectar fallos mode.Moderately"
+    ],
+    [
+      "",
+      "Moderadamente alto",
+      "Moderadamente alta probabilidad de control de alta corriente (s) detectará modo de falla."
+    ],
+    [
+      "",
+      "Alto",
+      "de control de alto riesgo en curso (s) detectará modo de falla"
+    ],
+    [
+      "",
+      "Muy alta",
+      "Muy alta probabilidad de control de corriente (s) detectará modo de falla."
+    ],
+    [
+      "",
+      "Casi seguro",
+      "Control de corriente (s) casi seguro para detectar el modo de fallo. controles fiables de detección se conocen con procesos similares."
+    ]
+  ]
+}

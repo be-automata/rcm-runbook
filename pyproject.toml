@@ -1,0 +1,57 @@
+[project]
+name = "rcm-runbook"
+version = "0.1.0"
+description = "Agente facilitador RCM (SAE J1739 FMEA + lógica de decisión RCM) — Agno + AgentOS"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agno>=2.4",
+    "anthropic>=0.49",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "openpyxl>=3.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "sqlalchemy>=2.0.51",
+]
+
+[project.scripts]
+rcm-runbook = "rcm_runbook.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "xlrd>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rcm_runbook"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["data"]  # reference copies of client/prototype assets — not our code
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+check_untyped_defs = true
+ignore_missing_imports = true
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["eval: LLM-driven conversation evals (need API key; run with -m eval)"]
+addopts = "-m 'not eval'"
+asyncio_mode = "auto"
