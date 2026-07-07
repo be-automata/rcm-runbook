@@ -29,7 +29,12 @@ class TestApp:
 
     def test_download_serves_golden_export(self, client):
         path = export_xlsx(full_session(), settings.exports_dir, session_id="any-session")
-        resp = client.get(f"/exports/any-session/{path.name}")
+        url = f"/exports/any-session/{path.name}"
+        if settings.os_security_key:
+            assert client.get(url).status_code == 401  # sin llave → rechazado
+            resp = client.get(url, params={"key": settings.os_security_key})
+        else:
+            resp = client.get(url)
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith(
             "application/vnd.openxmlformats-officedocument"
@@ -37,9 +42,11 @@ class TestApp:
         assert len(resp.content) > 5000
 
     def test_download_rejects_traversal(self, client):
-        assert client.get("/exports/s/..%2F..%2Fetc%2Fpasswd").status_code in (400, 404)
-        assert client.get("/exports/s/no-existe.xlsx").status_code == 404
-        assert client.get("/exports/s/archivo.txt").status_code == 400
+        params = {"key": settings.os_security_key} if settings.os_security_key else {}
+        traversal = client.get("/exports/s/..%2F..%2Fetc%2Fpasswd", params=params)
+        assert traversal.status_code in (400, 404)
+        assert client.get("/exports/s/no-existe.xlsx", params=params).status_code == 404
+        assert client.get("/exports/s/archivo.txt", params=params).status_code == 400
 
 
 class TestResumeAfterRestart:

@@ -1,15 +1,22 @@
 """AgentOS entrypoint — FastAPI runtime + chat UI + export download endpoint.
 
 Run: `uv run rcm-runbook` (or `uvicorn rcm_runbook.app:app`).
+
+Security: when OS_SECURITY_KEY is set (recommended before exposing publicly),
+every AgentOS API route requires `Authorization: Bearer <key>` — os.agno.com
+asks for this same key when connecting the OS. The /exports download accepts
+the bearer header or `?key=<key>` (browser-friendly links from the chat).
 """
 
 from __future__ import annotations
 
+import hmac
 import re
 from pathlib import Path
 
 from agno.os import AgentOS
-from fastapi import HTTPException
+from agno.os.settings import AgnoAPISettings
+from fastapi import HTTPException, Request
 from fastapi.responses import FileResponse
 
 from rcm_runbook.agent.factory import build_agent
@@ -30,16 +37,32 @@ if settings.provider == "anthropic" and not settings.claude_code_oauth_token:
         )
 
 agent = build_agent(settings)
-agent_os = AgentOS(agents=[agent])
+agent_os = AgentOS(
+    agents=[agent],
+    settings=AgnoAPISettings(os_security_key=settings.os_security_key or None),
+)
 app = agent_os.get_app()
 
 _SAFE_NAME = re.compile(r"^[\w.\-]+$")
 
 
+def _check_export_access(request: Request) -> None:
+    """Same key as the AgentOS API: bearer header o `?key=` para enlaces de descarga."""
+    if not settings.os_security_key:
+        return  # sin llave configurada (uso local) — abierto
+    header = request.headers.get("Authorization", "")
+    supplied = header[7:] if header.lower().startswith("bearer ") else (
+        request.query_params.get("key", "")
+    )
+    if not hmac.compare_digest(supplied, settings.os_security_key):
+        raise HTTPException(status_code=401, detail="Llave de acceso inválida o ausente.")
+
+
 @app.get("/exports/{session_id}/{filename}")
-def download_export(session_id: str, filename: str) -> FileResponse:
+def download_export(session_id: str, filename: str, request: Request) -> FileResponse:
     """Serve a session's deliverable. Path-sanitized: names only, no separators;
     exports are scoped per session directory (no cross-session access/overwrites)."""
+    _check_export_access(request)
     if not (_SAFE_NAME.match(session_id) and _SAFE_NAME.match(filename)):
         raise HTTPException(status_code=400, detail="Nombre inválido.")
     if not filename.endswith(".xlsx"):

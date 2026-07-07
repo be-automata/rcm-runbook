@@ -33,6 +33,13 @@ class Settings(BaseSettings):
             "CLAUDE_CODE_OAUTH_TOKEN", "RCM_CLAUDE_CODE_OAUTH_TOKEN"
         ),
     )
+    # Bearer key that protects ALL AgentOS API routes (native AgentOS auth) and
+    # the /exports downloads. Share it only with authorized testers; os.agno.com
+    # asks for it as "security key" when connecting the OS.
+    os_security_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OS_SECURITY_KEY", "RCM_OS_SECURITY_KEY"),
+    )
     db_path: str = "data/rcm_runbook.db"
     exports_dir: str = "data/exports"
     log_level: str = "INFO"
