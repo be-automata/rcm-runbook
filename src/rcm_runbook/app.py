@@ -17,10 +17,11 @@ from pathlib import Path
 from agno.os import AgentOS
 from agno.os.settings import AgnoAPISettings
 from fastapi import HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from rcm_runbook.agent.factory import build_agent
 from rcm_runbook.config import settings
+from rcm_runbook.demo_page import DEMO_HTML
 from rcm_runbook.observability import setup_observability
 
 setup_observability(settings)
@@ -76,6 +77,17 @@ def download_export(session_id: str, filename: str, request: Request) -> FileRes
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=filename,
     )
+
+
+@app.get("/demo", response_class=HTMLResponse)
+def demo_chat() -> HTMLResponse:
+    """Standalone chat page for stakeholder demos (no os.agno.com account).
+
+    The page carries the key via `?key=` in its own fetch calls to the gated
+    agent-run endpoint; the HTML itself holds no secret. Share as
+    `https://<tunnel>/demo?key=<OS_SECURITY_KEY>`.
+    """
+    return HTMLResponse(DEMO_HTML)
 
 
 def main() -> None:
