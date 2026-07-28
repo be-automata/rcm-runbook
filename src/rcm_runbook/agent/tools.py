@@ -14,6 +14,7 @@ import logging
 import time
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
 from agno.tools.decorator import tool
 
@@ -618,7 +619,11 @@ def export_excel(run_context: Any, draft: bool = False) -> str:
     audit = compliance.validate_ja1011(session)
     warn = ("\n⚠ Advertencias JA1011: " + "; ".join(audit)) if audit else ""
     kind = "BORRADOR" if draft else "definitivo"
+    # La llave viaja en el enlace: la descarga está protegida y sin ella el
+    # cliente que hace clic recibe un 401 en vez de su Excel.
     url = f"/exports/{path.parent.name}/{path.name}"
+    if settings.os_security_key:
+        url += f"?key={quote(settings.os_security_key, safe='')}"
     return (
         f"✔ Entregable {kind} exportado: {path}\n"
         f"Descarga: {url}{warn}"

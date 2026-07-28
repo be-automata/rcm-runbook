@@ -19,7 +19,9 @@ completar el paso.
 
 2. Verifique en la consola que el servidor levanta en `http://localhost:7777`.
 3. Abra la UI de AgentOS (https://os.agno.com o la UI configurada) y conéctela a
-   `http://localhost:7777`. Debe aparecer el agente **Facilitador RCM**.
+   `http://localhost:7777`. Con `OS_SECURITY_KEY` configurada, la UI **pedirá esa
+   llave** (campo «Security key»); sin ella la conexión responde 401. Debe
+   aparecer el agente **Facilitador RCM**.
 4. Inicie un chat nuevo y **anote el `session_id`** (lo necesitará para reanudar y
    para la URL de descarga).
 
@@ -107,12 +109,17 @@ controles actuales de cada modo.
    disponibilidad, cumplimiento del plan), disparadores de revisión y la
    validación con operaciones y mantenimiento.
 3. Pida el export definitivo.
-   - [ ] Responde con la ruta del archivo y la URL `/exports/<session_id>/AMEF_P-101.xlsx`.
+   - [ ] Responde con la ruta del archivo y la URL
+     `/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`.
+   - [ ] El enlace **funciona al hacer clic** (la llave viene incluida): sin ella
+     la descarga responde 401 y el cliente se queda sin su Excel.
 
 ## 7. Descarga y reanudación (5 min)
 
-1. Abra `http://localhost:7777/exports/<session_id>/AMEF_P-101.xlsx` en el navegador.
+1. Abra en el navegador, **con la llave** (la descarga está protegida):
+   `http://localhost:7777/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`
    - [ ] Descarga un `.xlsx` válido (no un error 404/400).
+   - [ ] Sin `?key=` la misma URL responde 401.
 2. **Cierre la pestaña del navegador por completo.** Vuelva a abrir la UI y retome
    el chat con el **mismo `session_id`**.
 3. Pregunte: *"¿cómo vamos?"*.
@@ -133,6 +140,49 @@ Abra en Excel, lado a lado, el archivo exportado y el benchmark del cliente:
   (Diario…Según sea el caso; Mecánico…Instrumentista).
 - [ ] El TPEF y su fuente (OREDA/historial/experto) acompañan cada tarea.
 
+## 9. Enlace directo de demo: continuidad de sesión (5 min)
+
+Recorrido del enlace que se le manda a un interesado no técnico. Requiere el
+servicio publicado (túnel activo) o `http://localhost:7777` en local.
+
+1. Abra `<base>/demo?key=<OS_SECURITY_KEY>` (sin `&session=`).
+   - [ ] Carga el chat y la barra de direcciones **se reescribe sola** añadiendo
+     `&session=demo-xxxxxxxx`.
+2. Escriba un mensaje y espere la respuesta.
+   - [ ] Responde el Facilitador y desaparece el texto de bienvenida.
+3. Recargue con el enlace **simple** otra vez (`/demo?key=…`, sin `&session=`).
+   - [ ] Retoma la misma sesión y **repinta la conversación anterior**, cerrada
+     con el aviso «— Hasta aquí su conversación anterior. —».
+4. Copie la URL completa (con `&session=`) y ábrala en **otro navegador o
+   dispositivo** (o una ventana privada, que no comparte `localStorage`).
+   - [ ] Aparece la misma conversación: el análisis viaja entre dispositivos.
+5. Pulse **Nuevo análisis** (arriba a la derecha).
+   - [ ] Empieza en blanco, con un `session` distinto en la URL, y vuelve el
+     texto de bienvenida.
+6. Abra `<base>/demo` **sin** `?key=`.
+   - [ ] Avisa «Falta la llave de acceso…» y el botón Enviar queda deshabilitado.
+7. Abra la consola del navegador (F12).
+   - [ ] Cero errores rojos, incluido el de `/favicon.ico`.
+
+## 10. La API está cerrada por defecto (3 min)
+
+Con `OS_SECURITY_KEY` configurada, desde una terminal:
+
+```bash
+BASE=https://rcm-demo.beautomata.com      # o http://localhost:7777
+KEY=$(grep '^OS_SECURITY_KEY=' .env | cut -d= -f2-)
+for r in /sessions /metrics /traces /memories /openapi.json /docs; do
+  echo "$r -> $(curl -s -o /dev/null -w '%{http_code}' $BASE$r)"
+done
+```
+
+- [ ] Las seis rutas devuelven **401** sin llave.
+- [ ] `curl -H "Authorization: Bearer $KEY" $BASE/sessions` devuelve 200.
+- [ ] `$BASE/demo` y `$BASE/health` siguen respondiendo 200 sin llave (son las
+  dos únicas públicas a propósito).
+- [ ] `$BASE/sessions/<session_id>/runs` sin llave da 401 — nadie lee las
+  transcripciones de otro con solo tener la URL.
+
 ## Lista de aceptación final
 
 | # | Criterio | OK |
@@ -148,5 +198,8 @@ Abra en Excel, lado a lado, el archivo exportado y el benchmark del cliente:
 | 9 | Descarga vía `/exports/...` funciona | ☐ |
 | 10 | Reanudación tras cerrar el navegador con el mismo `session_id` | ☐ |
 | 11 | `.xlsx` equivalente al benchmark del cliente (hojas y encabezados) | ☐ |
+| 12 | La demo retoma la sesión al recargar y al cambiar de dispositivo | ☐ |
+| 13 | «Nuevo análisis» empieza de cero sin arrastrar la sesión anterior | ☐ |
+| 14 | Toda la API responde 401 sin llave, salvo `/demo` y `/health` | ☐ |
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________

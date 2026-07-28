@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Facilitador RCM — Demo</title>
+<!-- Icono embebido: sin esto el navegador pide /favicon.ico y se lleva un 401. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F4E78'/%3E%3Ctext x='16' y='23' font-size='18' font-family='Helvetica,Arial' font-weight='bold' fill='white' text-anchor='middle'%3ER%3C/text%3E%3C/svg%3E">
+<style>
+  :root { --brand:#1F4E78; --bg:#f6f7f9; --user:#1F4E78; --bot:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         background:var(--bg); color:#1a1a1a; height:100dvh; display:flex; flex-direction:column; }
+  header { background:var(--brand); color:#fff; padding:14px 18px; font-weight:600;
+           display:flex; align-items:center; gap:10px; box-shadow:0 1px 4px rgba(0,0,0,.15); }
+  header .dot { width:9px; height:9px; border-radius:50%; background:#8bd450; }
+  header small { font-weight:400; opacity:.85; font-size:12px; }
+  #nuevo { margin-left:auto; background:transparent; border:1px solid rgba(255,255,255,.55);
+           color:#fff; font-size:12px; font-weight:500; padding:5px 11px; border-radius:9px; }
+  #nuevo:hover { background:rgba(255,255,255,.14); }
+  #log { flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:min(680px,88%); padding:11px 14px; border-radius:14px; line-height:1.45;
+         white-space:pre-wrap; word-wrap:break-word; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .user { align-self:flex-end; background:var(--user); color:#fff; border-bottom-right-radius:4px; }
+  .bot  { align-self:flex-start; background:var(--bot); border-bottom-left-radius:4px; }
+  .bot h1,.bot h2,.bot h3 { font-size:1em; margin:.4em 0 .2em; }
+  .meta { align-self:center; font-size:12px; color:#888; }
+  .tools { align-self:flex-start; font-size:12px; color:#6a7; background:#eefaef;
+           padding:4px 10px; border-radius:10px; }
+  form { display:flex; gap:8px; padding:12px; background:#fff; border-top:1px solid #e6e6e6; }
+  #inp { flex:1; padding:12px 14px; border:1px solid #d0d5db; border-radius:12px; font-size:15px;
+         resize:none; max-height:120px; font-family:inherit; }
+  button { background:var(--brand); color:#fff; border:0; border-radius:12px; padding:0 18px;
+           font-size:15px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .err { color:#c0392b; }
+  .hint { align-self:center; color:#999; font-size:13px; text-align:center; max-width:520px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span> Facilitador RCM
+  <small>Análisis RCM asistido</small>
+  <button id="nuevo" type="button" title="Descarta esta conversación y empieza un análisis desde cero">Nuevo análisis</button>
+</header>
+<div id="log">
+  <div class="hint" id="hint">Cuéntele al facilitador qué equipo quiere analizar. Por ejemplo:
+  «Hola, soy Carlos de mantenimiento. Queremos hacer el análisis RCM de la bomba P-101.»</div>
+</div>
+<form id="f">
+  <textarea id="inp" rows="1" placeholder="Escriba su mensaje…" autocomplete="off"></textarea>
+  <button id="send" type="submit">Enviar</button>
+</form>
+<script>
+(function(){
+  var log = document.getElementById('log');
+  var inp = document.getElementById('inp');
+  var send = document.getElementById('send');
+  var form = document.getElementById('f');
+  var hint = document.getElementById('hint');
+  var nuevo = document.getElementById('nuevo');
+  var params = new URLSearchParams(location.search);
+  var key = params.get('key') || '';
+
+  // Continuidad de sesión: ?session= manda, si no el último id guardado en este
+  // navegador, si no uno nuevo. El id se valida antes de usarse (viene de la URL).
+  var STORE = 'rcm-demo-session';
+  var SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+  function guardado(clave){ try { return localStorage.getItem(clave || STORE) || ''; } catch(e){ return ''; } }
+  function recordar(id){ try { localStorage.setItem(STORE, id); return true; } catch(e){ return false; } }
+  // Id impredecible: con una sola llave compartida entre invitados, un id corto
+  // y adivinable deja leer el análisis de otro.
+  function nuevoId(){
+    try { return 'demo-' + crypto.randomUUID(); } catch(e){}
+    return 'demo-' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+  }
+  var deUrl = params.get('session') || '';
+  var previa = [deUrl, guardado()].find(function(id){ return SAFE_ID.test(id); }) || '';
+  var sessionId = previa || nuevoId();
+  // La barra de direcciones queda siempre con el enlace que retoma esta sesión,
+  // así copiarla del teléfono a la computadora continúa el mismo análisis.
+  if (params.get('session') !== sessionId) {
+    params.set('session', sessionId);
+    try { history.replaceState(null, '', location.pathname + '?' + params.toString()); } catch(e){}
+  }
+
+  // Descartar es de un solo toque en un header estrecho: se confirma, y el id
+  // saliente queda guardado para poder volver. Se usa location.replace para no
+  // dejar entrada en el historial: con Atrás volvería el ?session= viejo, que
+  // tiene precedencia, y el "análisis nuevo" se deshace solo.
+  nuevo.addEventListener('click', function(){
+    if(!confirm('¿Empezar un análisis nuevo? El actual queda guardado, pero saldrá de la pantalla.')) return;
+    try { localStorage.setItem(STORE + '-previa', sessionId); localStorage.removeItem(STORE); } catch(e){}
+    params.delete('session');
+    var q = params.toString();
+    location.replace(location.pathname + (q ? '?' + q : ''));
+  });
+
+  function pinta(cls, text, destino){
+    var d = document.createElement('div');
+    d.className = cls; d.textContent = text;
+    (destino || log).appendChild(d);
+    if(!destino){ log.scrollTop = log.scrollHeight; }
+    return d;
+  }
+  function add(cls, text, destino){ return pinta('msg ' + cls, text, destino); }
+  function note(cls, text){ return pinta(cls, text); }
+  if(!key){ note('meta err', 'Falta la llave de acceso en el enlace (?key=...). Pídala a quien le compartió esta demo.'); send.disabled = true; }
+  if(deUrl && !SAFE_ID.test(deUrl)){ note('meta', 'El identificador del enlace no es válido; abrimos un análisis nuevo.'); }
+  if(!recordar(sessionId)){ note('meta', 'Su navegador no guarda la sesión (¿modo privado?). Conserve este enlace tal como está para poder continuar.'); }
+
+  // Salida de emergencia del botón "Nuevo análisis": sin esto el id descartado
+  // se guardaba y nadie lo leía nunca, así que un toque de más dejaba el
+  // análisis anterior inalcanzable desde la pantalla.
+  var descartada = guardado(STORE + '-previa');
+  if(!previa && SAFE_ID.test(descartada)){
+    var aviso = note('meta', 'Tiene un análisis anterior guardado. ');
+    var volver = document.createElement('a');
+    volver.href = '#'; volver.textContent = 'Volver a él';
+    volver.addEventListener('click', function(e){
+      e.preventDefault();
+      params.set('session', descartada);
+      location.replace(location.pathname + '?' + params.toString());
+    });
+    aviso.appendChild(volver);
+  }
+
+  // Repinta lo ya conversado. Sin esto el agente recuerda el análisis pero la
+  // pantalla aparece vacía, y el usuario cree que perdió su trabajo.
+  // El envío se bloquea mientras carga: si no, en una red lenta el usuario
+  // escribe primero y su mensaje queda sepultado bajo la conversación vieja.
+  var yaEscribio = false;
+  async function pintarHistorial(){
+    if(!key || !previa) return;
+    send.disabled = true;
+    var cargando = note('meta', 'Recuperando su análisis anterior…');
+    try {
+      var r = await fetch('/sessions/' + encodeURIComponent(sessionId) + '/runs', {
+        headers: { 'Authorization': 'Bearer ' + key }
+      });
+      cargando.remove();
+      if(r.status === 404){ note('meta', 'No encontramos un análisis anterior con este enlace. Empezamos uno nuevo.'); return; }
+      if(r.status === 401){ note('meta err', 'La llave del enlace no es válida. Pida un enlace nuevo.'); return; }
+      if(!r.ok){ note('meta err', 'No pudimos recuperar su conversación anterior (error ' + r.status + '). Su análisis sigue guardado.'); return; }
+      var runs = await r.json();
+      if(!Array.isArray(runs) || !runs.length) return;
+      if(yaEscribio) return;  // el usuario se adelantó; no le movemos la pantalla
+      hint.remove();
+      var trozo = document.createDocumentFragment();
+      runs.forEach(function(run){
+        if(run.status && run.status !== 'COMPLETED') return;  // los runs con error no son respuestas
+        if(typeof run.run_input === 'string') add('user', run.run_input, trozo);
+        if(typeof run.content === 'string') add('bot', run.content.trim(), trozo);
+      });
+      log.appendChild(trozo);
+      note('meta', '— Hasta aquí su conversación anterior. Puede seguir escribiendo. —');
+    } catch(err) {
+      cargando.remove();
+      console.warn('historial', err);
+      note('meta err', 'No pudimos recuperar su conversación anterior. Su análisis sigue guardado; recargue en un momento.');
+    } finally {
+      send.disabled = false; inp.focus();
+    }
+  }
+  pintarHistorial();
+
+  inp.addEventListener('input', function(){ inp.style.height='auto'; inp.style.height=Math.min(inp.scrollHeight,120)+'px'; });
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); form.requestSubmit(); }});
+
+  form.addEventListener('submit', async function(e){
+    e.preventDefault();
+    var text = inp.value.trim();
+    if(!text || send.disabled) return;
+    yaEscribio = true;
+    hint.remove();
+    add('user', text);
+    inp.value=''; inp.style.height='auto';
+    send.disabled = true;
+    var thinking = note('meta', 'El facilitador está escribiendo…');
+    try {
+      var fd = new FormData();
+      fd.append('message', text);
+      fd.append('stream', 'false');
+      fd.append('session_id', sessionId);
+      var r = await fetch('/agents/facilitador-rcm/runs', {
+        method:'POST',
+        headers: { 'Authorization': 'Bearer ' + key },
+        body: fd
+      });
+      thinking.remove();
+      if(r.status === 401){ note('meta err','Llave de acceso inválida. Pida un enlace nuevo.'); return; }
+      if(!r.ok){ note('meta err','Error del servidor ('+r.status+'). Intente de nuevo en un momento.'); return; }
+      var d = await r.json();
+      var nTools = (d.tools && d.tools.length) || 0;
+      if(nTools){ note('tools', '🔧 '+nTools+' herramienta(s) ejecutada(s)'); }
+      add('bot', (d.content || '(sin respuesta)').trim());
+    } catch(err) {
+      thinking.remove();
+      note('meta err', 'No se pudo conectar. Verifique su conexión e intente de nuevo.');
+    } finally {
+      send.disabled = false; inp.focus();
+    }
+  });
+  inp.focus();
+})();
+</script>
+</body>
+</html>

@@ -1,14 +1,5 @@
 """Demo chat page: serves HTML publicly, carries no secret, wires the run endpoint."""
 
-import pytest
-from fastapi.testclient import TestClient
-
-
-@pytest.fixture(scope="module")
-def client() -> TestClient:
-    from rcm_runbook import app as app_module
-
-    return TestClient(app_module.app)
 
 
 class TestDemoPage:
@@ -26,14 +17,29 @@ class TestDemoPage:
         assert "URLSearchParams" in body
         assert "/agents/facilitador-rcm/runs" in body
 
-    def test_run_endpoint_is_gated(self, client):
-        from rcm_runbook.config import settings
-
-        if not settings.os_security_key:
-            pytest.skip("no security key configured in this environment")
+    def test_run_endpoint_is_gated(self, client, con_llave):
         # The page's target endpoint must reject calls without the key
         resp = client.post(
             "/agents/facilitador-rcm/runs",
             data={"message": "hola", "stream": "false"},
         )
         assert resp.status_code == 401
+
+
+class TestSessionContinuity:
+    """El comportamiento de la continuidad de sesión se prueba ejecutando el JS
+    en `test_demo_session_logic.py`. Aquí queda solo lo que ese arnés no puede
+    ver: que la ruta del historial esté cerrada del lado del servidor."""
+
+    def test_session_runs_endpoint_is_gated(self, client, con_llave):
+        # La página pide el historial con la llave; sin ella no se sirve.
+        assert client.get("/sessions/demo-cualquiera/runs").status_code == 401
+
+
+class TestPagePolish:
+    def test_favicon_is_inline(self, client):
+        # Sin icono embebido el navegador pide /favicon.ico y recibe 401,
+        # dejando un error rojo en la consola en cada carga.
+        body = client.get("/demo").text
+        assert 'rel="icon"' in body
+        assert "data:image/svg+xml" in body
