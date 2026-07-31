@@ -603,3 +603,29 @@ class TestUnRechazoDelMetodoNoEsUnaAveria:
         assert self.BANNER not in salida
         assert "corrija y reintente" in salida
         assert "Diario" in salida, "no ofrece la frecuencia válida del catálogo"
+
+
+class TestNoSePidenTablas:
+    """El renderizador no dibuja tablas (fuera del alcance de su spec), así que
+    una tabla markdown llega al cliente como barras y guiones en crudo. Se vio
+    en producción justo después de arreglar ALTA-1: el agente respondió el
+    catálogo ISO como tabla."""
+
+    def test_las_instrucciones_prohiben_las_tablas_y_ofrecen_la_alternativa(self):
+        from rcm_runbook.agent.instructions_es import INSTRUCTIONS_ES
+
+        assert "No uses tablas markdown" in INSTRUCTIONS_ES
+        assert "- FTS — Falla en arrancar" in INSTRUCTIONS_ES, "no da el formato a usar"
+
+    def test_la_herramienta_ya_devuelve_lista_no_tabla(self):
+        # Si la propia salida trajera una tabla, la instrucción pelearía contra
+        # el ejemplo que tiene delante — y gana el ejemplo.
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-iso"
+            session_state: dict = {}
+
+        salida = tools_mod.explain_iso_code.entrypoint(Ctx(), code="QQQ1")
+        assert "|" not in salida
+        assert "- FTS — " in salida

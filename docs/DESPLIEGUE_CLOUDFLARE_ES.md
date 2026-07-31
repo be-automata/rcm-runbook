@@ -136,3 +136,28 @@ apagarlos para no tener dos sistemas vivos con la misma llave:
 launchctl bootout gui/$(id -u)/com.beautomata.rcm-runbook
 launchctl bootout gui/$(id -u)/com.beautomata.rcm-tunnel
 ```
+
+## Verificar después de desplegar
+
+`wrangler deploy` termina antes de que producción sirva la versión nueva: hay
+alrededor de un minuto en que la instancia viva sigue respondiendo con la imagen
+anterior. Medir en ese hueco da resultados de la versión vieja que parecen de la
+nueva — pasó en esta misma sesión: tres mediciones «con el arreglo desplegado»
+que en realidad midieron el código de antes, y una conclusión equivocada sobre
+si el arreglo servía.
+
+Antes de dar por buena cualquier medición en producción, comprobar que lo
+servido es lo del repo:
+
+```bash
+curl -s https://rcm-demo.beautomata.com/demo -o /tmp/prod.html
+diff -q /tmp/prod.html src/rcm_runbook/static/demo.html   # tiene que ser idéntico
+```
+
+Para lo que vive dentro del contenedor y no se ve en el HTML (instrucciones del
+agente, herramientas), sirve el mismo criterio: la página y la imagen viajan en
+el mismo despliegue, así que si `/demo` ya es la del repo, el resto también.
+
+Un `deploy` que termina en ~3 s y solo dice «Deployed … triggers», sin la línea
+`SUCCESS Modified application`, **no reconstruyó la imagen**: cambió el Worker y
+nada más. Si lo que se tocó es Python, hay que mirar esa línea.
