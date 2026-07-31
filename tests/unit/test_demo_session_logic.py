@@ -31,32 +31,57 @@ _PRELUDIO = """
 const CFG = JSON.parse(process.env.CFG);
 const resultado = { fetches: [], burbujas: [], avisos: [], alertas: [] };
 
-function el(id) {
+function el(id, tag) {
   return {
-    id, value: '', disabled: false, style: {}, textContent: '', className: '',
-    scrollHeight: 0, scrollTop: 0, children: [],
+    id, tag: tag || id, value: '', disabled: false, style: {}, textContent: '',
+    className: '', scrollHeight: 0, scrollTop: 0, children: [],
     addEventListener(ev, fn) { (this._h ||= {})[ev] = fn; },
     appendChild(n) { this.children.push(n); },
     remove() { this._quitado = true; }, focus() {}, requestSubmit() {},
     click() { resultado.descarga = this.download; },
   };
 }
+
+// El renderizador de markdown construye hijos en vez de asignar textContent:
+// sin serializar el árbol, las aserciones de TestHistorial verían burbujas
+// vacías y fallarían en falso. Formato: etiqueta(texto)[hijo,hijo].
+function serializa(n) {
+  if (n == null) return '';
+  if (typeof n === 'string') return n;
+  const atributos = ['className', 'href', 'target', 'rel']
+    .filter((a) => n[a]).map((a) => `${a}=${n[a]}`).join(',');
+  const attr = atributos ? `{${atributos}}` : '';
+  const propio = n.textContent || '';
+  const hijos = (n.children || []).map(serializa).filter(Boolean);
+  const dentro = hijos.length ? `[${hijos.join(',')}]` : '';
+  return `${n.tag || 'nodo'}(${propio})${attr}${dentro}`;
+}
 const elementos = {};
 for (const id of ['log', 'inp', 'send', 'f', 'hint', 'nuevo', 'exportar'])
   elementos[id] = el(id);
 elementos.log.appendChild = function (n) {
   // El fragmento llega con hijos; se aplana como haría el DOM real.
-  for (const hijo of (n.children && n.children.length ? n.children : [n])) {
-    (hijo.className || '').startsWith('msg ')
-      ? resultado.burbujas.push(hijo.className.slice(4) + '|' + hijo.textContent)
-      : resultado.avisos.push(hijo.textContent);
+  const esBurbuja = (x) => (x.className || '').startsWith('msg ');
+  for (const hijo of (n.tag === 'fragmento' ? n.children : [n])) {
+    if (esBurbuja(hijo)) {
+      const cuerpo = hijo.children.length
+        ? hijo.children.map(serializa).join('')
+        : hijo.textContent;
+      resultado.burbujas.push(hijo.className.slice(4) + '|' + cuerpo);
+    } else {
+      resultado.avisos.push(hijo.textContent);
+    }
   }
 };
 
 global.document = {
   getElementById: (id) => elementos[id] || null,
-  createElement: () => el('nodo'),
-  createDocumentFragment: () => el('fragmento'),
+  createElement: (tag) => el('nodo', tag),
+  // Los nodos de texto se representan como cadenas: serializa() las devuelve
+  // tal cual. Sin esto el renderizador revienta y todo cae al fallback de
+  // textContent, dando tests en verde que no prueban nada.
+  createTextNode: (t) => t,
+  createDocumentFragment: () => el('fragmento', 'fragmento'),
   body: el('body'),
 };
 global.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
@@ -89,7 +114,7 @@ global.fetch = async (url, opts) => {
   }
   return { ok: CFG.estado === 200, status: CFG.estado, json: async () => CFG.runs };
 };
-global.console = { warn() {}, log() {} };
+global.console = { warn(...a) { resultado.warns = (resultado.warns || 0) + 1; }, log() {} };
 """
 
 _EPILOGO = """
@@ -193,8 +218,12 @@ class TestHistorial:
         assert reanudada["cabeceras"] == {"Authorization": "Bearer abc"}
 
     def test_repinta_la_conversacion_previa(self, reanudada):
+        # El usuario sigue en texto plano; el bot va como árbol renderizado.
         assert "user|Hola, la bomba P200" in reanudada["burbujas"]
-        assert "bot|Perfecto, registremos." in reanudada["burbujas"]
+        assert any(
+            b.startswith("bot|") and "Perfecto, registremos." in b
+            for b in reanudada["burbujas"]
+        ), reanudada["burbujas"]
 
     def test_no_repinta_runs_con_error_ni_contenido_no_textual(self, reanudada):
         pintado = "\n".join(reanudada["burbujas"])
@@ -282,3 +311,149 @@ class TestBotonExportar:
     def test_sin_llave_no_intenta_descargar(self):
         r = correr(busqueda="?session=demo-mia", pulsaExportar=True)
         assert not any("/exports/" in f for f in r["fetches"])
+
+
+def render(texto: str) -> str:
+    """Serialización del árbol que produce el renderizador para una respuesta."""
+    r = correr(
+        busqueda="?key=abc&session=demo-previa",
+        estado=200,
+        runs=[{"status": "COMPLETED", "run_input": "x", "content": texto}],
+    )
+    burbujas = [b for b in r["burbujas"] if b.startswith("bot|")]
+    assert burbujas, r["burbujas"]
+    assert not r.get("warns"), "el renderizador cayó al fallback"
+    return burbujas[0][4:]
+
+
+class TestMarkdown:
+    """El cliente lee `**Equipo:**` en pantalla. Medido en producción: 104
+    asteriscos visibles, 0 <strong>, 0 listas."""
+
+    def test_negrita(self):
+        assert "strong()[Equipo]" in render("El **Equipo** está listo")
+
+    def test_cursiva_con_asterisco_y_guion_bajo(self):
+        assert "em()[así]" in render("Se lee *así*")
+        assert "em()[asá]" in render("Se lee _asá_")
+
+    def test_codigo_en_linea(self):
+        assert "code(P-101)" in render("El tag es `P-101`")
+
+    def test_titulo(self):
+        salida = render("## Resumen del análisis")
+        assert "div()" in salida and "className=md-h" in salida
+        assert "Resumen del análisis" in salida
+
+    def test_lista_numerada(self):
+        salida = render("1. Primero\n2. Segundo\n3. Tercero")
+        assert salida.startswith("ol()[")
+        assert salida.count("li()") == 3
+
+    def test_lista_con_vinetas(self):
+        salida = render("- Uno\n- Dos")
+        assert salida.startswith("ul()[")
+        assert salida.count("li()") == 2
+
+    def test_parrafos_separados_por_linea_en_blanco(self):
+        salida = render("Primero.\n\nSegundo.")
+        assert salida.count("p()") == 2
+
+    def test_bloque_cercado(self):
+        salida = render("Ejemplo:\n```\nRPN = S x O x D\n```")
+        assert "pre()" in salida and "code(RPN = S x O x D)" in salida
+
+    def test_negrita_dentro_de_lista(self):
+        # El caso real del Facilitador: listas con términos en negrita.
+        salida = render("1. Definir los **límites físicos**\n2. Describir las **interfaces**")
+        assert salida.count("strong()") == 2
+
+    def test_linea_horizontal(self):
+        # El Facilitador separa secciones con `---`; sin esto sale literal.
+        assert "hr()" in render("Arriba\n\n---\n\nAbajo")
+        assert "hr()" in render("***")
+
+    def test_guion_suelto_sigue_siendo_vineta(self):
+        salida = render("- un punto")
+        assert "ul()" in salida and "hr()" not in salida
+
+    def test_emoji_y_negrita_conviven(self):
+        assert "strong()[Equipo:]" in render("🎯 **Equipo:** Bomba centrífuga")
+
+
+class TestSeguridadMarkdown:
+    """El texto viene del modelo, que repite lo que escribe el usuario."""
+
+    def test_html_crudo_se_queda_como_texto(self):
+        salida = render('Mira <img src=x onerror=alert(1)> esto')
+        assert "img" not in salida.replace("<img src=x onerror=alert(1)>", "")
+        assert "<img src=x onerror=alert(1)>" in salida
+
+    def test_script_no_se_convierte_en_elemento(self):
+        salida = render("<script>alert(1)</script>")
+        assert "<script>alert(1)</script>" in salida
+        assert "script()" not in salida
+
+    def test_enlace_javascript_no_genera_ancla(self):
+        salida = render("[pulsa](javascript:alert(1))")
+        assert "href=" not in salida, "generó un ancla con esquema javascript:"
+        assert "javascript:alert(1)" in salida  # queda como texto visible
+
+    def test_enlace_data_no_genera_ancla(self):
+        salida = render("[x](data:text/html,<script>alert(1)</script>)")
+        assert "a(" not in salida
+
+    def test_enlace_https_abre_en_pestana_nueva(self):
+        salida = render("Ver [la norma](https://ejemplo.com/ja1011)")
+        assert "href=https://ejemplo.com/ja1011" in salida
+        assert "target=_blank" in salida and "rel=noopener noreferrer" in salida
+
+    def test_enlace_relativo_de_exports_es_clicable(self):
+        # Lo que emite export_excel: el cliente baja su Excel de un clic.
+        salida = render("Descarga: [AMEF](/exports/s1/AMEF_P200.xlsx?key=k)")
+        assert "href=/exports/s1/AMEF_P200.xlsx?key=k" in salida
+        assert "target=_blank" not in salida  # misma pestaña: es una descarga
+
+
+class TestTextoDelRun:
+    """agno concatena los mensajes del asistente sin separador cuando el turno
+    lleva llamada a herramienta: «…un resumen rápido:**Resumen:**»."""
+
+    def _run(self, mensajes, content):
+        return {"status": "COMPLETED", "run_input": "x",
+                "messages": mensajes, "content": content}
+
+    def test_separa_los_mensajes_del_turno(self):
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200,
+            runs=[self._run(
+                [{"role": "system", "content": "s"},
+                 {"role": "user", "content": "resume"},
+                 {"role": "assistant", "content": "Un resumen rápido:"},
+                 {"role": "tool", "content": "t"},
+                 {"role": "assistant", "content": "**Resumen:** todo bien"}],
+                "Un resumen rápido:**Resumen:** todo bien")],
+        )
+        salida = [b for b in r["burbujas"] if b.startswith("bot|")][0]
+        assert salida.count("p()") == 2, salida
+        assert "rápido:strong" not in salida
+
+    def test_ignora_los_mensajes_de_turnos_anteriores(self):
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200,
+            runs=[self._run(
+                [{"role": "assistant", "content": "de un turno viejo"},
+                 {"role": "user", "content": "nueva pregunta"},
+                 {"role": "assistant", "content": "respuesta de ahora"}],
+                "respuesta de ahora")],
+        )
+        salida = [b for b in r["burbujas"] if b.startswith("bot|")][0]
+        assert "de un turno viejo" not in salida
+        assert "respuesta de ahora" in salida
+
+    def test_cae_a_content_si_no_hay_mensajes(self):
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200,
+            runs=[{"status": "COMPLETED", "run_input": "x", "content": "solo content"}],
+        )
+        assert any("solo content" in b for b in r["burbujas"])

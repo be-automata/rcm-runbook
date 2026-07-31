@@ -174,6 +174,24 @@ Recorrido del enlace que se le manda a un interesado no técnico, contra `$BASE`
 7. Abra la consola del navegador (F12).
    - [ ] Cero errores rojos en la consola.
 
+## 9a. Las respuestas se leen como texto formateado (3 min)
+
+1. Con una conversación en marcha, mire cualquier respuesta del Facilitador.
+   - [ ] **Cero asteriscos** en pantalla: donde el agente escribe `**Equipo:**`
+     se lee **Equipo:** en negrita.
+   - [ ] Las listas salen como viñetas o números reales, con sangría.
+   - [ ] Los `---` que separan secciones salen como una línea, no como guiones.
+2. Lo que usted escribe sigue siendo texto plano.
+   - [ ] Escriba `**hola**` y compruebe que se ve con los asteriscos: el markdown
+     solo se interpreta en las respuestas del agente, nunca en lo que teclea el
+     cliente.
+3. Un turno en el que el agente use una herramienta (por ejemplo, registrar el
+   alcance).
+   - [ ] La respuesta sale en **párrafos separados**, no pegada como
+     «…un resumen rápido:**Resumen:**».
+4. Si el agente entrega un enlace de descarga, es clicable y baja el Excel.
+   - [ ] Un enlace externo abre en pestaña nueva.
+
 ## 9b. Botón «Descargar Excel» (4 min)
 
 El cliente debe poder llevarse su entregable sin pedírselo al facilitador.
@@ -250,5 +268,8 @@ done
 | 17 | El botón «Descargar Excel» entrega el entregable sin pasar por el facilitador | ☐ |
 | 18 | Todo análisis incompleto baja como `BORRADOR_` y se avisa en pantalla | ☐ |
 | 19 | La llave no aparece en la URL de descarga del botón | ☐ |
+| 20 | Las respuestas del agente se leen formateadas, sin asteriscos en pantalla | ☐ |
+| 21 | Lo que escribe el cliente sigue siendo texto plano | ☐ |
+| 22 | Un turno con herramienta sale en párrafos separados, no pegado | ☐ |
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________
