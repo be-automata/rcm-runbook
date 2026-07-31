@@ -171,16 +171,13 @@ class RequireKey:
 app.add_middleware(RequireKey)
 
 
-def _regenerar_entregable(session_id: str, filename: str) -> Path | None:
-    """Reconstruye el .xlsx desde el estado guardado en la base de datos.
+def _sesion_guardada(session_id: str):
+    """El estado RCM de una sesión, tal como quedó en la base de datos.
 
-    El entregable es función pura del estado de la sesión, así que no hace falta
-    conservarlo en disco. Esto es lo que lo hace sobrevivir a un contenedor con
-    disco efímero: el archivo que el cliente descarga mañana se genera en el
-    momento a partir de lo que hay en la base.
+    El entregable es función pura de este estado, así que no hace falta
+    conservarlo en disco. Es lo que lo hace sobrevivir a un contenedor con disco
+    efímero: el archivo que el cliente descarga mañana se genera en el momento.
     """
-    from rcm_runbook.engine import compliance
-    from rcm_runbook.export.excel import export_xlsx
     from rcm_runbook.models.session import RCMSession
 
     registro = agent.db.get_session(session_id=session_id, deserialize=False)
@@ -188,9 +185,51 @@ def _regenerar_entregable(session_id: str, filename: str) -> Path | None:
         return None
     estado = (registro.get("session_data") or {}).get("session_state") or {}
     crudo = estado.get("rcm")
-    if not crudo:
+    return RCMSession.model_validate(crudo) if crudo else None
+
+
+@app.get("/exports/{session_id}")
+def download_current_export(session_id: str, request: Request) -> FileResponse:
+    """Entregable actual de la sesión, sin que el cliente sepa cómo se llama.
+
+    Es lo que usa el botón «Descargar Excel» de la página: el navegador no
+    conoce el TAG del equipo, así que el nombre lo resuelve el servidor.
+
+    Entrega el definitivo solo si el análisis pasa las compuertas; si no, un
+    BORRADOR_ claramente marcado. Nunca un borrador disfrazado de definitivo.
+    """
+    from rcm_runbook.engine import compliance
+    from rcm_runbook.export.excel import export_xlsx
+
+    if not _SAFE_NAME.match(session_id):
+        raise HTTPException(status_code=400, detail="Nombre inválido.")
+    sesion = _sesion_guardada(session_id)
+    if sesion is None or not sesion.scope.tag:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Todavía no hay nada que exportar: primero registre el equipo "
+                "y su TAG con el facilitador."
+            ),
+        )
+    borrador = bool(compliance.export_blockers(sesion))
+    destino = Path(tempfile.mkdtemp(prefix="rcm-export-"))
+    generado = export_xlsx(sesion, destino, session_id=session_id, draft=borrador)
+    return FileResponse(
+        generado,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=generado.name,
+    )
+
+
+def _regenerar_entregable(session_id: str, filename: str) -> Path | None:
+    """Reconstruye el .xlsx pedido por nombre exacto, desde la base de datos."""
+    from rcm_runbook.engine import compliance
+    from rcm_runbook.export.excel import export_xlsx
+
+    sesion = _sesion_guardada(session_id)
+    if sesion is None:
         return None
-    sesion = RCMSession.model_validate(crudo)
     borrador = filename.startswith("BORRADOR_")
     # Misma compuerta que aplica la herramienta `export_excel`: sin esto bastaba
     # quitar el prefijo BORRADOR_ de la URL para llevarse un "entregable

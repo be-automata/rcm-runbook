@@ -308,3 +308,47 @@ class TestDatabaseBackendIsConfigurable:
 
         factory.build_db(Settings(db_url="postgresql+psycopg://u:p@h/d"))
         assert creada["url"] == "postgresql+psycopg://u:p@h/d"
+
+
+class TestCurrentExportRoute:
+    """`/exports/{sesion}` sin nombre de archivo: lo que usa el botón de la
+    página, porque el navegador no conoce el TAG del equipo."""
+
+    def _con_sesion(self, monkeypatch, sesion):
+        from rcm_runbook import app as app_module
+
+        estado = {"session_state": {"rcm": sesion.model_dump(mode="json")}}
+        monkeypatch.setattr(
+            app_module.agent.db, "get_session", lambda **kw: {"session_data": estado}
+        )
+
+    def test_complete_session_gets_the_definitive_file(self, client, con_llave, monkeypatch):
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        self._con_sesion(monkeypatch, sesion)
+        r = client.get("/exports/s1", params={"key": con_llave})
+        assert r.status_code == 200
+        assert f'filename="AMEF_{sesion.scope.tag}.xlsx"' in r.headers["content-disposition"]
+        assert len(r.content) > 5000
+
+    def test_incomplete_session_gets_a_clearly_marked_draft(self, client, con_llave, monkeypatch):
+        from rcm_runbook.models.session import RCMSession
+
+        sesion = RCMSession()
+        sesion.scope.tag = "P-999"
+        self._con_sesion(monkeypatch, sesion)
+        r = client.get("/exports/s1", params={"key": con_llave})
+        assert r.status_code == 200
+        assert 'filename="BORRADOR_AMEF_P-999.xlsx"' in r.headers["content-disposition"]
+
+    def test_session_without_tag_explains_instead_of_failing(self, client, con_llave, monkeypatch):
+        from rcm_runbook.models.session import RCMSession
+
+        self._con_sesion(monkeypatch, RCMSession())
+        r = client.get("/exports/s1", params={"key": con_llave})
+        assert r.status_code == 404
+        assert "nada que exportar" in r.json()["detail"]
+
+    def test_requires_the_key(self, client, con_llave):
+        assert client.get("/exports/s1").status_code == 401

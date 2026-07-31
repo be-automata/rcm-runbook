@@ -38,10 +38,12 @@ function el(id) {
     addEventListener(ev, fn) { (this._h ||= {})[ev] = fn; },
     appendChild(n) { this.children.push(n); },
     remove() { this._quitado = true; }, focus() {}, requestSubmit() {},
+    click() { resultado.descarga = this.download; },
   };
 }
 const elementos = {};
-for (const id of ['log', 'inp', 'send', 'f', 'hint', 'nuevo']) elementos[id] = el(id);
+for (const id of ['log', 'inp', 'send', 'f', 'hint', 'nuevo', 'exportar'])
+  elementos[id] = el(id);
 elementos.log.appendChild = function (n) {
   // El fragmento llega con hijos; se aplana como haría el DOM real.
   for (const hijo of (n.children && n.children.length ? n.children : [n])) {
@@ -55,7 +57,9 @@ global.document = {
   getElementById: (id) => elementos[id] || null,
   createElement: () => el('nodo'),
   createDocumentFragment: () => el('fragmento'),
+  body: el('body'),
 };
+global.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
 global.localStorage = {
   _d: new Map(CFG.store),
   getItem(k) { if (CFG.bloquea) throw new Error('privado');
@@ -73,6 +77,16 @@ global.fetch = async (url, opts) => {
   resultado.fetches.push(url);
   resultado.cabeceras = opts && opts.headers;
   resultado.sendDurante = elementos.send.disabled;
+  if (url.startsWith('/exports/')) {
+    return {
+      ok: CFG.exportEstado === 200,
+      status: CFG.exportEstado,
+      headers: { get: () => CFG.exportNombre &&
+        `attachment; filename="${CFG.exportNombre}"` },
+      json: async () => ({ detail: 'Todavía no hay nada que exportar.' }),
+      blob: async () => ({}),
+    };
+  }
   return { ok: CFG.estado === 200, status: CFG.estado, json: async () => CFG.runs };
 };
 global.console = { warn() {}, log() {} };
@@ -83,12 +97,20 @@ _EPILOGO = """
   await new Promise((r) => setTimeout(r, 0));
   resultado.sessionGuardado = localStorage._d.get('rcm-demo-session') ?? null;
   resultado.sendDeshabilitado = elementos.send.disabled;
+  if (CFG.pulsaExportar && elementos.exportar._h?.click) {
+    await elementos.exportar._h.click();
+    await new Promise((r) => setTimeout(r, 0));
+    resultado.descargado = resultado.descarga;
+  }
   if (CFG.pulsaNuevo && elementos.nuevo._h?.click) {
     elementos.nuevo._h.click();
     resultado.sessionTrasNuevo = localStorage._d.get('rcm-demo-session') ?? null;
     resultado.previaTrasNuevo = localStorage._d.get('rcm-demo-session-previa') ?? null;
   }
   process.stdout.write(JSON.stringify(resultado));
+  // El revokeObjectURL de la descarga deja un timer de 10 s vivo; sin salir
+  // explícitamente cada caso tardaría eso en terminar.
+  process.exit(0);
 })();
 """
 
@@ -97,6 +119,8 @@ def correr(**cfg) -> dict:
     cfg = {
         "busqueda": "?key=abc", "store": [], "estado": 404, "runs": [],
         "pulsaNuevo": False, "confirma": True, "bloquea": False,
+        "pulsaExportar": False, "exportEstado": 200,
+        "exportNombre": "AMEF_P-101.xlsx",
     } | cfg
     if isinstance(cfg["store"], dict):
         cfg["store"] = list(cfg["store"].items())
@@ -227,3 +251,34 @@ class TestNavegadorSinAlmacenamiento:
         r = correr(bloquea=True)
         assert r["urlFinal"], "la página debe seguir funcionando sin localStorage"
         assert any("no guarda la sesión" in a for a in r["avisos"])
+
+
+class TestBotonExportar:
+    """El cliente debe poder llevarse su Excel sin pedírselo al facilitador."""
+
+    def test_pide_el_entregable_de_su_sesion_con_la_llave_en_cabecera(self):
+        # La llave nunca debe ir en la URL de descarga: acabaría en el historial
+        # del navegador del cliente.
+        r = correr(store={"rcm-demo-session": "demo-mia"}, pulsaExportar=True)
+        assert "/exports/demo-mia" in r["fetches"]
+        assert r["cabeceras"] == {"Authorization": "Bearer abc"}
+        assert not any("key=" in f for f in r["fetches"])
+
+    def test_descarga_con_el_nombre_que_decide_el_servidor(self):
+        # El navegador no conoce el TAG del equipo; el nombre viene en la
+        # cabecera Content-Disposition.
+        r = correr(pulsaExportar=True, exportNombre="AMEF_P-200.xlsx")
+        assert r["descargado"] == "AMEF_P-200.xlsx"
+
+    def test_avisa_cuando_el_entregable_es_solo_un_borrador(self):
+        r = correr(pulsaExportar=True, exportNombre="BORRADOR_AMEF_P-200.xlsx")
+        assert any("borrador" in a.lower() for a in r["avisos"]), r["avisos"]
+
+    def test_explica_cuando_todavia_no_hay_nada_que_exportar(self):
+        r = correr(pulsaExportar=True, exportEstado=404)
+        assert any("nada que exportar" in a for a in r["avisos"]), r["avisos"]
+        assert not r.get("descargado")
+
+    def test_sin_llave_no_intenta_descargar(self):
+        r = correr(busqueda="?session=demo-mia", pulsaExportar=True)
+        assert not any("/exports/" in f for f in r["fetches"])
