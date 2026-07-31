@@ -75,6 +75,45 @@ def _save(run_context: Any, session: RCMSession) -> None:
     run_context.session_state[SESSION_KEY] = session.model_dump(mode="json")
 
 
+_RANGOS_EN_ESPANOL = (
+    (
+        "u must be in the open interval (0, 1)",
+        "La indisponibilidad objetivo debe estar entre 0 y 1, sin incluirlos",
+    ),
+    ("must be a number", "debe ser un número"),
+    ("must be > 0", "debe ser mayor que cero"),
+    ("n must be an integer", "El número de dispositivos debe ser un entero"),
+    ("n must be >= 1", "El número de dispositivos debe ser 1 o más"),
+)
+
+
+def _en_espanol(mensaje: str) -> str:
+    """Traduce los rechazos de rango del motor, que es inglés a propósito."""
+    for ingles, espanol in _RANGOS_EN_ESPANOL:
+        if ingles not in mensaje:
+            continue
+        # El motor antepone el nombre del parámetro ("mtive must be > 0, got
+        # -5.0"); sin él la frase queda coja y el agente no sabe qué corregir.
+        sujeto = mensaje.split(ingles)[0].strip()
+        recibido = mensaje.rsplit(" ", 1)[-1]
+        return (
+            f"{sujeto + ' ' if sujeto else ''}{espanol} (recibí: {recibido})."
+            if sujeto
+            else f"{espanol} (recibí: {recibido})."
+        )
+    return mensaje
+
+
+class ReglaDeNegocio(Exception):
+    """El método rechaza el dato — no es una avería del sistema.
+
+    La diferencia importa río abajo: el agente trata el banner técnico como
+    «algo se rompió», deja de trabajar y se inventa una causa. Un rechazo del
+    método es lo contrario: el sistema funcionando, y el agente tiene que
+    repreguntar con la opción correcta a la vista.
+    """
+
+
 def _spanish_errors(fn: Callable[..., str]) -> Callable[..., str]:
     """Surface any failure as an actionable Spanish message + structured log."""
 
@@ -102,6 +141,12 @@ def _spanish_errors(fn: Callable[..., str]) -> Callable[..., str]:
                 "Pida al responsable (p.ej. supervisor HSE) que confirme, y registre "
                 "la decisión con run_decision_logic pasando approver='<nombre y cargo>'."
             )
+        except ReglaDeNegocio as exc:
+            # El método diciendo que el dato no vale. No es una avería, y no
+            # puede llevar el banner técnico: el agente lo lee como sistema roto
+            # y se inventa la causa en vez de repreguntar.
+            logger.info(json.dumps({"tool": name, "outcome": "regla_de_negocio"}))
+            return f"❌ {exc}"
         except Exception as exc:  # noqa: BLE001 — every tool failure surfaces in Spanish
             logger.warning(json.dumps({"tool": name, "outcome": "error", "error": str(exc)[:300]}))
             detail = str(exc)
@@ -111,6 +156,11 @@ def _spanish_errors(fn: Callable[..., str]) -> Callable[..., str]:
                     line for line in detail.splitlines()
                     if line.strip() and not line.startswith(("For further", "    "))
                 )
+                # Un dato que no pasa la validación es siempre una llamada mal
+                # armada, nunca una avería: el catálogo va en el propio mensaje,
+                # así que decirle «avise a quien opera el sistema» lo manda a
+                # buscar donde no es en lugar de corregir y reintentar.
+                return f"❌ El dato no es válido, corrija y reintente:\n{detail}"
             return f"❌ No se pudo completar la operación: {detail}"
 
     return wrapper
@@ -185,7 +235,15 @@ def confirm_no_functions(run_context: Any, kind: str) -> str:
     """Registra la confirmación explícita de que NO existen funciones de un tipo.
     kind: 'secundaria' o 'proteccion'. Úselo solo tras preguntar al interesado."""
     session = _load(run_context)
-    session.confirm_no_functions_of_kind(FunctionKind(kind))
+    try:
+        tipo = FunctionKind(kind)
+    except ValueError as exc:
+        raise ReglaDeNegocio(
+            f"Tipo de función desconocido: '{kind}'. Válidos: "
+            + ", ".join(k.value for k in FunctionKind)
+            + "."
+        ) from exc
+    session.confirm_no_functions_of_kind(tipo)
     _save(run_context, session)
     return f"✔ Confirmado: el activo no tiene funciones de tipo '{kind}'."
 
@@ -453,19 +511,43 @@ def calculate_ffi(
     'multi_single', 'single_multi' o 'economic'. mted_list_hours: lista separada por
     comas para multi_single. La aceptación del Mmf con consecuencia de seguridad es
     una decisión humana."""
+    metodos = ("availability", "single_single", "multi_single", "single_multi", "economic")
+    if method not in metodos:
+        # El motor rechaza en inglés («Unknown FFI method»); quien conversa en
+        # español escribe 'disponibilidad' y recibía un fallo técnico ajeno.
+        raise ReglaDeNegocio(
+            f"Método de FFI desconocido: '{method}'. Válidos: {', '.join(metodos)}."
+        )
     params: dict[str, Any] = {}
     if method == "availability":
         params = {"u": u_fraction, "mtive": mtive_hours}
     elif method == "single_single":
         params = {"mtive": mtive_hours, "mted": mted_hours, "mmf": mmf_hours}
     elif method == "multi_single":
-        mted_list = [float(x) for x in mted_list_hours.split(",") if x.strip()]
+        try:
+            mted_list = [float(x) for x in mted_list_hours.split(",") if x.strip()]
+        except ValueError as exc:
+            raise ReglaDeNegocio(
+                f"mted_list_hours debe ser una lista de números separados por comas, "
+                f"en horas. Recibí: '{mted_list_hours}'."
+            ) from exc
         params = {"mtive": mtive_hours, "mted_list": mted_list, "mmf": mmf_hours}
     elif method == "single_multi":
         params = {"mtive": mtive_hours, "mted": mted_hours, "mmf": mmf_hours, "n": n_devices}
     elif method == "economic":
         params = {"mtive": mtive_hours, "mted": mted_hours, "cff": cff, "cmf": cmf}
-    result = _calculate_ffi(method, params)
+    try:
+        result = _calculate_ffi(method, params)
+    except ValueError as exc:
+        # El motor valida rangos y lo dice en inglés. Es una regla del método
+        # (una indisponibilidad de 0 no tiene intervalo), no una avería.
+        # El motor habla inglés a propósito (es dominio puro y sus tests lo
+        # fijan). La traducción vive aquí, en la frontera con el agente, que es
+        # quien conversa en español.
+        raise ReglaDeNegocio(
+            f"Los datos no permiten calcular el FFI con el método '{method}'. "
+            + _en_espanol(str(exc))
+        ) from exc
     warn = ("\n⚠ " + "\n⚠ ".join(result.warnings)) if result.warnings else ""
     return (
         f"✔ FFI ({method}): {result.ffi_hours:.0f} h ≈ {result.ffi_months:.1f} meses "
@@ -662,10 +744,17 @@ def explain_iso_code(run_context: Any, code: str) -> str:
         # deja escapar la excepción, _spanish_errors lo disfraza de "❌ No se pudo
         # completar la operación", el agente lo lee como avería y se inventa una
         # causa. La confusión nace aquí, no en el modelo.
-        disponibles = [c.code for c in fixture().menu.iso14224_failure_mode_codes]
+        # Con la definición al lado, no solo el código: una lista pelada de
+        # siglas es un hueco que el modelo rellena inventando. Medido — con
+        # solo los códigos se inventó el significado de FTS, STP, HIO, LOO y
+        # BRD, distinto en cada corrida, en un análisis de seguridad.
+        disponibles = "\n".join(
+            f"- {c.code} — {c.definition}"
+            for c in fixture().menu.iso14224_failure_mode_codes
+        )
         return (
             f"El código '{code.upper()}' no está en el catálogo ISO 14224 de este "
-            f"cliente. Códigos disponibles: {', '.join(disponibles)}."
+            f"cliente. Códigos disponibles:\n{disponibles}"
         )
     return f"{code.upper()} — {definition}: {description}"
 

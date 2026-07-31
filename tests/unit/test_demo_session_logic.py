@@ -89,7 +89,12 @@ global.document = {
   createDocumentFragment: () => el('fragmento', 'fragmento'),
   body: el('body'),
 };
-global.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
+// En el navegador `URL` es el constructor Y el sitio donde viven
+// createObjectURL/revokeObjectURL. Sustituirlo por un objeto plano rompía
+// `new URL(...)`, y como la guardia de descargas falla cerrada, el arnés
+// bloqueaba enlaces que el navegador acepta: un verde y un rojo, ambos falsos.
+URL.createObjectURL = () => 'blob:x';
+URL.revokeObjectURL = () => {};
 global.localStorage = {
   _d: new Map(CFG.store),
   getItem(k) { if (CFG.bloquea) throw new Error('privado');
@@ -625,7 +630,57 @@ class TestNoSeFugaLaLlave:
         script = _re.search(r"<script>(.*?)</script>", DEMO_HTML, _re.S).group(1)
         cuerpo = script[script.index("async function descargar"):]
         cuerpo = cuerpo[: cuerpo.index("exportar.addEventListener")]
-        assert "/^\\/exports\\//.test(url)" in cuerpo, "descargar() no revalida el destino"
+        assert "rutaDeExportSegura(url)" in cuerpo, "descargar() no revalida el destino"
         assert cuerpo.index("descarga bloqueada") < cuerpo.index("Authorization"), (
             "la validación debe correr ANTES de adjuntar la llave"
         )
+
+
+class TestSaltoDeDirectorioCodificado:
+    """La guardia comprobaba `..` literal, que no ve `%2e%2e`. El parser de URL
+    sí lo normaliza, así que `/exports/%2e%2e/%2e%2e/sessions` salía de /exports/
+    llevándose la llave en la cabecera. No era fuga —mismo origen— pero la
+    guardia decía una cosa y hacía otra, y eso se da por cerrado sin estarlo."""
+
+    def _clicable(self, url: str) -> bool:
+        salida = render(f"Aquí: [bajar]({url})")
+        return f"href={url}" in salida
+
+    def test_la_forma_codificada_no_es_clicable(self):
+        assert not self._clicable("/exports/%2e%2e/%2e%2e/sessions")
+        assert not self._clicable("/exports/%2E%2E/sessions")
+
+    def test_la_forma_literal_sigue_sin_serlo(self):
+        assert not self._clicable("/exports/../sessions")
+
+    def test_un_enlace_de_descarga_normal_sigue_siendo_clicable(self):
+        assert self._clicable("/exports/s1/AMEF_P200.xlsx")
+        assert self._clicable("/exports/demo-abc")
+
+    def test_la_guardia_que_usa_descargar_rechaza_lo_mismo(self):
+        # descargar() adjunta la llave, así que se comprueba la función real —
+        # extraída del <script> y ejecutada en node— y no solo el renderizado.
+        import json as _json
+        import re as _re
+        import subprocess as _sub
+
+        script = _re.search(r"<script>(.*?)</script>", DEMO_HTML, _re.S).group(1)
+        inicio = script.index("function rutaDeExportSegura(")
+        fin = script.index("function urlPermitida(")
+        fuente = script[inicio:fin]
+        casos = [
+            "/exports/s1/AMEF.xlsx",
+            "/exports/%2e%2e/%2e%2e/sessions",
+            "/exports/../sessions",
+            "//evil.example/roba",
+            "https://evil.example/roba",
+        ]
+        guion = (
+            fuente
+            + f"console.log(JSON.stringify({_json.dumps(casos)}"
+            + ".map(rutaDeExportSegura)));"
+        )
+        salida = _sub.run(
+            ["node", "-e", guion], capture_output=True, text=True, timeout=30, check=True
+        )
+        assert _json.loads(salida.stdout) == [True, False, False, False, False]

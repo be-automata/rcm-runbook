@@ -517,3 +517,89 @@ class TestGetProgressNoSeUsaComoCompuerta:
         salida = tools_mod.get_progress.entrypoint(Ctx())
         assert "SOLO de la fase actual" in salida
         assert "export_excel" in salida, "no dirige a la herramienta que decide"
+
+
+class TestUnRechazoDelMetodoNoEsUnaAveria:
+    """El agente trata «❌ No se pudo completar la operación» como sistema roto:
+    deja de trabajar, avisa de un fallo técnico y se inventa la causa. Varias
+    herramientas emitían ese banner —algunas en inglés— ante datos que
+    simplemente no valen. Es la diferencia entre «esto se rompió» y «ese dato
+    no es el que va»."""
+
+    BANNER = "No se pudo completar la operación"
+
+    def _ctx(self):
+        class Ctx:
+            session_id = "s-neg"
+            session_state: dict = {}
+
+        return Ctx()
+
+    def test_metodo_de_ffi_escrito_en_espanol(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        salida = tools_mod.calculate_ffi.entrypoint(
+            self._ctx(), method="disponibilidad", u_fraction=0.02, mtive_hours=8760
+        )
+        assert self.BANNER not in salida
+        assert "availability" in salida, "no dice cuál es el método correcto"
+        # Sin el banner pero en inglés seguiría siendo un mensaje del motor
+        # colado en una conversación en español (criterio 1 del UAT).
+        assert "expected one of" not in salida
+        assert "Método de FFI desconocido" in salida
+
+    def test_lista_de_mted_no_numerica(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        salida = tools_mod.calculate_ffi.entrypoint(
+            self._ctx(), method="multi_single",
+            mted_list_hours="ocho,diez", mtive_hours=8760, mmf_hours=100,
+        )
+        assert self.BANNER not in salida
+        assert "could not convert" not in salida, "fuga del mensaje de Python"
+
+    def test_rango_invalido_se_explica_en_espanol(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        salida = tools_mod.calculate_ffi.entrypoint(
+            self._ctx(), method="availability", u_fraction=0.0, mtive_hours=8760
+        )
+        assert self.BANNER not in salida
+        assert "open interval" not in salida, "el mensaje del motor sale en inglés"
+        assert "entre 0 y 1" in salida
+
+    def test_tipo_de_funcion_fuera_del_catalogo(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        salida = tools_mod.confirm_no_functions.entrypoint(
+            self._ctx(), kind="secundarias_raras"
+        )
+        assert self.BANNER not in salida
+        assert "is not a valid FunctionKind" not in salida
+        assert "proteccion" in salida, "no ofrece los tipos válidos"
+
+    def test_un_fallo_tecnico_de_verdad_sigue_llevando_su_banner(self):
+        # El contrapeso: si todo dejara de ser técnico, el agente ya no podría
+        # distinguir una avería real y la callaría.
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Rota:
+            session_id = "s"
+
+            @property
+            def session_state(self):
+                raise RuntimeError("el almacén de sesiones no responde")
+
+        salida = tools_mod.get_progress.entrypoint(Rota())
+        assert self.BANNER in salida
+
+    def test_un_dato_invalido_pide_corregir_no_avisar_a_soporte(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        salida = tools_mod.record_task.entrypoint(
+            self._ctx(), failure_mode_id="FM-001", description="x",
+            frequency="Diaria", duration_hours=1, discipline="mecanica",
+        )
+        assert self.BANNER not in salida
+        assert "corrija y reintente" in salida
+        assert "Diario" in salida, "no ofrece la frecuencia válida del catálogo"

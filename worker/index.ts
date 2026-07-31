@@ -102,6 +102,11 @@ async function estaArrancando(res: Response): Promise<boolean> {
   // con texto en inglés. La primera versión de esto solo cubría dos de las cinco
   // cadenas y el 500 del arranque en frío se seguía escapando al cliente.
   if (res.status < 429) return false;
+  // El 429 va por estado, sin exigir cadena: container.js:876 devuelve el
+  // mensaje crudo del rate-limit («you are requesting too many containers per
+  // second»), que no tiene prefijo fijo y por eso escapaba a la lista. Y un 429
+  // desde el contenedor es, por definición, «todavía no puedo atenderte».
+  if (res.status === 429) return true;
   const texto = await res.clone().text().catch(() => "");
   return AVISOS_DE_LA_LIBRERIA.some((aviso) => texto.includes(aviso));
 }

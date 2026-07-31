@@ -289,5 +289,8 @@ done
 | 26 | Ante un fallo técnico cita el error y no inventa la causa | ☐ |
 | 27 | Las compuertas las decide la herramienta: un rechazo de export lista los faltantes reales | ☐ |
 | 28 | Si el contenedor está arrancando, sale la página de espera en español, no un 500 en inglés | ☐ |
+| 29 | Un código ISO fuera del catálogo se explica como tal, y el agente NO inventa el significado de los códigos | ☐ |
+| 30 | Un dato que la herramienta rechaza (frecuencia, método de FFI, tipo de función) se explica en español y pide corregir, sin hablar de fallo técnico | ☐ |
+| 31 | Un enlace de descarga con salto de directorio codificado (`%2e%2e`) no es clicable | ☐ |
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________

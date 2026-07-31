@@ -140,7 +140,7 @@
     // Se revalida aquí, no solo al pintar el enlace: esta función adjunta la
     // llave en la cabecera, así que es el último sitio donde se puede impedir
     // que salga hacia un destino que no sea nuestro.
-    if(!/^\/exports\//.test(url) || url.indexOf('..') !== -1){
+    if(!rutaDeExportSegura(url)){
       console.warn('descarga bloqueada', url);
       note('meta err', 'Ese enlace de descarga no es válido.');
       return;
@@ -205,10 +205,32 @@
 
   // Solo estos destinos son clicables. Deja fuera javascript:, data: y file:,
   // que son el vector real de un enlace de markdown.
+  // Un solo criterio para las dos barreras. La comprobación literal de '..' no
+  // veía '%2e%2e', que el parser de URL sí normaliza: '/exports/%2e%2e/x' sale
+  // de /exports/. No era fuga (mismo origen), pero la guardia decía una cosa y
+  // hacía otra, y esa es la clase de hueco que luego alguien da por cerrado.
+  function rutaDeExportSegura(u){
+    if(typeof u !== 'string' || u.indexOf('/exports/') !== 0) return false;
+    if(u.indexOf('\\') !== -1) return false;
+    var decodificada;
+    try { decodificada = decodeURIComponent(u); } catch(e){ return false; }
+    if(decodificada.indexOf('..') !== -1) return false;
+    // Y que tras normalizar siga dentro de /exports/, no solo que lo parezca.
+    // La base es un literal y no location.origin a propósito: lo que se valida
+    // es la ruta, y así la guardia no depende de que exista un navegador.
+    try {
+      var base = 'https://base.invalid';
+      var resuelta = new URL(u, base);
+      if(resuelta.origin !== base) return false;
+      if(resuelta.pathname.indexOf('/exports/') !== 0) return false;
+    } catch(e){ return false; }
+    return true;
+  }
+
   function urlPermitida(u){
     if(/^https?:\/\//i.test(u)) return true;
     // Salto de directorio: `/exports/../algo` resolvería fuera de /exports.
-    return u.indexOf('/exports/') === 0 && u.indexOf('..') === -1 && u.indexOf('\\') === -1;
+    return rutaDeExportSegura(u);
   }
 
   function nodoTexto(t){ return document.createTextNode(t); }
