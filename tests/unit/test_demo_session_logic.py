@@ -522,3 +522,46 @@ class TestSoloElBotLlevaMarkdown:
         r = correr(busqueda="?key=abc&session=demo-fantasma", estado=404)
         assert any("No encontramos un análisis anterior" in a for a in r["avisos"])
         assert not any("p()" in a or "strong()" in a for a in r["avisos"])
+
+
+class TestEnfasisNoSeComeContenido:
+    """Hallazgos del spec-verifier. El primero es de dominio: este producto
+    calcula RPN = S x O x D, así que un `S*O*D` que se renderice «S O D» no
+    pierde formato, pierde el contenido de un cálculo de riesgo."""
+
+    def test_multiplicacion_conserva_los_asteriscos(self):
+        assert render("RPN = S*O*D") == "p()[RPN = S*O*D]"
+        assert render("3*4*5") == "p()[3*4*5]"
+
+    def test_negrita_admite_cursiva_dentro(self):
+        # Antes salía `*a b c*` con cero <strong>: el mismo síntoma que este
+        # trabajo vino a eliminar, sobreviviendo en un caso anidado.
+        salida = render("**a *b* c**")
+        assert "strong()" in salida and "em()[b]" in salida
+        assert "*" not in salida
+
+    def test_guion_bajo_intrapalabra_no_es_cursiva(self):
+        assert render("snake_case_name") == "p()[snake_case_name]"
+
+    def test_enfasis_normal_sigue_funcionando(self):
+        assert "em()[cursiva]" in render("*cursiva*")
+        assert "em()[cursiva]" in render("_cursiva_")
+        assert "strong()[negrita]" in render("**negrita**")
+        assert "strong()[em()[ambas]]" in render("***ambas***")
+
+
+class TestSinHtmlCrudo:
+    """Guardia: la spec exige construir con nodos DOM y prohíbe innerHTML.
+    Sin este test, nada impide reintroducirlo en un cambio futuro."""
+
+    PROHIBIDOS = ("innerHTML", "outerHTML", "insertAdjacentHTML",
+                  "document.write", "eval(", "new Function")
+
+    def test_el_html_no_contiene_apis_que_parsean_html(self):
+        import re as _re
+
+        script = _re.search(r"<script>(.*?)</script>", DEMO_HTML, _re.S).group(1)
+        # Se ignoran los comentarios: el módulo explica por qué no se usa innerHTML.
+        codigo = _re.sub(r"//.*", "", script)
+        for api in self.PROHIBIDOS:
+            assert api not in codigo, f"{api} reintroducido en demo.html"

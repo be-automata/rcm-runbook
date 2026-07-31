@@ -34,7 +34,7 @@
          word-wrap:break-word; box-shadow:0 1px 2px rgba(0,0,0,.08); }
   /* El usuario escribe texto plano: sus saltos de línea se respetan tal cual.
      El bot se renderiza como bloques, y ahí pre-wrap duplicaría el espaciado. */
-  .user, .meta, .hint { white-space:pre-wrap; }
+  .user, .meta, .hint, .tools { white-space:pre-wrap; }
   .bot { white-space:normal; }
   .bot p { margin:.45em 0; }
   .bot p:first-child { margin-top:0; }
@@ -51,7 +51,6 @@
   .bot hr { border:0; border-top:1px solid #e3e7ec; margin:.7em 0; }
   .user { align-self:flex-end; background:var(--user); color:#fff; border-bottom-right-radius:4px; }
   .bot  { align-self:flex-start; background:var(--bot); border-bottom-left-radius:4px; }
-  .bot h1,.bot h2,.bot h3 { font-size:1em; margin:.4em 0 .2em; }
   .meta { align-self:center; font-size:12px; color:#888; }
   .tools { align-self:flex-start; font-size:12px; color:#6a7; background:#eefaef;
            padding:4px 10px; border-radius:10px; }
@@ -178,7 +177,11 @@
   // que a su vez repite lo que escribe el usuario, así que sanear una cadena
   // sería una carrera que se pierde; creando nodos, el XSS no existe por
   // construcción: un "<img onerror=…>" solo puede acabar siendo texto.
-  var RE_ENLINEA = /(`[^`\n]+`)|(\*\*\*[^*\n]+\*\*\*)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]\n]+\]\([^)\s]+\))/;
+    // La negrita admite cursivas dentro (`**a *b* c**`), y el énfasis simple
+  // exige frontera de palabra: sin eso `RPN = S*O*D` se renderizaba «S O D»
+  // comiéndose los asteriscos de una multiplicación. Perder formato es feo;
+  // perder contenido en un cálculo de riesgo es inaceptable.
+  var RE_ENLINEA = /(`[^`\n]+`)|(\*\*\*[^*\n]+\*\*\*)|(\*\*(?:[^*\n]|\*(?!\*))+\*\*)|((?<![\w*])\*[^*\n]+\*(?![\w*]))|((?<![\w_])_[^_\n]+_(?![\w_]))|(\[[^\]\n]+\]\([^)\s]+\))/;
   var RE_ORD = /^\s*\d+[.)]\s+/;
   var RE_VIN = /^\s*[-*•]\s+/;
 
