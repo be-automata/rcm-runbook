@@ -594,3 +594,38 @@ class TestEnlaceDeDescargaDelChat:
     def test_los_enlaces_externos_siguen_abriendo_fuera(self):
         salida = render("Ver [la norma](https://ejemplo.com/ja1011)")
         assert "target=_blank" in salida and "rel=noopener noreferrer" in salida
+
+
+class TestNoSeFugaLaLlave:
+    """`var mm` es de ámbito de función: con dos enlaces markdown en la misma
+    línea, el segundo la reasignaba antes de que nadie pulsara el primero, y el
+    clic en el enlace `/exports/` acababa llamando a descargar() con la URL del
+    segundo — saltándose urlPermitida y mandando `Authorization: Bearer <llave>`
+    a un dominio de terceros. Con prueba de concepto del validador."""
+
+    LINEA = ("Descarga [el Excel](/exports/s1/AMEF.xlsx) y consulta "
+             "[el manual](https://evil.example/roba)")
+
+    def test_cada_enlace_conserva_su_propio_destino(self):
+        salida = render(self.LINEA)
+        assert "href=/exports/s1/AMEF.xlsx" in salida
+        assert "href=https://evil.example/roba" in salida
+
+    def test_el_manejador_captura_su_url_por_parametro(self):
+        # El helper existe y recibe la URL como argumento; sin él, el cierre
+        # comparte la variable del bucle.
+        assert "function alPulsarDescarga(url)" in DEMO_HTML
+        assert "alPulsarDescarga(mm[2])" in DEMO_HTML
+
+    def test_descargar_revalida_el_destino(self):
+        # Última barrera: descargar() adjunta la llave, así que rechaza por su
+        # cuenta cualquier URL que no sea /exports/.
+        import re as _re
+
+        script = _re.search(r"<script>(.*?)</script>", DEMO_HTML, _re.S).group(1)
+        cuerpo = script[script.index("async function descargar"):]
+        cuerpo = cuerpo[: cuerpo.index("exportar.addEventListener")]
+        assert "/^\\/exports\\//.test(url)" in cuerpo, "descargar() no revalida el destino"
+        assert cuerpo.index("descarga bloqueada") < cuerpo.index("Authorization"), (
+            "la validación debe correr ANTES de adjuntar la llave"
+        )

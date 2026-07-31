@@ -459,3 +459,44 @@ class TestEnlaceDeExportSinLlave:
         assert "OSK_secreta_de_prueba" not in salida, "la llave se filtró al chat"
         assert "key=" not in salida
         assert "[Descargar el Excel](/exports/" in salida, salida
+
+
+class TestCodigoIsoAusenteNoEsFalloTecnico:
+    """Un código fuera del catálogo se propagaba como KeyError, y
+    `_spanish_errors` lo disfrazaba de «❌ No se pudo completar la operación».
+    El agente lo leía como avería del sistema y se inventaba la causa. La
+    confusión nacía en la capa de herramientas, no en el modelo."""
+
+    def _ctx(self):
+        class Ctx:
+            session_id = "s"
+            session_state: dict = {}
+
+        return Ctx()
+
+    def test_devuelve_un_mensaje_de_negocio_no_el_banner_de_fallo(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        salida = tools_mod.explain_iso_code.entrypoint(self._ctx(), code="ZZZZ99")
+        assert "❌" not in salida, "un código ausente no es un fallo del sistema"
+        assert "no está en el catálogo" in salida
+        assert "Códigos disponibles" in salida
+
+    def test_un_codigo_valido_sigue_explicandose(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.catalogs import fixture
+
+        valido = fixture().menu.iso14224_failure_mode_codes[0].code
+        salida = tools_mod.explain_iso_code.entrypoint(self._ctx(), code=valido)
+        assert salida.startswith(valido) and "❌" not in salida
+
+    def test_el_enlace_no_expone_la_ruta_del_contenedor(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from tests.unit.test_compliance import full_session
+
+        class Ctx:
+            session_id = "s-ruta"
+            session_state = {"rcm": full_session().model_dump(mode="json")}
+
+        salida = tools_mod.export_excel.entrypoint(Ctx(), draft=True)
+        assert "data/exports/" not in salida, "expone la ruta interna del contenedor"

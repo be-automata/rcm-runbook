@@ -625,7 +625,7 @@ def export_excel(run_context: Any, draft: bool = False) -> str:
     # evitara repetir el enlace, dejando al cliente sin nada que pulsar.
     url = f"/exports/{path.parent.name}/{path.name}"
     return (
-        f"✔ Entregable {kind} exportado: {path}\n"
+        f"✔ Entregable {kind} exportado ({path.name}).\n"
         f"Entregue este enlace al interesado, tal cual: [Descargar el Excel]({url})"
         f"{warn}"
     )
@@ -643,7 +643,20 @@ def consult_handbook(run_context: Any, query: str) -> str:
 @_spanish_errors
 def explain_iso_code(run_context: Any, code: str) -> str:
     """Explica un código ISO 14224 del catálogo del cliente (definición y descripción)."""
-    definition, description = iso_code_info(code.upper())
+    from rcm_runbook.models.catalogs import fixture
+
+    try:
+        definition, description = iso_code_info(code.upper())
+    except KeyError:
+        # Un código ausente es un caso de negocio, no un fallo del sistema. Si se
+        # deja escapar la excepción, _spanish_errors lo disfraza de "❌ No se pudo
+        # completar la operación", el agente lo lee como avería y se inventa una
+        # causa. La confusión nace aquí, no en el modelo.
+        disponibles = [c.code for c in fixture().menu.iso14224_failure_mode_codes]
+        return (
+            f"El código '{code.upper()}' no está en el catálogo ISO 14224 de este "
+            f"cliente. Códigos disponibles: {', '.join(disponibles)}."
+        )
     return f"{code.upper()} — {definition}: {description}"
 
 

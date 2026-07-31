@@ -137,6 +137,14 @@
   // enlace, lo que la dejaba en la transcripción guardada en Postgres.
   async function descargar(url, avisar){
     if(!key){ note('meta err', 'Falta la llave de acceso en el enlace.'); return; }
+    // Se revalida aquí, no solo al pintar el enlace: esta función adjunta la
+    // llave en la cabecera, así que es el último sitio donde se puede impedir
+    // que salga hacia un destino que no sea nuestro.
+    if(!/^\/exports\//.test(url) || url.indexOf('..') !== -1){
+      console.warn('descarga bloqueada', url);
+      note('meta err', 'Ese enlace de descarga no es válido.');
+      return;
+    }
     try {
       var r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + key } });
       if(!r.ok){
@@ -205,6 +213,10 @@
 
   function nodoTexto(t){ return document.createTextNode(t); }
 
+  function alPulsarDescarga(url){
+    return function(ev){ ev.preventDefault(); descargar(url, true); };
+  }
+
   function enLinea(texto, destino){
     var resto = String(texto);
     while(resto){
@@ -230,10 +242,11 @@
           if(/^https?:/i.test(mm[2])){
             el.target = '_blank'; el.rel = 'noopener noreferrer';
           } else {
-            // /exports/ exige la llave, que solo tiene esta página.
-            el.addEventListener('click', function(ev){
-              ev.preventDefault(); descargar(mm[2], false);
-            });
+            // /exports/ exige la llave, que solo tiene esta página. El destino
+            // se captura por parámetro: `var mm` es de ámbito de función, y con
+            // dos enlaces en la misma línea el segundo la reasignaba antes del
+            // clic, mandando la llave a donde dijera el segundo.
+            el.addEventListener('click', alPulsarDescarga(mm[2]));
           }
         } else {
           el = nodoTexto(t);  // esquema no permitido: se queda como texto

@@ -89,13 +89,21 @@ p{margin:.4em 0;color:#555;line-height:1.5}small{color:#999}</style></head>
  * nunca se dispara — eso fue justo el error de la primera versión de este
  * arreglo, que parecía correcta y era código muerto.
  */
+const AVISOS_DE_LA_LIBRERIA = [
+  "Error proxying request to container", // container.js:975
+  "Container suddenly disconnected", // :972
+  "Failed to start container", // :879 — la del arranque en frío
+  "There is no Container instance available", // :874, llega como 503
+  "Origin is disallowed", // :204 y siguientes, llega como 520
+];
+
 async function estaArrancando(res: Response): Promise<boolean> {
-  if (res.status !== 500) return false;
+  // No basta con mirar el 500: la librería devuelve además 503, 429 y 520, todos
+  // con texto en inglés. La primera versión de esto solo cubría dos de las cinco
+  // cadenas y el 500 del arranque en frío se seguía escapando al cliente.
+  if (res.status < 429) return false;
   const texto = await res.clone().text().catch(() => "");
-  return (
-    texto.includes("Error proxying request to container") ||
-    texto.includes("Container suddenly disconnected")
-  );
+  return AVISOS_DE_LA_LIBRERIA.some((aviso) => texto.includes(aviso));
 }
 
 function respuestaDeEspera(request: Request): Response {
