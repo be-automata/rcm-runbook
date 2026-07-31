@@ -574,3 +574,23 @@ class TestSinHtmlCrudo:
         codigo = _re.sub(r"//.*", "", script)
         for api in self.PROHIBIDOS:
             assert api not in codigo, f"{api} reintroducido en demo.html"
+
+
+class TestEnlaceDeDescargaDelChat:
+    """El facilitador entrega `[Descargar el Excel](/exports/…)` sin llave.
+    Navegar ahí daría 401: la llave solo la tiene esta página, así que el clic
+    se intercepta y se descarga autenticado, igual que con el botón."""
+
+    def test_el_enlace_de_exports_no_navega(self):
+        salida = render("Listo: [Descargar el Excel](/exports/s1/AMEF_P200.xlsx)")
+        assert "href=/exports/s1/AMEF_P200.xlsx" in salida
+        assert "target=_blank" not in salida
+
+    def test_el_enlace_no_lleva_la_llave(self):
+        # La llave en la URL acababa en la transcripción guardada en Postgres.
+        salida = render("Listo: [Descargar el Excel](/exports/s1/AMEF_P200.xlsx)")
+        assert "key=" not in salida
+
+    def test_los_enlaces_externos_siguen_abriendo_fuera(self):
+        salida = render("Ver [la norma](https://ejemplo.com/ja1011)")
+        assert "target=_blank" in salida and "rel=noopener noreferrer" in salida

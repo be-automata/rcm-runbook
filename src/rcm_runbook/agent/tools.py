@@ -14,7 +14,6 @@ import logging
 import time
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import quote
 
 from agno.tools.decorator import tool
 
@@ -619,14 +618,16 @@ def export_excel(run_context: Any, draft: bool = False) -> str:
     audit = compliance.validate_ja1011(session)
     warn = ("\n⚠ Advertencias JA1011: " + "; ".join(audit)) if audit else ""
     kind = "BORRADOR" if draft else "definitivo"
-    # La llave viaja en el enlace: la descarga está protegida y sin ella el
-    # cliente que hace clic recibe un 401 en vez de su Excel.
+    # Enlace SIN la llave: la página de demo intercepta los enlaces /exports/ y
+    # los descarga con la llave en la cabecera, igual que el botón. Antes se
+    # incrustaba aquí, y eso (a) la dejaba en la transcripción guardada en
+    # Postgres y en el historial del navegador, y (b) hacía que el modelo
+    # evitara repetir el enlace, dejando al cliente sin nada que pulsar.
     url = f"/exports/{path.parent.name}/{path.name}"
-    if settings.os_security_key:
-        url += f"?key={quote(settings.os_security_key, safe='')}"
     return (
         f"✔ Entregable {kind} exportado: {path}\n"
-        f"Descarga: {url}{warn}"
+        f"Entregue este enlace al interesado, tal cual: [Descargar el Excel]({url})"
+        f"{warn}"
     )
 
 

@@ -79,31 +79,59 @@ p{margin:.4em 0;color:#555;line-height:1.5}small{color:#999}</style></head>
   });
 }
 
+/**
+ * ¿Esta respuesta es «el contenedor no está listo» disfrazado de 500?
+ *
+ * `@cloudflare/containers` NO lanza cuando el contenedor está arrancando:
+ * captura el fallo y devuelve `new Response(..., { status: 500 })` con el texto
+ * en inglés (ver `dist/lib/container.js`, «Error proxying request to container»
+ * y «Container suddenly disconnected»). Un `try/catch` alrededor del fetch
+ * nunca se dispara — eso fue justo el error de la primera versión de este
+ * arreglo, que parecía correcta y era código muerto.
+ */
+async function estaArrancando(res: Response): Promise<boolean> {
+  if (res.status !== 500) return false;
+  const texto = await res.clone().text().catch(() => "");
+  return (
+    texto.includes("Error proxying request to container") ||
+    texto.includes("Container suddenly disconnected")
+  );
+}
+
+function respuestaDeEspera(request: Request): Response {
+  // Al navegador, una página en español; a la API, JSON.
+  const quiereHtml = (request.headers.get("accept") || "").includes("text/html");
+  return quiereHtml
+    ? paginaDespertando()
+    : new Response(
+        JSON.stringify({ detail: "El sistema está iniciando. Reintente en unos segundos." }),
+        { status: 503, headers: { "content-type": "application/json", "retry-after": "5" } },
+      );
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const contenedor = getContainer(env.RCM_CONTAINER, "rcm");
     // Solo se reintenta lo idempotente. Un POST a /runs que llegó y se cortó
     // después duplicaría el turno del cliente y le cobraría dos veces el modelo.
+    // Aun así, al POST también se le cambia el 500 en inglés por el aviso.
     const reintentable = request.method === "GET" || request.method === "HEAD";
     const intentos = reintentable ? 3 : 1;
     for (let i = 0; i < intentos; i++) {
+      let res: Response;
       try {
-        return await contenedor.fetch(request);
+        res = await contenedor.fetch(request);
       } catch (e) {
-        if (i === intentos - 1) {
-          console.warn("contenedor no disponible", String(e));
-          // Al navegador, una página en español; a la API, JSON.
-          const quiereHtml = (request.headers.get("accept") || "").includes("text/html");
-          return quiereHtml
-            ? paginaDespertando()
-            : new Response(
-                JSON.stringify({ detail: "El sistema está iniciando. Reintente en unos segundos." }),
-                { status: 503, headers: { "content-type": "application/json", "retry-after": "5" } },
-              );
-        }
+        console.warn("contenedor lanzó", String(e));
+        if (i === intentos - 1) return respuestaDeEspera(request);
         await new Promise((r) => setTimeout(r, 1500));
+        continue;
       }
+      if (!(await estaArrancando(res))) return res;
+      console.warn("contenedor arrancando, intento", i + 1);
+      if (i === intentos - 1) return respuestaDeEspera(request);
+      await new Promise((r) => setTimeout(r, 1500));
     }
-    return paginaDespertando();
+    return respuestaDeEspera(request);
   },
 };

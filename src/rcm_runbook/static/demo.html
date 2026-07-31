@@ -131,15 +131,14 @@
   // cabecera y el archivo se recibe como blob: así la llave nunca entra en una
   // URL, que acabaría en el historial del navegador. El nombre lo decide el
   // servidor (Content-Disposition), porque aquí no se conoce el TAG del equipo.
-  exportar.addEventListener('click', async function(){
+  // La usan el botón y también los enlaces `/exports/…` que entrega el
+  // facilitador en el chat: navegar a esa ruta daría 401 porque la llave solo
+  // la tiene esta página. Antes la herramienta incrustaba la llave en el
+  // enlace, lo que la dejaba en la transcripción guardada en Postgres.
+  async function descargar(url, avisar){
     if(!key){ note('meta err', 'Falta la llave de acceso en el enlace.'); return; }
-    exportar.disabled = true;
-    var etiqueta = exportar.textContent;
-    exportar.textContent = 'Generando…';
     try {
-      var r = await fetch('/exports/' + encodeURIComponent(sessionId), {
-        headers: { 'Authorization': 'Bearer ' + key }
-      });
+      var r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + key } });
       if(!r.ok){
         // El servidor ya explica en español qué pasó; un número de error suelto
         // no le dice nada a quien está usando esto.
@@ -155,18 +154,29 @@
       var m = cd.match(/filename="?([^";]+)"?/);
       if(m) nombre = m[1];
       var blob = await r.blob();
-      var url = URL.createObjectURL(blob);
+      var objeto = URL.createObjectURL(blob);
       var a = document.createElement('a');
-      a.href = url; a.download = nombre;
+      a.href = objeto; a.download = nombre;
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
-      note('meta', 'Descargado: ' + nombre +
-        (nombre.indexOf('BORRADOR_') === 0
-          ? ' — es un borrador: el análisis aún no está completo.'
-          : ''));
+      setTimeout(function(){ URL.revokeObjectURL(objeto); }, 10000);
+      if(avisar){
+        note('meta', 'Descargado: ' + nombre +
+          (nombre.indexOf('BORRADOR_') === 0
+            ? ' — es un borrador: el análisis aún no está completo.'
+            : ''));
+      }
     } catch(err) {
-      console.warn('exportar', err);
+      console.warn('descargar', err);
       note('meta err', 'No se pudo descargar. Verifique su conexión e intente de nuevo.');
+    }
+  }
+
+  exportar.addEventListener('click', async function(){
+    exportar.disabled = true;
+    var etiqueta = exportar.textContent;
+    exportar.textContent = 'Generando…';
+    try {
+      await descargar('/exports/' + encodeURIComponent(sessionId), true);
     } finally {
       exportar.disabled = false; exportar.textContent = etiqueta;
     }
@@ -217,7 +227,14 @@
         if(mm && urlPermitida(mm[2])){
           el = document.createElement('a');
           el.href = mm[2]; enLinea(mm[1], el);
-          if(/^https?:/i.test(mm[2])){ el.target = '_blank'; el.rel = 'noopener noreferrer'; }
+          if(/^https?:/i.test(mm[2])){
+            el.target = '_blank'; el.rel = 'noopener noreferrer';
+          } else {
+            // /exports/ exige la llave, que solo tiene esta página.
+            el.addEventListener('click', function(ev){
+              ev.preventDefault(); descargar(mm[2], false);
+            });
+          }
         } else {
           el = nodoTexto(t);  // esquema no permitido: se queda como texto
         }

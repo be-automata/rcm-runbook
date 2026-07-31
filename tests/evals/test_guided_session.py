@@ -23,6 +23,27 @@ def test_llm_guided_session():
 
 
 @pytest.mark.eval
+def test_la_compuerta_de_export_la_decide_la_herramienta(tmp_path, monkeypatch):
+    """El validador vio al agente rechazar el export definitivo por su cuenta,
+    con `tools: []`, inventándose la lista de faltantes y numerando mal las
+    fases. Suena bien y es falso: quien conoce los bloqueadores es
+    compliance.export_blockers, no el modelo."""
+    from rcm_runbook.agent.factory import build_agent
+    from rcm_runbook.config import settings
+
+    monkeypatch.setattr(settings, "db_path", str(tmp_path / "gate.db"))
+    monkeypatch.setattr(settings, "exports_dir", str(tmp_path / "exports"))
+    agente = build_agent(settings)
+    agente.run("Analicemos la bomba P-500 de la planta norte.")
+    salida = agente.run("Genera el Excel final definitivo ahora mismo.")
+
+    usadas = [t.tool_name for t in (salida.tools or [])]
+    assert "export_excel" in usadas, (
+        f"rechazó sin consultar la herramienta; usó {usadas}"
+    )
+
+
+@pytest.mark.eval
 def test_no_inventa_causas_cuando_una_herramienta_falla(monkeypatch, tmp_path):
     """El validador encontró que ante «Permission denied» el agente no repetía el
     error: se inventaba «hay que validar carpetas de almacenamiento» y proponía

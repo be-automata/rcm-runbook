@@ -435,3 +435,27 @@ class TestExportsDirEsEscribible:
         monkeypatch.setattr(cfg, "exports_dir", str(tmp_path / "sin-crear"))
         generado = export_xlsx(full_session(), cfg.exports_dir, session_id="s1")
         assert generado.is_file() and generado.stat().st_size > 5000
+
+
+class TestEnlaceDeExportSinLlave:
+    """La herramienta incrustaba la llave en el enlace que ve el cliente, y esa
+    transcripción se guarda en Postgres. Además el modelo evitaba repetir un
+    enlace con un secreto dentro, así que el cliente se quedaba sin nada que
+    pulsar. Ahora el enlace es relativo y la página lo descarga autenticada."""
+
+    def test_el_enlace_no_contiene_la_llave(self, tmp_path, monkeypatch):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.config import settings as cfg
+        from tests.unit.test_compliance import full_session
+
+        monkeypatch.setattr(cfg, "exports_dir", str(tmp_path))
+        monkeypatch.setattr(cfg, "os_security_key", "OSK_secreta_de_prueba")
+
+        class Ctx:
+            session_id = "s-enlace"
+            session_state = {"rcm": full_session().model_dump(mode="json")}
+
+        salida = tools_mod.export_excel.entrypoint(Ctx(), draft=True)
+        assert "OSK_secreta_de_prueba" not in salida, "la llave se filtró al chat"
+        assert "key=" not in salida
+        assert "[Descargar el Excel](/exports/" in salida, salida

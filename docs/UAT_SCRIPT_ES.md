@@ -12,8 +12,11 @@ Este guion se ejecuta contra el **despliegue en Cloudflare**:
 `ANTHROPIC_API_KEY` o `CLAUDE_CODE_OAUTH_TOKEN` en el `.env`).
 
 > **Arranque en frío:** el contenedor duerme a los 20 min sin tráfico. La primera
-> petición del día lo despierta y tarda bastante más; no es un fallo. Conviene
-> hacer un `curl $BASE/health` unos minutos antes de empezar.
+> petición del día lo despierta y tarda bastante más; no es un fallo. Mientras
+> arranca, el navegador ve una **página de espera en español que se recarga
+> sola** — si aparece un 500 con texto en inglés («Error proxying request to
+> container»), eso sí es un defecto. Conviene despertar el sistema unos minutos
+> antes con `curl $BASE/health`.
 
 ---
 
@@ -280,5 +283,11 @@ done
 | 20 | Las respuestas del agente se leen formateadas, sin asteriscos en pantalla | ☐ |
 | 21 | Lo que escribe el cliente sigue siendo texto plano | ☐ |
 | 22 | Un turno con herramienta sale en párrafos separados, no pegado | ☐ |
+| 23 | La exportación **por chat** funciona, no solo la del botón | ☐ |
+| 24 | Las listas numeradas conservan su numeración (no reinician en «1.») | ☐ |
+| 25 | El agente entrega el enlace `/exports/…` clicable, no solo el nombre del archivo | ☐ |
+| 26 | Ante un fallo técnico cita el error y no inventa la causa | ☐ |
+| 27 | Las compuertas las decide la herramienta: un rechazo de export lista los faltantes reales | ☐ |
+| 28 | Si el contenedor está arrancando, sale la página de espera en español, no un 500 en inglés | ☐ |
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________
