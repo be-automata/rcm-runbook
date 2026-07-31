@@ -412,3 +412,26 @@ class TestTempFilesAreCleanedUp:
         assert r.status_code == 200
         despues = set(glob.glob("/tmp/rcm-export-*"))
         assert despues <= antes, f"quedaron temporales sin borrar: {despues - antes}"
+
+
+class TestExportsDirEsEscribible:
+    """La imagen corría con /app propiedad de root y el proceso como uid 10001,
+    así que `export_excel` moría con «Permission denied: 'data'»: la descarga
+    por chat estaba rota en producción mientras la del botón funcionaba."""
+
+    def test_el_dockerfile_da_permisos_al_directorio_de_trabajo(self):
+        from pathlib import Path
+
+        dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+        assert "chown -R rcm:rcm /app" in dockerfile, (
+            "sin esto el proceso no puede crear data/exports y export_excel falla"
+        )
+
+    def test_la_herramienta_escribe_donde_apunta_la_config(self, tmp_path, monkeypatch):
+        from rcm_runbook.config import settings as cfg
+        from rcm_runbook.export.excel import export_xlsx
+        from tests.unit.test_compliance import full_session
+
+        monkeypatch.setattr(cfg, "exports_dir", str(tmp_path / "sin-crear"))
+        generado = export_xlsx(full_session(), cfg.exports_dir, session_id="s1")
+        assert generado.is_file() and generado.stat().st_size > 5000

@@ -48,7 +48,7 @@ function el(id, tag) {
 function serializa(n) {
   if (n == null) return '';
   if (typeof n === 'string') return n;
-  const atributos = ['className', 'href', 'target', 'rel']
+  const atributos = ['className', 'href', 'target', 'rel', 'start']
     .filter((a) => n[a]).map((a) => `${a}=${n[a]}`).join(',');
   const attr = atributos ? `{${atributos}}` : '';
   const propio = n.textContent || '';
@@ -354,6 +354,15 @@ class TestMarkdown:
         salida = render("1. Primero\n2. Segundo\n3. Tercero")
         assert salida.startswith("ol()[")
         assert salida.count("li()") == 3
+
+    def test_lista_numerada_conserva_el_numero_de_inicio(self):
+        # El agente enumera con líneas en blanco entre ítems, lo que abre una
+        # lista nueva por cada uno; sin `start` dos opciones distintas salían
+        # ambas como «1.» en pantalla.
+        salida = render("1. Primero\n\n2. Segundo\n\n3. Tercero")
+        assert salida.count("ol()") == 3
+        assert "start=2" in salida and "start=3" in salida
+        assert "start=1" not in salida
 
     def test_lista_con_vinetas(self):
         salida = render("- Uno\n- Dos")

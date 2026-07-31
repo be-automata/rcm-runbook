@@ -23,7 +23,9 @@ Este guion se ejecuta contra el **despliegue en Cloudflare**:
 
    ```bash
    BASE=https://rcm-demo.beautomata.com
-   curl -s -o /dev/null -w '%{http_code}\n' $BASE/health      # 200
+   # Reintente hasta 200: si el contenedor está dormido o reiniciando, la
+   # primera petición puede devolver 500 o un error de proxy en inglés.
+   until curl -s -o /dev/null -w '%{http_code}\n' $BASE/health | grep -q 200; do sleep 5; done
    ```
 
 2. Abra la UI de AgentOS (https://os.agno.com) y conéctela a `$BASE`. La UI
@@ -129,7 +131,9 @@ controles actuales de cada modo.
 1. Abra en el navegador, **con la llave** (la descarga está protegida):
    `$BASE/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`
    El archivo se **regenera** desde la base de datos, no se lee de disco.
-   - [ ] Descarga un `.xlsx` válido (no un error 404/400).
+   - [ ] Descarga un `.xlsx` válido (no un error 404/400). **Este paso presupone
+     el análisis completo**: con uno incompleto, el definitivo responde 404 a
+     propósito (ver §9b, paso 4).
    - [ ] Sin `?key=` la misma URL responde 401.
 2. **Cierre la pestaña del navegador por completo.** Vuelva a abrir la UI y retome
    el chat con el **mismo `session_id`**.
@@ -157,7 +161,7 @@ Recorrido del enlace que se le manda a un interesado no técnico, contra `$BASE`
 
 1. Abra `$BASE/demo?key=<OS_SECURITY_KEY>` (sin `&session=`).
    - [ ] Carga el chat y la barra de direcciones **se reescribe sola** añadiendo
-     `&session=demo-xxxxxxxx`.
+     `&session=demo-<uuid>` (por ejemplo `demo-e24aa4b2-2ae8-4dc6-8eca-…`).
 2. Escriba un mensaje y espere la respuesta.
    - [ ] Responde el Facilitador y desaparece el texto de bienvenida.
 3. Recargue con el enlace **simple** otra vez (`/demo?key=…`, sin `&session=`).
@@ -167,12 +171,17 @@ Recorrido del enlace que se le manda a un interesado no técnico, contra `$BASE`
    dispositivo** (o una ventana privada, que no comparte `localStorage`).
    - [ ] Aparece la misma conversación: el análisis viaja entre dispositivos.
 5. Pulse **Nuevo análisis** (arriba a la derecha).
-   - [ ] Empieza en blanco, con un `session` distinto en la URL, y vuelve el
-     texto de bienvenida.
+   - [ ] Pide confirmación antes de descartar («¿Empezar un análisis nuevo?…»).
+   - [ ] Al aceptar, empieza en blanco, con un `session` distinto en la URL, y
+     vuelve el texto de bienvenida.
+   - [ ] Aparece además «Tiene un análisis anterior guardado. **Volver a él**»,
+     que devuelve a la conversación descartada.
 6. Abra `$BASE/demo` **sin** `?key=`.
    - [ ] Avisa «Falta la llave de acceso…» y el botón Enviar queda deshabilitado.
 7. Abra la consola del navegador (F12).
-   - [ ] Cero errores rojos en la consola.
+   - [ ] Cero errores rojos **salvo los 404 esperados y manejados**: el de
+     `/sessions/<id>/runs` en una sesión nueva y el de `/exports/<id>` al pulsar
+     «Descargar Excel» sin TAG registrado. Ambos muestran su aviso en español.
 
 ## 9a. Las respuestas se leen como texto formateado (3 min)
 

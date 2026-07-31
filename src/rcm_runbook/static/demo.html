@@ -257,6 +257,13 @@
       if(RE_ORD.test(l) || RE_VIN.test(l)){
         var ord = RE_ORD.test(l), re = ord ? RE_ORD : RE_VIN;
         var lista = document.createElement(ord ? 'ol' : 'ul');
+        // El agente enumera con líneas en blanco entre ítems, lo que abre una
+        // lista nueva por cada uno. Sin `start`, dos opciones distintas salían
+        // ambas como «1.» en pantalla.
+        if(ord){
+          var primero = parseInt((l.match(/\d+/) || ['1'])[0], 10);
+          if(primero > 1) lista.start = primero;
+        }
         while(i < lineas.length && re.test(lineas[i])){
           var li = document.createElement('li');
           enLinea(lineas[i].replace(re, ''), li);

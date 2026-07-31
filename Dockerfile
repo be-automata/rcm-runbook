@@ -33,6 +33,13 @@ RUN useradd --create-home --uid 10001 rcm
 WORKDIR /app
 COPY --from=build --chown=rcm:rcm /app /app
 
+# WORKDIR crea /app como root y `COPY --chown` solo cambia el contenido, no el
+# directorio. Sin esto el proceso (uid 10001) no puede crear `data/exports` y la
+# herramienta export_excel muere con «Permission denied: 'data'» — la descarga
+# por chat quedaba rota mientras la del botón funcionaba, porque esa usa
+# tempfile. El disco es efímero igual; lo que importa es que sea escribible.
+RUN mkdir -p /app/data/exports && chown -R rcm:rcm /app
+
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
