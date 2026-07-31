@@ -98,6 +98,33 @@ esperar a que el contenedor duerma y volver: el historial debe repintarse.
 Ojo con `sleepAfter = "20m"` en `worker/index.ts`: cuanto más alto, menos
 arranques en frío para el cliente y más minutos facturados.
 
+## Volver atrás (si Cloudflare falla y hay una demo en 10 minutos)
+
+El dominio apunta al Worker porque se **borró** el CNAME que lo mandaba al túnel
+de la Mac. Para revertir:
+
+1. Quitar el dominio propio del Worker: borrar el bloque `routes` de
+   `wrangler.jsonc` y `npx wrangler deploy` (o quitarlo desde el panel, en
+   Workers → rcm-runbook → Settings → Domains & Routes).
+2. Recrear el CNAME del túnel:
+
+   ```bash
+   cloudflared tunnel --config ~/.cloudflared/rcm-runbook.yml \
+     route dns rcm-runbook rcm-demo.beautomata.com
+   ```
+
+   Túnel `rcm-runbook`, id `99d06e9b-a057-46cc-b5b9-0a88c2cf04c5` → CNAME
+   `<id>.cfargotunnel.com`, proxied.
+3. Volver a levantar los agentes de la Mac:
+
+   ```bash
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.beautomata.rcm-runbook.plist
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.beautomata.rcm-tunnel.plist
+   ```
+
+Ojo: la Mac usa SQLite local, así que las sesiones creadas en la nube (Neon)
+**no** aparecen ahí. Es una vuelta atrás de disponibilidad, no de datos.
+
 ## Lo que queda en la Mac
 
 Nada obligatorio. Los agentes launchd (`com.beautomata.rcm-runbook` y
