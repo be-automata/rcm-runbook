@@ -138,12 +138,21 @@ Dos consecuencias prácticas:
 
 ## Descarga de entregables
 
-Los enlaces `/exports/...` que da el agente requieren la llave. Formato listo
-para navegador:
+Lo normal es que el cliente use el botón **Descargar Excel** del encabezado: no
+tiene que pedírselo al facilitador ni manejar URLs, y la llave no queda en su
+historial (viaja en la cabecera). El servidor decide el nombre y, si el análisis
+no está completo, entrega un `BORRADOR_` claramente marcado — nunca un borrador
+disfrazado de definitivo, ni aunque se manipule la URL.
+
+Para armar un enlace a mano (soporte, o mandarlo por correo):
 
 ```
+https://rcm-demo.beautomata.com/exports/<sesión>?key=<OS_SECURITY_KEY>
 https://rcm-demo.beautomata.com/exports/<sesión>/AMEF_<TAG>.xlsx?key=<OS_SECURITY_KEY>
 ```
+
+La primera forma no exige saber el TAG. Ojo: así la llave sí queda en el
+historial de quien abra el enlace.
 
 ## Checklist antes de cada sesión con el cliente
 

@@ -17,8 +17,17 @@ class TestApp:
         paths = list(schema["paths"])
         assert any("agent" in p or "run" in p or "session" in p for p in paths), paths
 
-    def test_download_serves_golden_export(self, client):
-        path = export_xlsx(full_session(), settings.exports_dir, session_id="any-session")
+    def test_download_serves_golden_export(self, client, monkeypatch):
+        # El definitivo exige que la sesión exista y esté completa: el archivo en
+        # disco es una foto, el estado de la sesión es la verdad.
+        from rcm_runbook import app as app_module
+
+        sesion = full_session()
+        estado = {"session_state": {"rcm": sesion.model_dump(mode="json")}}
+        monkeypatch.setattr(
+            app_module.agent.db, "get_session", lambda **kw: {"session_data": estado}
+        )
+        path = export_xlsx(sesion, settings.exports_dir, session_id="any-session")
         url = f"/exports/any-session/{path.name}"
         if settings.os_security_key:
             assert client.get(url).status_code == 401  # sin llave → rechazado
@@ -352,3 +361,54 @@ class TestCurrentExportRoute:
 
     def test_requires_the_key(self, client, con_llave):
         assert client.get("/exports/s1").status_code == 401
+
+
+class TestStaleDefinitiveIsNotServedFromDisk:
+    """El archivo en disco es una foto del pasado. Si la sesión retrocedió de
+    fase, ese `AMEF_` definitivo ya no debe entregarse: manda el estado actual."""
+
+    def test_disk_file_is_ignored_when_session_became_incomplete(
+        self, client, con_llave, monkeypatch, tmp_path
+    ):
+        from rcm_runbook import app as app_module
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.session import RCMSession
+        from tests.unit.test_compliance import full_session
+
+        completa = full_session()
+        app_module.settings.exports_dir = str(tmp_path)
+        escrito = export_xlsx(completa, tmp_path, session_id="s-vieja")
+
+        # la sesión retrocede: ahora está incompleta
+        incompleta = RCMSession()
+        incompleta.scope.tag = completa.scope.tag
+        estado = {"session_state": {"rcm": incompleta.model_dump(mode="json")}}
+        monkeypatch.setattr(
+            app_module.agent.db, "get_session", lambda **kw: {"session_data": estado}
+        )
+        assert escrito.is_file(), "el definitivo sigue en disco"
+        r = client.get(f"/exports/s-vieja/{escrito.name}", params={"key": con_llave})
+        assert r.status_code == 404, "sirvió un definitivo obsoleto desde disco"
+
+
+class TestTempFilesAreCleanedUp:
+    """Cada regeneración crea un mkdtemp; sin limpiarlo, cada clic del botón
+    dejaba ~11 KB permanentes en el disco del contenedor."""
+
+    def test_regenerated_download_removes_its_temp_dir(self, client, con_llave, monkeypatch):
+        import glob
+
+        from rcm_runbook import app as app_module
+        from rcm_runbook.models.session import RCMSession
+
+        sesion = RCMSession()
+        sesion.scope.tag = "P-777"
+        estado = {"session_state": {"rcm": sesion.model_dump(mode="json")}}
+        monkeypatch.setattr(
+            app_module.agent.db, "get_session", lambda **kw: {"session_data": estado}
+        )
+        antes = set(glob.glob("/tmp/rcm-export-*"))
+        r = client.get("/exports/s-temp", params={"key": con_llave})
+        assert r.status_code == 200
+        despues = set(glob.glob("/tmp/rcm-export-*"))
+        assert despues <= antes, f"quedaron temporales sin borrar: {despues - antes}"

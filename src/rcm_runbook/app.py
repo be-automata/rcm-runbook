@@ -13,6 +13,7 @@ from __future__ import annotations
 import hmac
 import logging
 import re
+import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +22,7 @@ from agno.os import AgentOS
 from agno.os.settings import AgnoAPISettings
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 from rcm_runbook.agent.factory import build_agent
 from rcm_runbook.config import settings
@@ -215,10 +217,24 @@ def download_current_export(session_id: str, request: Request) -> FileResponse:
     borrador = bool(compliance.export_blockers(sesion))
     destino = Path(tempfile.mkdtemp(prefix="rcm-export-"))
     generado = export_xlsx(sesion, destino, session_id=session_id, draft=borrador)
+    return _servir(generado, generado.name, temporal=destino)
+
+
+def _servir(path: Path, filename: str, temporal: Path | None) -> FileResponse:
+    """Entrega el .xlsx y borra su directorio temporal cuando toca.
+
+    Cada regeneración crea un `mkdtemp`; sin limpiarlo, cada clic en «Descargar
+    Excel» dejaba ~11 KB permanentes en el disco del contenedor.
+    """
     return FileResponse(
-        generado,
+        path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=generado.name,
+        filename=filename,
+        background=(
+            BackgroundTask(shutil.rmtree, temporal, ignore_errors=True)
+            if temporal
+            else None
+        ),
     )
 
 
@@ -251,21 +267,28 @@ def download_export(session_id: str, filename: str, request: Request) -> FileRes
     que sobreviva a un reinicio.
 
     La llave ya la exigió `require_key`: `/exports/...` no está en la lista blanca."""
+    from rcm_runbook.engine import compliance
+
     if not (_SAFE_NAME.match(session_id) and _SAFE_NAME.match(filename)):
         raise HTTPException(status_code=400, detail="Nombre inválido.")
     if not filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Solo se sirven archivos .xlsx.")
+    # La compuerta se evalúa ANTES de mirar el disco. Si no, un definitivo
+    # exportado cuando la sesión estaba completa se seguiría sirviendo después de
+    # que el análisis retrocediera de fase: el archivo en disco es una foto vieja,
+    # el estado de la sesión es la verdad.
+    if not filename.startswith("BORRADOR_"):
+        sesion = _sesion_guardada(session_id)
+        if sesion is None or compliance.export_blockers(sesion):
+            raise HTTPException(status_code=404, detail="Entregable no encontrado.")
     exports_root = Path(settings.exports_dir).resolve()
     path = (exports_root / session_id / filename).resolve()
-    if not path.is_file() or exports_root not in path.parents:
-        path = _regenerar_entregable(session_id, filename)
-        if path is None:
-            raise HTTPException(status_code=404, detail="Entregable no encontrado.")
-    return FileResponse(
-        path,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=filename,
-    )
+    if path.is_file() and exports_root in path.parents:
+        return _servir(path, filename, temporal=None)
+    generado = _regenerar_entregable(session_id, filename)
+    if generado is None:
+        raise HTTPException(status_code=404, detail="Entregable no encontrado.")
+    return _servir(generado, filename, temporal=generado.parent.parent)
 
 
 @app.get("/favicon.ico")

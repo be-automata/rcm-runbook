@@ -124,12 +124,16 @@
       var r = await fetch('/exports/' + encodeURIComponent(sessionId), {
         headers: { 'Authorization': 'Bearer ' + key }
       });
-      if(r.status === 404){
+      if(!r.ok){
+        // El servidor ya explica en español qué pasó; un número de error suelto
+        // no le dice nada a quien está usando esto.
         var d = await r.json().catch(function(){ return {}; });
-        note('meta', d.detail || 'Todavía no hay nada que exportar.');
+        var esFalta = r.status === 404;
+        note(esFalta ? 'meta' : 'meta err',
+          d.detail || (esFalta ? 'Todavía no hay nada que exportar.'
+                               : 'No se pudo generar el Excel. Intente de nuevo.'));
         return;
       }
-      if(!r.ok){ note('meta err', 'No se pudo generar el Excel (error ' + r.status + ').'); return; }
       var nombre = 'AMEF.xlsx';
       var cd = r.headers.get('Content-Disposition') || '';
       var m = cd.match(/filename="?([^";]+)"?/);

@@ -112,6 +112,8 @@ controles actuales de cada modo.
 
 1. **Antes** de registrar tareas/KPIs pida: *"genera el Excel final"*.
    - [ ] Rechaza el definitivo listando faltantes de la Fase 6 (ofrece borrador).
+   - [ ] Con ese mismo estado, el botón **Descargar Excel** entrega `BORRADOR_`:
+     el chat y la interfaz aplican la misma compuerta, no divergen.
 2. Complete la Fase 6: tareas para el CMMS (frecuencia del catálogo — p.ej.
    Mensual/Semestral —, duración, disciplina, ¿requiere paro?), KPIs (MTBF,
    disponibilidad, cumplimiento del plan), disparadores de revisión y la
@@ -172,6 +174,40 @@ Recorrido del enlace que se le manda a un interesado no técnico, contra `$BASE`
 7. Abra la consola del navegador (F12).
    - [ ] Cero errores rojos en la consola.
 
+## 9b. Botón «Descargar Excel» (4 min)
+
+El cliente debe poder llevarse su entregable sin pedírselo al facilitador.
+
+1. En una sesión **recién empezada** (sin equipo registrado), pulse
+   **Descargar Excel** (arriba a la derecha).
+   - [ ] No descarga nada y avisa: «Todavía no hay nada que exportar: primero
+     registre el equipo y su TAG con el facilitador».
+   - [ ] El botón vuelve a quedar activo.
+   > En la consola aparece un 404 para `/exports/…`: es el código correcto para
+   > «esta sesión aún no tiene entregable», está manejado, y no es un fallo.
+
+2. Registre el equipo y su TAG, y vuelva a pulsarlo.
+   - [ ] Descarga `BORRADOR_AMEF_<TAG>.xlsx`.
+   - [ ] El aviso dice que **es un borrador** porque el análisis no está completo.
+   - [ ] Mientras genera, el botón se deshabilita y muestra «Generando…».
+
+3. Con el análisis **completo** (tras la Fase 6), púlselo de nuevo.
+   - [ ] Ahora el archivo se llama `AMEF_<TAG>.xlsx`, **sin** prefijo.
+   - [ ] Coincide con lo que dice el facilitador: si él rechaza el definitivo por
+     faltantes, el botón entrega borrador. Chat y botón aplican la misma regla.
+
+4. Prueba negativa por URL, con el análisis incompleto:
+   `$BASE/exports/<sesión>/AMEF_<TAG>.xlsx?key=<llave>` → **404**.
+   - [ ] No se obtiene un definitivo quitando el prefijo de la URL.
+
+5. En la pestaña Red (F12), mire la petición a `/exports/<sesión>`.
+   - [ ] La llave **no** aparece en la URL: viaja en la cabecera `Authorization`
+     y el archivo llega como blob, así que no queda en el historial del cliente.
+
+6. En el teléfono (o una ventana de 390 px):
+   - [ ] Los dos botones caben en una línea y la página no se desplaza en
+     horizontal.
+
 ## 10. La API está cerrada por defecto (3 min)
 
 Con `OS_SECURITY_KEY` configurada, desde una terminal:
@@ -179,12 +215,12 @@ Con `OS_SECURITY_KEY` configurada, desde una terminal:
 ```bash
 BASE=https://rcm-demo.beautomata.com
 KEY=<OS_SECURITY_KEY>
-for r in /sessions /metrics /traces /memories /openapi.json /docs; do
+for r in /sessions /metrics /traces /memories /openapi.json /docs /exports/x; do
   echo "$r -> $(curl -s -o /dev/null -w '%{http_code}' $BASE$r)"
 done
 ```
 
-- [ ] Las seis rutas devuelven **401** sin llave.
+- [ ] Las siete rutas devuelven **401** sin llave.
 - [ ] `curl -H "Authorization: Bearer $KEY" $BASE/sessions` devuelve 200.
 - [ ] `$BASE/demo`, `$BASE/health` y `$BASE/favicon.ico` siguen respondiendo 200
   sin llave (son las tres únicas públicas a propósito).
@@ -211,5 +247,8 @@ done
 | 14 | Toda la API responde 401 sin llave, salvo `/demo`, `/health` y `/favicon.ico` | ☐ |
 | 15 | El entregable definitivo sigue bloqueado si el análisis está incompleto, también por URL | ☐ |
 | 16 | El servicio responde con la Mac del desarrollador apagada | ☐ |
+| 17 | El botón «Descargar Excel» entrega el entregable sin pasar por el facilitador | ☐ |
+| 18 | Todo análisis incompleto baja como `BORRADOR_` y se avisa en pantalla | ☐ |
+| 19 | La llave no aparece en la URL de descarga del botón | ☐ |
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________
