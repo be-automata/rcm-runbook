@@ -76,7 +76,12 @@ elementos.log.appendChild = function (n) {
 
 global.document = {
   getElementById: (id) => elementos[id] || null,
-  createElement: (tag) => el('nodo', tag),
+  createElement: (tag) => {
+    // Permite forzar una excepción dentro del renderizador para comprobar que
+    // la burbuja cae a texto crudo en vez de quedarse vacía.
+    if (CFG.rompeRender && tag === 'p') throw new Error('render roto a propósito');
+    return el('nodo', tag);
+  },
   // Los nodos de texto se representan como cadenas: serializa() las devuelve
   // tal cual. Sin esto el renderizador revienta y todo cae al fallback de
   // textContent, dando tests en verde que no prueban nada.
@@ -145,7 +150,7 @@ def correr(**cfg) -> dict:
         "busqueda": "?key=abc", "store": [], "estado": 404, "runs": [],
         "pulsaNuevo": False, "confirma": True, "bloquea": False,
         "pulsaExportar": False, "exportEstado": 200,
-        "exportNombre": "AMEF_P-101.xlsx",
+        "exportNombre": "AMEF_P-101.xlsx", "rompeRender": False,
     } | cfg
     if isinstance(cfg["store"], dict):
         cfg["store"] = list(cfg["store"].items())
@@ -468,3 +473,52 @@ class TestTextoDelRun:
             runs=[{"status": "COMPLETED", "run_input": "x", "content": "solo content"}],
         )
         assert any("solo content" in b for b in r["burbujas"])
+
+
+class TestDegradacionDelRenderizador:
+    """Criterio 9 de la spec: si el renderizador lanza, la burbuja muestra el
+    texto crudo y no queda vacía. Feo con asteriscos es mucho mejor que una
+    burbuja en blanco, que el cliente lee como trabajo perdido."""
+
+    def test_excepcion_cae_a_texto_crudo(self):
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200, rompeRender=True,
+            runs=[{"status": "COMPLETED", "run_input": "x",
+                   "content": "Texto con **negrita** que no se pudo renderizar"}],
+        )
+        burbujas = [b for b in r["burbujas"] if b.startswith("bot|")]
+        assert burbujas, "la burbuja del bot desapareció"
+        assert "Texto con **negrita** que no se pudo renderizar" in burbujas[0]
+        assert r.get("warns"), "debería haberse registrado el fallo en consola"
+
+    def test_la_pagina_sigue_viva_tras_el_fallo(self):
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200, rompeRender=True,
+            runs=[{"status": "COMPLETED", "run_input": "pregunta", "content": "respuesta"}],
+        )
+        assert r["sendDeshabilitado"] is False, "el envío quedó bloqueado tras el fallo"
+        assert any(b.startswith("user|") for b in r["burbujas"])
+
+
+class TestSoloElBotLlevaMarkdown:
+    """Criterios 6 y 7: lo que teclea el cliente y los avisos del sistema siguen
+    en textContent. Es la superficie de ataque más directa y no se gana nada."""
+
+    def test_la_burbuja_del_usuario_no_se_renderiza(self):
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200,
+            runs=[{"status": "COMPLETED",
+                   "run_input": "Escribo **hola** y <img src=x onerror=alert(1)>",
+                   "content": "ok"}],
+        )
+        usuario = [b for b in r["burbujas"] if b.startswith("user|")][0]
+        # Sin árbol: texto tal cual, con los asteriscos visibles.
+        assert "**hola**" in usuario
+        assert "<img src=x onerror=alert(1)>" in usuario
+        assert "strong()" not in usuario and "p()" not in usuario
+
+    def test_los_avisos_del_sistema_no_se_renderizan(self):
+        # El aviso de «no encontramos análisis anterior» es nuestro, no del modelo.
+        r = correr(busqueda="?key=abc&session=demo-fantasma", estado=404)
+        assert any("No encontramos un análisis anterior" in a for a in r["avisos"])
+        assert not any("p()" in a or "strong()" in a for a in r["avisos"])
