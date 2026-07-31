@@ -51,8 +51,59 @@ export class RcmContainer extends Container<Env> {
   }
 }
 
+/**
+ * Página de espera, en español y con recarga sola.
+ *
+ * Sin esto, cuando el contenedor está arrancando el cliente ve el error crudo
+ * del proxy de Cloudflare: «Error proxying request to container: The container
+ * is not running». En medio de una demo, eso es una página en blanco con un
+ * mensaje en inglés que nadie sabe interpretar.
+ */
+function paginaDespertando(): Response {
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Facilitador RCM — iniciando</title>
+<meta http-equiv="refresh" content="5">
+<style>body{margin:0;height:100dvh;display:flex;align-items:center;justify-content:center;
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f6f7f9;color:#1a1a1a}
+.c{max-width:420px;padding:28px;text-align:center}h1{font-size:18px;margin:0 0 10px;color:#1F4E78}
+p{margin:.4em 0;color:#555;line-height:1.5}small{color:#999}</style></head>
+<body><div class="c"><h1>Iniciando el Facilitador RCM</h1>
+<p>El sistema estaba en reposo y está arrancando. Tarda unos segundos.</p>
+<p>Esta página se recarga sola; no hace falta que haga nada.</p>
+<small>Si sigue viendo esto pasado un minuto, avise a quien le compartió el enlace.</small>
+</div></body></html>`;
+  return new Response(html, {
+    status: 503,
+    headers: { "content-type": "text/html; charset=utf-8", "retry-after": "5" },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    return getContainer(env.RCM_CONTAINER, "rcm").fetch(request);
+    const contenedor = getContainer(env.RCM_CONTAINER, "rcm");
+    // Solo se reintenta lo idempotente. Un POST a /runs que llegó y se cortó
+    // después duplicaría el turno del cliente y le cobraría dos veces el modelo.
+    const reintentable = request.method === "GET" || request.method === "HEAD";
+    const intentos = reintentable ? 3 : 1;
+    for (let i = 0; i < intentos; i++) {
+      try {
+        return await contenedor.fetch(request);
+      } catch (e) {
+        if (i === intentos - 1) {
+          console.warn("contenedor no disponible", String(e));
+          // Al navegador, una página en español; a la API, JSON.
+          const quiereHtml = (request.headers.get("accept") || "").includes("text/html");
+          return quiereHtml
+            ? paginaDespertando()
+            : new Response(
+                JSON.stringify({ detail: "El sistema está iniciando. Reintente en unos segundos." }),
+                { status: 503, headers: { "content-type": "application/json", "retry-after": "5" } },
+              );
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    }
+    return paginaDespertando();
   },
 };
