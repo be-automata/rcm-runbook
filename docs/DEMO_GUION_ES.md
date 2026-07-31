@@ -7,16 +7,19 @@ AMEF benchmark del cliente) · **Formato:** conversación en vivo + entregable E
 
 ## Antes de la demo (5 min, una sola vez)
 
+El sistema está publicado en Cloudflare; no hay que levantar nada.
+
 ```bash
-uv run python scripts/demo_seed.py    # genera el plan B: data/exports/demo/AMEF_P-03070.xlsx
-uv run rcm-runbook                    # levanta el agente en http://localhost:7777
+uv run python scripts/demo_seed.py    # plan B: data/exports/demo/AMEF_P-03070.xlsx
+curl -s -o /dev/null -w '%{http_code}\n' https://rcm-demo.beautomata.com/health   # 200
 ```
 
-Abra la UI de chat (AgentOS) apuntando a `http://localhost:7777` y tenga abierto en
-otra pestaña el Excel **plan B** (`data/exports/demo/AMEF_P-03070.xlsx`) por si la
-red o el modelo fallan en vivo. Verifique salud: `curl localhost:7777/health` → 200.
+Abra el chat en `https://rcm-demo.beautomata.com/demo?key=<OS_SECURITY_KEY>` y tenga
+abierto en otra pestaña el Excel **plan B** (`data/exports/demo/AMEF_P-03070.xlsx`)
+por si la red o el modelo fallan en vivo.
 
-> Si la suscripción devuelve 429 en sonnet, arranque con `RCM_MODEL_ID=claude-haiku-4-5`.
+> **Despierte el contenedor unos minutos antes.** Duerme tras 20 min sin tráfico y
+> la primera petición tarda bastante más; delante del cliente eso parece un cuelgue.
 
 ---
 
@@ -106,6 +109,6 @@ Pegue en el chat, uno por uno:
 | ¿La IA puede inventarse números? | No: RPN, intervalos y políticas los calcula código determinístico probado (125 tests). La IA solo conversa. |
 | ¿Y si el equipo se equivoca? | Las compuertas rechazan datos incompletos o mal formados, y todo cambio posterior invalida las decisiones viejas (hay que re-evaluar). |
 | ¿Quién aprueba temas de seguridad? | Siempre una persona, con nombre y cargo, registrado en la hoja de auditoría. |
-| ¿Dónde quedan los datos? | En la base de datos de la empresa (SQLite local en el MVP); nada se comparte con terceros. |
+| ¿Dónde quedan los datos? | En una base de datos propia y privada (Postgres); nada se comparte con terceros ni se usa para entrenar modelos. |
 | ¿Funciona con nuestro Excel? | El formato del entregable se congeló a partir del AMEF real de la empresa; si cambia, se re-congela con un script. |
 | ¿Se puede retomar una sesión a medias? | Sí: misma sesión, otro día, el estado completo se restaura. |
