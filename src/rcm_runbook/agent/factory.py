@@ -58,11 +58,25 @@ def build_model(cfg: Settings) -> Any:
     raise ValueError(f"Proveedor no soportado: {cfg.provider}")
 
 
-def build_agent(cfg: Settings, db: SqliteDb | None = None) -> Agent:
+def build_db(cfg: Settings) -> Any:
+    """Postgres cuando hay `DATABASE_URL`, SQLite local si no.
+
+    En Cloudflare Containers el disco es efímero: al dormirse el contenedor se
+    borra, y con SQLite el cliente perdería su análisis entre una visita y la
+    siguiente. Postgres es lo que sostiene la continuidad de sesión en la nube.
+    """
+    if cfg.db_url:
+        from agno.db.postgres import PostgresDb
+
+        return PostgresDb(db_url=cfg.db_url)
+    return SqliteDb(db_file=cfg.db_path)
+
+
+def build_agent(cfg: Settings, db: Any | None = None) -> Agent:
     return Agent(
         name="Facilitador RCM",
         model=build_model(cfg),
-        db=db or SqliteDb(db_file=cfg.db_path),
+        db=db if db is not None else build_db(cfg),
         tools=list(ALL_TOOLS),
         instructions=INSTRUCTIONS_ES,
         session_state={"rcm": RCMSession().model_dump(mode="json")},

@@ -1,18 +1,25 @@
-# Compartir la demo con el cliente (túnel + os.agno.com)
+# Compartir la demo con el cliente
 
-## Arquitectura de la prueba
+La demo **ya no depende de tu Mac**: corre en Cloudflare y sigue disponible con
+el portátil apagado. El detalle del despliegue está en
+[DESPLIEGUE_CLOUDFLARE_ES.md](DESPLIEGUE_CLOUDFLARE_ES.md).
+
+## Arquitectura
 
 ```
 Cliente (navegador) ──▶ https://rcm-demo.beautomata.com/demo?key=<OS_SECURITY_KEY>
                               │  HTTPS + Bearer <OS_SECURITY_KEY>
                               ▼
-        Cloudflare Tunnel con nombre «rcm-runbook» (URL fija)
+        Worker «rcm-runbook» ──▶ Container (imagen Docker: FastAPI + agno)
                               ▼
-        tu Mac: uv run rcm-runbook (127.0.0.1:7777, SQLite local)
+        Neon Postgres (sesiones) + api.anthropic.com
 ```
 
-Los datos (sesiones, entregables) nunca salen de tu máquina; Cloudflare solo
-enruta el tráfico cifrado. La API está **cerrada por defecto**: todo exige
+Las sesiones viven en Neon, no en la Mac: el disco del contenedor es efímero y
+se borra cuando Cloudflare lo duerme. Los entregables `.xlsx` no se guardan —
+se regeneran desde el estado de la sesión al descargarlos.
+
+La API está **cerrada por defecto**: todo exige
 `Authorization: Bearer` (o `?key=`) con la `OS_SECURITY_KEY` del `.env`, salvo
 dos rutas públicas a propósito, `/demo` y `/health`.
 
@@ -32,34 +39,25 @@ nada con él. Queda fijado en `TestWebsocketAuth`. Si algún día quieres cerrar
 también el handshake, la vía es Cloudflare Access delante del dominio, no tocar
 el middleware.
 
-## Encender: nada, ya está encendido
+## Encender: nada que encender
 
-Dos agentes de `launchd` mantienen vivos el servidor y el túnel. Arrancan solos al
-iniciar sesión en la Mac y `KeepAlive` los resucita si se caen (probado con
-`kill -9`: vuelven en ~4 s).
-
-| Servicio | Etiqueta | Log |
-|---|---|---|
-| App | `com.beautomata.rcm-runbook` | `~/Library/Logs/rcm-runbook.log` |
-| Túnel | `com.beautomata.rcm-tunnel` | `~/Library/Logs/rcm-tunnel.log` |
+Está en Cloudflare. No hay que dejar la Mac despierta ni con corriente.
 
 ```bash
-launchctl print gui/$(id -u)/com.beautomata.rcm-runbook | grep -E "state|pid ="
-launchctl kickstart -k gui/$(id -u)/com.beautomata.rcm-runbook   # reiniciar (tras cambiar código)
-launchctl kickstart -k gui/$(id -u)/com.beautomata.rcm-tunnel
-launchctl bootout gui/$(id -u)/com.beautomata.rcm-runbook        # apagar del todo
+npx wrangler deploy                      # publicar un cambio
+npx wrangler tail                        # ver logs en vivo
+curl -s -o /dev/null -w '%{http_code}\n' https://rcm-demo.beautomata.com/health
 ```
 
-> **Cuidado con `pkill`:** `pkill -f "run rcm-runbook"` también mata el servidor,
-> porque el patrón casa con `uv run rcm-runbook`. Para el túnel solamente:
-> `pkill -f "cloudflared.*rcm-runbook"`. Con launchd, mejor usar `kickstart`.
+> El contenedor **duerme a los 20 minutos** sin tráfico (`sleepAfter` en
+> `worker/index.ts`). La primera petición después lo despierta y tarda más de lo
+> normal; las siguientes van rápido. Si el cliente reporta que «la primera vez
+> tarda», es esto, no un fallo.
 
-Si prefieres correrlo a mano (sin launchd), son los dos comandos de siempre:
-
-```bash
-uv run rcm-runbook
-cloudflared tunnel --config ~/.cloudflared/rcm-runbook.yml run rcm-runbook
-```
+El túnel a la Mac y sus agentes launchd **quedaron apagados** al migrar
+(`launchctl bootout`), y el CNAME del túnel se borró para que el dominio apunte
+al Worker. Para desarrollo local sigue funcionando `uv run rcm-runbook` contra
+`localhost:7777` con SQLite.
 
 La URL **no cambia**: `https://rcm-demo.beautomata.com`. El enlace directo para
 alguien no técnico (un solo click, sin cuenta Agno) es:
@@ -68,18 +66,9 @@ alguien no técnico (un solo click, sin cuenta Agno) es:
 https://rcm-demo.beautomata.com/demo?key=<OS_SECURITY_KEY>
 ```
 
-Detalles del túnel con nombre:
-
-- Túnel `rcm-runbook`, id `99d06e9b-a057-46cc-b5b9-0a88c2cf04c5`
-- Config e ingress: `~/.cloudflared/rcm-runbook.yml` → `http://127.0.0.1:7777`
-- DNS: CNAME `rcm-demo.beautomata.com` → `<id>.cfargotunnel.com` (creado con
-  `cloudflared tunnel route dns`)
-- Abre 4 conexiones al edge, así que aguanta cortes de red mucho mejor que un
-  túnel rápido (`--url`), que solo abre una.
-
-> **VPN local:** con Mullvad conectado, su resolver DNS devuelve NXDOMAIN para
-> subdominios de `trycloudflare.com` — por eso los túneles rápidos no abrían
-> desde tu propia Mac. `rcm-demo.beautomata.com` sí resuelve con la VPN puesta.
+> **VPN local:** con Mullvad conectado, Cloudflare rechaza sus IP de salida y
+> `npx wrangler deploy` muere con `GET /accounts -> 522`. Desconéctala antes de
+> desplegar. Navegar el sitio ya publicado sí funciona con la VPN puesta.
 
 ## Conectar os.agno.com (una sola vez, ya no por sesión)
 
@@ -90,8 +79,8 @@ Detalles del túnel con nombre:
 3. Seleccionar el agente **Facilitador RCM** y abrir el chat.
 4. Compartir con el cliente: el enlace de os.agno.com **no basta** — necesitan
    entrar con una cuenta Agno con acceso a ese OS, o compartes pantalla tú.
-   Para que el cliente pruebe solo, dale la URL del túnel + la llave y que la
-   registre en su propio os.agno.com (30 segundos).
+   Para que el cliente pruebe solo, dale el enlace `/demo?key=…`, que no
+   requiere cuenta.
 
 ## La sesión no se pierde (teléfono → computadora)
 
@@ -112,7 +101,12 @@ cliente perdió el enlace), arma el enlace a mano:
 https://rcm-demo.beautomata.com/demo?key=<OS_SECURITY_KEY>&session=<session_id>
 ```
 
-Los ids están en `sqlite3 data/rcm_runbook.db "select session_id, datetime(created_at,'unixepoch') from agno_sessions order by created_at desc limit 10"`.
+Los ids salen de Neon:
+
+```sql
+select session_id, to_timestamp(created_at)
+from ai.agno_sessions order by created_at desc limit 10;
+```
 
 ## Si el cliente reporta un error
 
@@ -121,7 +115,8 @@ Los ids están en `sqlite3 data/rcm_runbook.db "select session_id, datetime(crea
 | «Llave de acceso inválida» | Copió el enlace a mano y cortó la llave | Que le dé clic al enlace, sin copiar |
 | «Falta la llave de acceso» | El enlace le llegó sin el `?key=` | Reenviárselo completo |
 | Página en blanco | Navegador sin `fetch` (muy viejo) | Chrome o Edge actual |
-| Error de Cloudflare (502/530) | El túnel o la app están caídos | `launchctl print` a los dos servicios y revisar los logs |
+| Tarda mucho la primera vez | El contenedor estaba dormido | Normal; los siguientes turnos van rápido |
+| Error de Cloudflare (5xx) | El contenedor no arranca | `npx wrangler tail` y revisar el arranque |
 
 ## Lo que la llave NO separa
 
@@ -152,19 +147,18 @@ https://rcm-demo.beautomata.com/exports/<sesión>/AMEF_<TAG>.xlsx?key=<OS_SECURI
 
 ## Checklist antes de cada sesión con el cliente
 
-- [ ] Mac con corriente y `caffeinate -dims` si la sesión es larga (evita sleep)
-- [ ] Los dos servicios en `running`:
-      `launchctl print gui/$(id -u)/com.beautomata.rcm-runbook | grep state`
-- [ ] `curl -s localhost:7777/health` → 200
-- [ ] Comprobar con **`/demo`**, no con `/health`: durante un aleteo del túnel se
-      ha visto `/health` en 200 con `/demo` todavía en 502.
+- [ ] Comprobar con **`/demo`**, no solo con `/health`:
       `curl -s -o /dev/null -w '%{http_code}' 'https://rcm-demo.beautomata.com/demo?key=<llave>'` → 200
+- [ ] Despertar el contenedor unos minutos antes con una petición, para que el
+      cliente no se coma el arranque en frío
+- [ ] Crédito disponible en la cuenta de Anthropic (la nube usa
+      `ANTHROPIC_API_KEY`, no la suscripción)
 - [ ] `RCM_MODEL_ID`: sonnet por defecto; si 429 (ventana de suscripción), relanzar con `claude-haiku-4-5`
 - [ ] Plan B abierto: `data/exports/demo/AMEF_P-03070.xlsx` + `docs/DEMO_GUION_ES.md`
 
 ## Recoger feedback
 
-- Cada sesión queda completa en `data/rcm_runbook.db` (mensajes, tool calls,
-  métricas) y los logs JSON en la terminal del servidor trazan cada decisión.
+- Cada sesión queda completa en Neon (`ai.agno_sessions`: mensajes, tool calls,
+  métricas) y `npx wrangler tail` muestra los logs en vivo.
 - Tras cada sesión del cliente: exportar el entregable de su sesión y revisar
   la hoja AUDITORIA RCM — muestra exactamente dónde dudó o se trabó el equipo.

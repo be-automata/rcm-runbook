@@ -72,3 +72,6 @@ Thumbs.db
 .claude/
 .claude-flow/
 .gstack/
+node_modules/
+.wrangler/
+.env.deploy

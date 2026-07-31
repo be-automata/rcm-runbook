@@ -13,6 +13,7 @@ from __future__ import annotations
 import hmac
 import logging
 import re
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -155,10 +156,42 @@ class RequireKey:
 app.add_middleware(RequireKey)
 
 
+def _regenerar_entregable(session_id: str, filename: str) -> Path | None:
+    """Reconstruye el .xlsx desde el estado guardado en la base de datos.
+
+    El entregable es función pura del estado de la sesión, así que no hace falta
+    conservarlo en disco. Esto es lo que lo hace sobrevivir a un contenedor con
+    disco efímero: el archivo que el cliente descarga mañana se genera en el
+    momento a partir de lo que hay en la base.
+    """
+    from rcm_runbook.export.excel import export_xlsx
+    from rcm_runbook.models.session import RCMSession
+
+    registro = agent.db.get_session(session_id=session_id, deserialize=False)
+    if not registro:
+        return None
+    estado = (registro.get("session_data") or {}).get("session_state") or {}
+    crudo = estado.get("rcm")
+    if not crudo:
+        return None
+    destino = Path(tempfile.mkdtemp(prefix="rcm-export-"))
+    generado = export_xlsx(
+        RCMSession.model_validate(crudo),
+        destino,
+        session_id=session_id,
+        draft=filename.startswith("BORRADOR_"),
+    )
+    return generado if generado.name == filename else None
+
+
 @app.get("/exports/{session_id}/{filename}")
 def download_export(session_id: str, filename: str, request: Request) -> FileResponse:
     """Serve a session's deliverable. Path-sanitized: names only, no separators;
     exports are scoped per session directory (no cross-session access/overwrites).
+
+    Se busca primero en disco (la exportación recién hecha) y, si no está, se
+    regenera desde la base de datos — el despliegue en la nube no tiene disco
+    que sobreviva a un reinicio.
 
     La llave ya la exigió `require_key`: `/exports/...` no está en la lista blanca."""
     if not (_SAFE_NAME.match(session_id) and _SAFE_NAME.match(filename)):
@@ -168,7 +201,9 @@ def download_export(session_id: str, filename: str, request: Request) -> FileRes
     exports_root = Path(settings.exports_dir).resolve()
     path = (exports_root / session_id / filename).resolve()
     if not path.is_file() or exports_root not in path.parents:
-        raise HTTPException(status_code=404, detail="Entregable no encontrado.")
+        path = _regenerar_entregable(session_id, filename)
+        if path is None:
+            raise HTTPException(status_code=404, detail="Entregable no encontrado.")
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

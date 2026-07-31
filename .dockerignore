@@ -1,0 +1,23 @@
+# Secretos y estado local: nunca entran en la imagen.
+.env
+.env.*
+data/
+*.db
+*.sqlite
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.git/
+.github/
+.claude/
+.planning/
+tests/
+node_modules/
+
+# Documentación: solo el handbook y el glosario entran (los copia el Dockerfile).
+docs/*.pdf

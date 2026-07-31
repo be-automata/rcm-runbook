@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rcm-runbook",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // La imagen es la misma que se prueba en local con `docker run`.
+  "containers": [
+    {
+      "class_name": "RcmContainer",
+      "image": "./Dockerfile",
+      // basic = 1 vCPU / 4 GiB: el agente es I/O-bound (espera a la API de
+      // Anthropic), no necesita CPU, pero sí memoria para el runtime de Python.
+      "instance_type": "basic",
+      "max_instances": 3
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "RCM_CONTAINER", "class_name": "RcmContainer" }]
+  },
+
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RcmContainer"] }],
+
+  // El enlace que ya tiene el cliente sigue igual; deja de depender de la Mac.
+  "routes": [{ "pattern": "rcm-demo.beautomata.com", "custom_domain": true }],
+
+  "observability": { "enabled": true }
+}

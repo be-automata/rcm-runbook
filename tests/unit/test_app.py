@@ -183,3 +183,65 @@ class TestResumeAfterRestart:
 
         with pytest.raises(ValueError, match="esquema más nuevo"):
             _load(Ctx())
+
+
+class TestExportsSurviveEphemeralDisk:
+    """En Cloudflare Containers el disco se borra al dormir el contenedor. El
+    entregable es función pura del estado de la sesión, así que se regenera
+    desde la base en vez de conservarse en disco."""
+
+    def test_regenerates_from_session_state_when_file_is_gone(self, client, tmp_path):
+        from rcm_runbook import app as app_module
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        guardado = {"session_data": {"session_state": {"rcm": sesion.model_dump(mode="json")}}}
+        original = app_module.agent.db.get_session
+        app_module.agent.db.get_session = lambda **kw: guardado
+        try:
+            tag = sesion.scope.tag
+            generado = app_module._regenerar_entregable("s1", f"AMEF_{tag}.xlsx")
+            assert generado is not None and generado.is_file()
+            assert generado.stat().st_size > 5000
+        finally:
+            app_module.agent.db.get_session = original
+
+    def test_unknown_session_or_filename_is_not_served(self, client):
+        from rcm_runbook import app as app_module
+
+        original = app_module.agent.db.get_session
+        app_module.agent.db.get_session = lambda **kw: None
+        try:
+            assert app_module._regenerar_entregable("no-existe", "AMEF_X.xlsx") is None
+        finally:
+            app_module.agent.db.get_session = original
+
+
+class TestDatabaseBackendIsConfigurable:
+    """Sin `DATABASE_URL` se usa SQLite (desarrollo). Con ella, Postgres — que es
+    lo que sostiene la continuidad de sesión donde el disco no persiste."""
+
+    def test_sqlite_by_default(self):
+        from agno.db.sqlite import SqliteDb
+
+        from rcm_runbook.agent.factory import build_db
+        from rcm_runbook.config import Settings
+
+        assert isinstance(build_db(Settings(db_url="")), SqliteDb)
+
+    def test_postgres_when_database_url_is_set(self, monkeypatch):
+        from rcm_runbook.agent import factory
+
+        creada = {}
+
+        class FalsaPostgresDb:
+            def __init__(self, db_url):
+                creada["url"] = db_url
+
+        import agno.db.postgres as pg
+
+        monkeypatch.setattr(pg, "PostgresDb", FalsaPostgresDb)
+        from rcm_runbook.config import Settings
+
+        factory.build_db(Settings(db_url="postgresql+psycopg://u:p@h/d"))
+        assert creada["url"] == "postgresql+psycopg://u:p@h/d"

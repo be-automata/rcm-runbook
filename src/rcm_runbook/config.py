@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OS_SECURITY_KEY", "RCM_OS_SECURITY_KEY"),
     )
     db_path: str = "data/rcm_runbook.db"
+    # Postgres para despliegues sin disco persistente (Cloudflare Containers borra
+    # el disco al dormir el contenedor, y con SQLite se perderían las sesiones
+    # entre visitas del cliente). Vacío = SQLite local, que sigue siendo lo
+    # cómodo para desarrollo.
+    db_url: str = Field(
+        default="", validation_alias=AliasChoices("DATABASE_URL", "RCM_DB_URL")
+    )
     exports_dir: str = "data/exports"
     log_level: str = "INFO"
     otel_enabled: bool = False

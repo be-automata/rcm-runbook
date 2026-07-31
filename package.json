@@ -1,0 +1,12 @@
+{
+  "name": "rcm-runbook-worker",
+  "private": true,
+  "description": "Worker que enruta al contenedor del Facilitador RCM",
+  "devDependencies": {
+    "wrangler": "^4.117.0",
+    "@cloudflare/workers-types": "^5.20260730.1"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  }
+}
