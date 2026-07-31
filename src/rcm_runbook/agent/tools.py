@@ -576,7 +576,17 @@ def get_progress(run_context: Any) -> str:
         if issues
         else "\n\n✔ Fase completa — puede avanzar con advance_phase."
     )
-    return session.digest_es() + pending
+    # El aviso viaja en la salida, no solo en el system prompt: el modelo decide
+    # la compuerta justo aquí, leyendo estos pendientes, y el prompt le queda
+    # lejos. Reforzar la instrucción bajó los rechazos inventados de 3/3 a 2/3;
+    # lo que faltaba era decírselo en el punto donde se equivoca.
+    aviso = (
+        "\n\n(Estos pendientes son SOLO de la fase actual. NO son los "
+        "bloqueadores del entregable: esos los calcula export_excel y suelen "
+        "ser más. Si el interesado pidió el Excel definitivo, llama a "
+        "export_excel — no contestes con esta lista.)"
+    )
+    return session.digest_es() + pending + aviso
 
 
 @tool

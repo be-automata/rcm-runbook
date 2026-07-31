@@ -500,3 +500,20 @@ class TestCodigoIsoAusenteNoEsFalloTecnico:
 
         salida = tools_mod.export_excel.entrypoint(Ctx(), draft=True)
         assert "data/exports/" not in salida, "expone la ruta interna del contenedor"
+
+
+class TestGetProgressNoSeUsaComoCompuerta:
+    """El validador midió 3 de 3 rechazos inventados del entregable; con la
+    instrucción reforzada, 2 de 3. El modelo decide leyendo la salida de
+    `get_progress`, no el system prompt, así que el aviso tiene que viajar ahí."""
+
+    def test_la_salida_desmarca_sus_pendientes_como_bloqueadores_del_export(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-prog"
+            session_state: dict = {}
+
+        salida = tools_mod.get_progress.entrypoint(Ctx())
+        assert "SOLO de la fase actual" in salida
+        assert "export_excel" in salida, "no dirige a la herramienta que decide"
