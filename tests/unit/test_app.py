@@ -112,8 +112,12 @@ class TestApiIsClosedByDefault:
         assert resp.headers.get("access-control-allow-origin") == "https://os.agno.com"
 
     def test_browser_links_accept_key_query_param(self, client, con_llave):
-        resp = client.get("/sessions", params={"key": con_llave})
-        assert resp.status_code != 401
+        # `?key=` debe valer en TODA la API, no solo en /exports: si algún día se
+        # exporta OS_SECURITY_KEY al entorno, agno activa su propia dependencia
+        # (solo Bearer) y estos enlaces mueren en 401. El contenedor recibe la
+        # llave como RCM_OS_SECURITY_KEY justamente para evitarlo.
+        assert client.get("/sessions", params={"key": con_llave}).status_code != 401
+        assert client.get("/exports/x/y.xlsx", params={"key": con_llave}).status_code != 401
 
     def test_api_docs_are_not_public(self, client, con_llave):
         # El esquema describe toda la superficie de la API; no se regala.
@@ -215,6 +219,65 @@ class TestExportsSurviveEphemeralDisk:
             assert app_module._regenerar_entregable("no-existe", "AMEF_X.xlsx") is None
         finally:
             app_module.agent.db.get_session = original
+
+
+class TestDefinitiveExportKeepsItsGate:
+    """El nombre del archivo lo elige quien arma la URL. Sin compuerta, quitar el
+    prefijo BORRADOR_ entregaba un "definitivo" de un análisis a medias — justo
+    lo que la norma prohíbe y lo que la herramienta de exportación sí bloquea."""
+
+    def _con_sesion(self, monkeypatch, sesion):
+        from rcm_runbook import app as app_module
+
+        estado = {"session_state": {"rcm": sesion.model_dump(mode="json")}}
+        monkeypatch.setattr(
+            app_module.agent.db, "get_session", lambda **kw: {"session_data": estado}
+        )
+        return app_module
+
+    def test_incomplete_session_cannot_yield_a_definitive_file(self, client, monkeypatch):
+        from rcm_runbook.engine import compliance
+        from rcm_runbook.models.session import RCMSession
+
+        sesion = RCMSession()
+        sesion.scope.tag = "P-999"
+        assert compliance.export_blockers(sesion), "la sesión debía estar incompleta"
+        app_module = self._con_sesion(monkeypatch, sesion)
+        assert app_module._regenerar_entregable("s", "AMEF_P-999.xlsx") is None
+
+    def test_incomplete_session_still_yields_a_draft(self, client, monkeypatch):
+        from rcm_runbook.models.session import RCMSession
+
+        sesion = RCMSession()
+        sesion.scope.tag = "P-999"
+        app_module = self._con_sesion(monkeypatch, sesion)
+        borrador = app_module._regenerar_entregable("s", "BORRADOR_AMEF_P-999.xlsx")
+        assert borrador is not None and borrador.is_file()
+
+    def test_complete_session_yields_the_definitive_file(self, client, monkeypatch):
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        app_module = self._con_sesion(monkeypatch, sesion)
+        definitivo = app_module._regenerar_entregable("s", f"AMEF_{sesion.scope.tag}.xlsx")
+        assert definitivo is not None and definitivo.is_file()
+
+
+class TestExportNamesAreSane:
+    def test_dot_names_are_rejected(self, client, con_llave):
+        # `\w` dejaba pasar «.» y «..» como session_id. El cliente HTTP ya
+        # normaliza esas rutas, así que aquí se comprueba el guardia directo.
+        from rcm_runbook.app import _SAFE_NAME
+
+        for malo in (".", "..", "..."):
+            assert not _SAFE_NAME.match(malo), f"{malo} no fue rechazado"
+        for bueno in ("demo-abc", "P-101", "a.b"):
+            assert _SAFE_NAME.match(bueno), f"{bueno} fue rechazado por error"
+
+    def test_favicon_is_served_not_404(self, client):
+        r = client.get("/favicon.ico")
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("image/svg")
 
 
 class TestDatabaseBackendIsConfigurable:

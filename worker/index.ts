@@ -36,7 +36,13 @@ export class RcmContainer extends Container<Env> {
     // como variables de entorno del proceso.
     this.envVars = {
       ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
-      OS_SECURITY_KEY: env.OS_SECURITY_KEY,
+      // Con el nombre `RCM_` a propósito, no `OS_SECURITY_KEY`: ese nombre lo
+      // lee también el `AgnoAPISettings()` por defecto de agno, lo que activaba
+      // su propia dependencia de auth — que solo acepta `Authorization: Bearer`
+      // y rechazaba `?key=`. Producción se comportaba distinto que local y los
+      // enlaces clicables dejaban de funcionar en las rutas de agno.
+      // Nuestra config acepta ambos nombres (AliasChoices en config.py).
+      RCM_OS_SECURITY_KEY: env.OS_SECURITY_KEY,
       DATABASE_URL: env.DATABASE_URL,
       RCM_MODEL_ID: env.RCM_MODEL_ID,
       RCM_HOST: "0.0.0.0",

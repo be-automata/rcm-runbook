@@ -19,7 +19,7 @@ from pathlib import Path
 
 from agno.os import AgentOS
 from agno.os.settings import AgnoAPISettings
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from rcm_runbook.agent.factory import build_agent
@@ -47,7 +47,8 @@ agent_os = AgentOS(
 )
 app = agent_os.get_app()
 
-_SAFE_NAME = re.compile(r"^[\w.\-]+$")
+# Excluye nombres compuestos solo de puntos («.», «..»), que \w deja pasar.
+_SAFE_NAME = re.compile(r"^(?!\.+$)[\w.\-]+$")
 
 # Rutas que responden sin llave. Todo lo demás queda cerrado por defecto.
 #
@@ -61,6 +62,13 @@ _SAFE_NAME = re.compile(r"^[\w.\-]+$")
 # transcripciones completas a cualquiera con la URL pública. Aparte de eso, agno
 # solo acepta `Authorization: Bearer`, y necesitamos `?key=` para los enlaces que
 # se abren de un clic en el navegador.
+#
+# Cuidado al desplegar: si `OS_SECURITY_KEY` acaba en el entorno del proceso,
+# ese `AgnoAPISettings()` por defecto sí la ve, activa la dependencia de agno y
+# entonces solo se acepta `Authorization: Bearer` — los enlaces con `?key=`
+# empiezan a dar 401 en las rutas de agno y producción deja de parecerse a
+# local. Por eso el contenedor recibe la llave como `RCM_OS_SECURITY_KEY`
+# (config.py acepta ambos nombres).
 #
 # `/favicon.ico` entra porque Safari lo pide aunque el icono vaya embebido, y un
 # 401 ahí deja un error rojo en la consola del cliente en cada carga.
@@ -97,6 +105,13 @@ def _key_ok(request: Request) -> bool:
 
 
 _SIN_LLAVE = "Llave de acceso inválida o ausente."
+
+_FAVICON_SVG = (
+    b"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    b"<rect width='32' height='32' rx='7' fill='#1F4E78'/>"
+    b"<text x='16' y='23' font-size='18' font-family='Helvetica,Arial'"
+    b" font-weight='bold' fill='white' text-anchor='middle'>R</text></svg>"
+)
 
 
 class RequireKey:
@@ -164,6 +179,7 @@ def _regenerar_entregable(session_id: str, filename: str) -> Path | None:
     disco efímero: el archivo que el cliente descarga mañana se genera en el
     momento a partir de lo que hay en la base.
     """
+    from rcm_runbook.engine import compliance
     from rcm_runbook.export.excel import export_xlsx
     from rcm_runbook.models.session import RCMSession
 
@@ -174,13 +190,15 @@ def _regenerar_entregable(session_id: str, filename: str) -> Path | None:
     crudo = estado.get("rcm")
     if not crudo:
         return None
+    sesion = RCMSession.model_validate(crudo)
+    borrador = filename.startswith("BORRADOR_")
+    # Misma compuerta que aplica la herramienta `export_excel`: sin esto bastaba
+    # quitar el prefijo BORRADOR_ de la URL para llevarse un "entregable
+    # definitivo" de un análisis a medias, que es justo lo que la norma prohíbe.
+    if not borrador and compliance.export_blockers(sesion):
+        return None
     destino = Path(tempfile.mkdtemp(prefix="rcm-export-"))
-    generado = export_xlsx(
-        RCMSession.model_validate(crudo),
-        destino,
-        session_id=session_id,
-        draft=filename.startswith("BORRADOR_"),
-    )
+    generado = export_xlsx(sesion, destino, session_id=session_id, draft=borrador)
     return generado if generado.name == filename else None
 
 
@@ -209,6 +227,13 @@ def download_export(session_id: str, filename: str, request: Request) -> FileRes
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=filename,
     )
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    """El icono va embebido en la página, pero algunos navegadores lo piden igual.
+    Servirlo evita un 404 en la consola del cliente."""
+    return Response(content=_FAVICON_SVG, media_type="image/svg+xml")
 
 
 @app.get("/demo", response_class=HTMLResponse)

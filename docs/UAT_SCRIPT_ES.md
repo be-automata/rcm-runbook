@@ -4,28 +4,36 @@ Recorrido manual de aceptación del **Facilitador RCM**. Se ejecuta con un naveg
 una terminal y el Excel de benchmark del cliente a mano. Marque cada casilla al
 completar el paso.
 
-**Prerrequisitos**: `uv` instalado, `ANTHROPIC_API_KEY` exportada (o `RCM_PROVIDER`/
-`RCM_MODEL_ID` configurados en `.env`), Excel de escritorio disponible.
+**Prerrequisitos**: Excel de escritorio, y la `OS_SECURITY_KEY` a mano.
+
+Este guion se ejecuta contra el **despliegue en Cloudflare**:
+`BASE=https://rcm-demo.beautomata.com`. Para correrlo en local en su lugar,
+`uv run rcm-runbook` y `BASE=http://localhost:7777` (necesita `uv` y
+`ANTHROPIC_API_KEY` o `CLAUDE_CODE_OAUTH_TOKEN` en el `.env`).
+
+> **Arranque en frío:** el contenedor duerme a los 20 min sin tráfico. La primera
+> petición del día lo despierta y tarda bastante más; no es un fallo. Conviene
+> hacer un `curl $BASE/health` unos minutos antes de empezar.
 
 ---
 
 ## 0. Arranque (5 min)
 
-1. En la raíz del repositorio:
+1. Compruebe que el servicio responde:
 
    ```bash
-   uv run rcm-runbook
+   BASE=https://rcm-demo.beautomata.com
+   curl -s -o /dev/null -w '%{http_code}\n' $BASE/health      # 200
    ```
 
-2. Verifique en la consola que el servidor levanta en `http://localhost:7777`.
-3. Abra la UI de AgentOS (https://os.agno.com o la UI configurada) y conéctela a
-   `http://localhost:7777`. Con `OS_SECURITY_KEY` configurada, la UI **pedirá esa
-   llave** (campo «Security key»); sin ella la conexión responde 401. Debe
-   aparecer el agente **Facilitador RCM**.
-4. Inicie un chat nuevo y **anote el `session_id`** (lo necesitará para reanudar y
+2. Abra la UI de AgentOS (https://os.agno.com) y conéctela a `$BASE`. La UI
+   **pedirá la llave** (campo «Security key»); sin ella la conexión responde 401.
+   Debe aparecer el agente **Facilitador RCM**.
+   (Alternativa sin cuenta: el enlace `$BASE/demo?key=<llave>`.)
+3. Inicie un chat nuevo y **anote el `session_id`** (lo necesitará para reanudar y
    para la URL de descarga).
 
-- [ ] El servidor arranca sin errores y la UI muestra al Facilitador RCM.
+- [ ] El servicio responde 200 y la UI muestra al Facilitador RCM.
 - [ ] El agente saluda en español y arranca por la Fase 1 (alcance).
 
 ## 1. Fase 1 — Alcance y contexto (5 min)
@@ -117,7 +125,8 @@ controles actuales de cada modo.
 ## 7. Descarga y reanudación (5 min)
 
 1. Abra en el navegador, **con la llave** (la descarga está protegida):
-   `http://localhost:7777/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`
+   `$BASE/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`
+   El archivo se **regenera** desde la base de datos, no se lee de disco.
    - [ ] Descarga un `.xlsx` válido (no un error 404/400).
    - [ ] Sin `?key=` la misma URL responde 401.
 2. **Cierre la pestaña del navegador por completo.** Vuelva a abrir la UI y retome
@@ -142,10 +151,9 @@ Abra en Excel, lado a lado, el archivo exportado y el benchmark del cliente:
 
 ## 9. Enlace directo de demo: continuidad de sesión (5 min)
 
-Recorrido del enlace que se le manda a un interesado no técnico. Requiere el
-servicio publicado (túnel activo) o `http://localhost:7777` en local.
+Recorrido del enlace que se le manda a un interesado no técnico, contra `$BASE`.
 
-1. Abra `<base>/demo?key=<OS_SECURITY_KEY>` (sin `&session=`).
+1. Abra `$BASE/demo?key=<OS_SECURITY_KEY>` (sin `&session=`).
    - [ ] Carga el chat y la barra de direcciones **se reescribe sola** añadiendo
      `&session=demo-xxxxxxxx`.
 2. Escriba un mensaje y espere la respuesta.
@@ -159,18 +167,18 @@ servicio publicado (túnel activo) o `http://localhost:7777` en local.
 5. Pulse **Nuevo análisis** (arriba a la derecha).
    - [ ] Empieza en blanco, con un `session` distinto en la URL, y vuelve el
      texto de bienvenida.
-6. Abra `<base>/demo` **sin** `?key=`.
+6. Abra `$BASE/demo` **sin** `?key=`.
    - [ ] Avisa «Falta la llave de acceso…» y el botón Enviar queda deshabilitado.
 7. Abra la consola del navegador (F12).
-   - [ ] Cero errores rojos, incluido el de `/favicon.ico`.
+   - [ ] Cero errores rojos en la consola.
 
 ## 10. La API está cerrada por defecto (3 min)
 
 Con `OS_SECURITY_KEY` configurada, desde una terminal:
 
 ```bash
-BASE=https://rcm-demo.beautomata.com      # o http://localhost:7777
-KEY=$(grep '^OS_SECURITY_KEY=' .env | cut -d= -f2-)
+BASE=https://rcm-demo.beautomata.com
+KEY=<OS_SECURITY_KEY>
 for r in /sessions /metrics /traces /memories /openapi.json /docs; do
   echo "$r -> $(curl -s -o /dev/null -w '%{http_code}' $BASE$r)"
 done
@@ -178,8 +186,8 @@ done
 
 - [ ] Las seis rutas devuelven **401** sin llave.
 - [ ] `curl -H "Authorization: Bearer $KEY" $BASE/sessions` devuelve 200.
-- [ ] `$BASE/demo` y `$BASE/health` siguen respondiendo 200 sin llave (son las
-  dos únicas públicas a propósito).
+- [ ] `$BASE/demo`, `$BASE/health` y `$BASE/favicon.ico` siguen respondiendo 200
+  sin llave (son las tres únicas públicas a propósito).
 - [ ] `$BASE/sessions/<session_id>/runs` sin llave da 401 — nadie lee las
   transcripciones de otro con solo tener la URL.
 
@@ -200,6 +208,8 @@ done
 | 11 | `.xlsx` equivalente al benchmark del cliente (hojas y encabezados) | ☐ |
 | 12 | La demo retoma la sesión al recargar y al cambiar de dispositivo | ☐ |
 | 13 | «Nuevo análisis» empieza de cero sin arrastrar la sesión anterior | ☐ |
-| 14 | Toda la API responde 401 sin llave, salvo `/demo` y `/health` | ☐ |
+| 14 | Toda la API responde 401 sin llave, salvo `/demo`, `/health` y `/favicon.ico` | ☐ |
+| 15 | El entregable definitivo sigue bloqueado si el análisis está incompleto, también por URL | ☐ |
+| 16 | El servicio responde con la Mac del desarrollador apagada | ☐ |
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________

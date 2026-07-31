@@ -21,7 +21,7 @@ se regeneran desde el estado de la sesión al descargarlos.
 
 La API está **cerrada por defecto**: todo exige
 `Authorization: Bearer` (o `?key=`) con la `OS_SECURITY_KEY` del `.env`, salvo
-dos rutas públicas a propósito, `/demo` y `/health`.
+tres rutas públicas a propósito: `/demo`, `/health` y `/favicon.ico`.
 
 > Esa compuerta es propia (`require_key` en `app.py`), no de Agno. La llave de
 > `AgnoAPISettings` dejaba abiertas 22 rutas GET, entre ellas `/sessions` y
