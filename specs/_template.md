@@ -12,16 +12,18 @@ Qué resuelve esta feature, en 2-3 oraciones.
 ### NO entra (explícito)
 - ...
 
-## 2. Criterios de aceptación
-Verificables. Nada de "funciona bien": números, códigos, comportamientos
-observables.
-- [ ] ...
-- [ ] ...
+## Pre-requisitos
+- ...
 
-## 3. Notas de arquitectura
+## 3. Criterios de aceptación
+Delivery a enterprise-grade product (executed, observed, and verified), 
+leverage on `.claude/agents/testing/production-validator.md` to run old and new UAT/Test cases in the local and target (remote) environment.
+
+
+## 4. Notas de arquitectura
 Qué capas/archivos toca, qué patrones del repo respeta, qué integra.
 
-## 4. Tareas
+## 5. Tareas
 1. [ ] ...  (30-90 min de agente, verificable por separado)
 2. [ ] ...
 
