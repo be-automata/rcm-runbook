@@ -178,14 +178,16 @@
   // que a su vez repite lo que escribe el usuario, así que sanear una cadena
   // sería una carrera que se pierde; creando nodos, el XSS no existe por
   // construcción: un "<img onerror=…>" solo puede acabar siendo texto.
-  var RE_ENLINEA = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]\n]+\]\([^)\s]+\))/;
+  var RE_ENLINEA = /(`[^`\n]+`)|(\*\*\*[^*\n]+\*\*\*)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(_[^_\n]+_)|(\[[^\]\n]+\]\([^)\s]+\))/;
   var RE_ORD = /^\s*\d+[.)]\s+/;
   var RE_VIN = /^\s*[-*•]\s+/;
 
   // Solo estos destinos son clicables. Deja fuera javascript:, data: y file:,
   // que son el vector real de un enlace de markdown.
   function urlPermitida(u){
-    return /^https?:\/\//i.test(u) || u.indexOf('/exports/') === 0;
+    if(/^https?:\/\//i.test(u)) return true;
+    // Salto de directorio: `/exports/../algo` resolvería fuera de /exports.
+    return u.indexOf('/exports/') === 0 && u.indexOf('..') === -1 && u.indexOf('\\') === -1;
   }
 
   function nodoTexto(t){ return document.createTextNode(t); }
@@ -199,6 +201,10 @@
       var t = m[0], el = null;
       if(t.charAt(0) === '`'){
         el = document.createElement('code'); el.textContent = t.slice(1, -1);
+      } else if(t.slice(0, 3) === '***'){
+        el = document.createElement('strong');
+        var cur = document.createElement('em');
+        enLinea(t.slice(3, -3), cur); el.appendChild(cur);
       } else if(t.slice(0, 2) === '**'){
         el = document.createElement('strong'); enLinea(t.slice(2, -2), el);
       } else if(t.charAt(0) === '*' || t.charAt(0) === '_'){

@@ -408,6 +408,17 @@ class TestSeguridadMarkdown:
         assert "href=https://ejemplo.com/ja1011" in salida
         assert "target=_blank" in salida and "rel=noopener noreferrer" in salida
 
+    def test_exports_con_salto_de_directorio_no_es_clicable(self):
+        # `/exports/../..` resuelve fuera de /exports: un enlace anunciado como
+        # descarga no debe poder apuntar a otro sitio.
+        assert "href=" not in render("[x](/exports/../../otra)")
+        assert "href=" not in render("[x](/exports/..%2Fotra)".replace("%2F", "\\"))
+
+    def test_negrita_y_cursiva_juntas_no_dejan_asteriscos(self):
+        salida = render("Esto es ***muy importante***")
+        assert "strong()" in salida and "em()" in salida
+        assert "*" not in salida
+
     def test_enlace_relativo_de_exports_es_clicable(self):
         # Lo que emite export_excel: el cliente baja su Excel de un clic.
         salida = render("Descarga: [AMEF](/exports/s1/AMEF_P200.xlsx?key=k)")
