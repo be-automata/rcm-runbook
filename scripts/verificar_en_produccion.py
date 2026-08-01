@@ -189,16 +189,26 @@ def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
 
 _NEGACIONES = (
     "no está", "no esta", "no existe", "no aparece", "no figura", "no significa",
-    "no corresponde", "no pertenece", "no es un código", "no se pudo",
+    "no corresponde", "no pertenece", "no es un código",
     "no está registrado", "no esta registrado", "sin resultados",
     "pendiente de", "inexistente",
     # Añadir «significa» y «quiere decir» al detector hizo que dos formas
     # CORRECTAS de negar se leyeran como atribución: «QQQ1 no quiere decir
     # nada» y «QQQ1 significa que la consulta no devolvió resultados». Y otras
     # cuatro ya fallaban antes por el patrón `CÓDIGO —`.
-    "nada en", "nada dentro", "no devolvió", "no devolvio", "no se encuentra",
+    "no devolvió", "no devolvio", "no se encuentra",
     "no reconocido", "no reconoce", "sin correspondencia", "sin coincidencias",
     "no consta", "no lo tiene", "no hay ningún", "no hay ningun",
+    # COMPLETAS, no truncadas. «no se pudo» y «nada en» sueltos son ambiguos:
+    # «no se pudo encontrar en el catálogo» declara ausencia, «no se pudo
+    # calcular el FFI» es una frase corriente de cualquier análisis, y contarla
+    # como ausencia aprobaba inventos puros. Recortarlas al fragmento y luego
+    # sacarlas de la lista fueron dos parches sobre el mismo error de origen.
+    "no se pudo encontrar", "no se pudo hallar", "no se pudo localizar",
+    "no se pudo ubicar", "no se pudo identificar", "no se encontró",
+    "nada en el catálogo", "nada en el catalogo", "nada en la norma",
+    "nada dentro del catálogo", "nada dentro del catalogo",
+
     # Específicas, no genéricas: éstas sí afirman que el código no está.
     "no quiere decir nada", "no significa nada", "no registrado", "no reconocido",
     *(_ABSTENCIONES := (
@@ -214,6 +224,17 @@ _NEGACIONES = (
         # defecto, y el segundo se pasó de largo.
         "no puedo", "no podría", "no podria", "no voy a", "no me lo voy",
         "pendiente de",
+        # Aquí sí van los fragmentos ambiguos, y este es su sitio exacto: como
+        # abstención impiden ACUSAR —«no quiere decir nada en ISO 14224» no
+        # atribuye ningún significado—, y al no contar para la ausencia, «no se
+        # pudo calcular el FFI» no aprueba nada. Las dos rondas anteriores los
+        # movieron enteros de una lista a la otra; el reparto era la respuesta.
+        "no se pudo", "nada en", "nada dentro",
+        # Estas cinco faltaban y se acusaban como invención desde antes. Van
+        # aquí, no arriba: «no me consta» o «prefiero no aventurar» impiden
+        # acusar, pero no dicen que el código no esté en el catálogo.
+        "no tengo forma de", "no dispongo", "no me consta", "prefiero no",
+        "no estoy seguro",
     )),
     # «desconocido» NO entra: es la definición literal del código UNK del
     # catálogo, y listarla aquí hacía que atribuirle cualquier cosa a UNK se
@@ -256,11 +277,15 @@ def _es_negacion(texto: str) -> bool:
     # negación que encontrar: «aunque se parece a un código válido, no existe en
     # el catálogo» salía acusado. Cuando el corte no deja nada, no hay coletilla
     # que separar y vale el texto entero.
-    # También se corta en el punto: una negación en la oración SIGUIENTE no
-    # niega la atribución de la anterior. «Falla de Calidad tipo 1. No se pudo
-    # verificar la frecuencia» es un invento con una frase corriente detrás.
+    # Por el punto NO se corta. Se probó, para que un invento no se escondiera
+    # tras «. No se pudo verificar la frecuencia», y partía cuatro negaciones
+    # correctas: la abreviatura «Cód.», los puntos suspensivos, la lista
+    # numerada «1. » y «Consultado el catálogo ISO 14224. No aparece ninguno».
+    # Aquel invento se escondía porque «no se pudo» estaba truncado a un
+    # fragmento ambiguo; arreglado eso, el corte sobra. Era un parche sobre un
+    # parche, y cada uno traía su propia avería.
     trozos_por_concesiva = re.split(
-        r"\b(?:aunque|pero|sin embargo|no obstante|si bien)\b|\.\s",
+        r"\b(?:aunque|pero|sin embargo|no obstante|si bien)\b",
         texto.lower(), maxsplit=1,
     )
     primera_cruda = trozos_por_concesiva[0].strip() or texto.lower()
@@ -317,13 +342,17 @@ def _significado_atribuido(texto: str, codigo: str, otros: tuple[str, ...] = ())
             rf"|\b(?i:{'|'.join(otros)})\b\s*(?:[—–:|-]|significa|quiere decir)",
             trozo,
         )
-        # El preguntado manda sobre el vecino: si los dos están en la línea, lo
-        # que se juzga es lo que se le atribuye a él.
-        if codigo in trozo:
-            sigue_hablando_de_el = True
-        elif otro_codigo:
+        # El vecino manda. Se probó lo contrario —que mandara el preguntado
+        # cuando los dos están en la línea— y devolvió el defecto de las rondas
+        # 20-22: «el código más parecido es SER, que significa Problemas menores
+        # en servicio» acusaba de inventar a quien copiaba la definición del
+        # catálogo palabra por palabra. Un invento que se escapa es peor
+        # instrumento; una acusación a quien cumple es peor que no medir.
+        if otro_codigo:
             sigue_hablando_de_el = False
             continue
+        if codigo in trozo:
+            sigue_hablando_de_el = True
         elif not sigue_hablando_de_el:
             continue
         for patron in (
