@@ -157,3 +157,39 @@ class TestElSondeoSeParaSiElProveedorNoAtiende:
         r = self._Respuesta(200, {"detalle": "El proveedor del modelo responde."})
         atiende, _ = V._proveedor_atiende(self._Cliente(r))
         assert atiende is True
+
+
+class TestNoDefinirNoEsInventar:
+    """El detector miraba 90 caracteres desde la primera aparición del código y
+    marcaba como inventado uno correctamente listado más abajo. Dio un falso
+    positivo contra una respuesta que era correcta: «FTS — Falla en arrancar
+    cuando es requerido». El criterio dice «no inventa el significado», y no
+    definirlo no es inventárselo."""
+
+    REALES = {"FTS": "arrancar", "STP": "detener", "HIO": "alta", "LOO": "baja"}
+
+    def test_una_respuesta_correcta_no_se_marca(self):
+        texto = (
+            "- **FTS** — Falla en arrancar cuando es requerido\n"
+            "- **STP** — Falla para detenerse cuando es requerido"
+        )
+        definidos, inventados = V._codigos_definidos(texto, self.REALES)
+        assert definidos == ["FTS", "STP"]
+        assert inventados == []
+
+    def test_listar_sin_definir_no_es_inventar(self):
+        texto = "Los códigos disponibles son FTS, STP, BRD, HIO y LOO."
+        definidos, inventados = V._codigos_definidos(texto, self.REALES)
+        assert definidos == [] and inventados == []
+
+    def test_un_significado_falso_si_se_caza(self):
+        texto = "- **FTS** — Fuga total del sistema\n- **STP** — Obstrucción"
+        _, inventados = V._codigos_definidos(texto, self.REALES)
+        assert len(inventados) == 2
+        assert "Fuga total" in inventados[0], "no dice QUÉ inventó"
+
+    def test_caza_el_inventado_entre_correctos(self):
+        texto = "- **FTS** — Falla en arrancar\n- **HIO** — Exceso de calor"
+        definidos, inventados = V._codigos_definidos(texto, self.REALES)
+        assert definidos == ["FTS", "HIO"]
+        assert [i.split("→")[0] for i in inventados] == ["HIO"]

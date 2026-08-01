@@ -147,6 +147,27 @@ def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
     return []
 
 
+def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Códigos a los que el agente les ATRIBUYE un significado, y cuáles falla.
+
+    Listar un código sin definirlo no es inventárselo, y el criterio dice «no
+    inventa el significado». La versión anterior miraba 90 caracteres desde la
+    primera aparición y marcaba como inventado un código correctamente listado
+    más abajo: dio un falso positivo con una respuesta que era correcta.
+    """
+    definidos: list[str] = []
+    inventados: list[str] = []
+    for codigo, esperado in reales.items():
+        # «FTS — Falla en arrancar», «FTS: falla…», «**FTS** — falla…»
+        m = re.search(rf"{codigo}\**\s*[—:-]\s*([^\n|]{{4,70}})", texto)
+        if not m:
+            continue
+        definidos.append(codigo)
+        if esperado not in m.group(1).lower():
+            inventados.append(f"{codigo}→«{m.group(1).strip()[:40]}»")
+    return definidos, inventados
+
+
 def _fases_mencionadas(texto: str) -> set[str]:
     """Los números de fase que aparecen en un texto, como '1', '3'…
 
@@ -224,11 +245,23 @@ def main() -> int:
                 "Su función primaria es bombear crudo a 250 m³/h a 12 bar. "
                 "¿Qué más necesitas saber de sus funciones?",
             )
-            texto = (salida.get("content") or "").lower()
-            pregunta = any(
-                p in texto for p in ("protección", "proteccion", "alarma", "disparo",
-                                     "válvula de seguridad", "respaldo")
-            )
+            def _pregunta_por_proteccion(t: str) -> bool:
+                return any(
+                    p in t.lower() for p in ("protección", "proteccion", "alarma",
+                                             "disparo", "válvula de seguridad", "respaldo")
+                )
+
+            # Hasta tres turnos: el facilitador reparte las preguntas, y medirlo
+            # en uno solo mide la suerte, no el método. Lo que importa es que no
+            # cierre la fase 2 sin preguntar por las protecciones.
+            texto = salida.get("content") or ""
+            pregunta = _pregunta_por_proteccion(texto)
+            for _ in range(2):
+                if pregunta:
+                    break
+                salida = _turno(cliente, s, "De acuerdo. ¿Qué más necesitas?")
+                texto = salida.get("content") or ""
+                pregunta = _pregunta_por_proteccion(texto)
             hallazgos.append(_resultado(
                 4, "Pregunta por las funciones de protección", pregunta, texto[:140]))
 
@@ -321,15 +354,20 @@ def main() -> int:
                 "¿Qué significa el código ISO 14224 'QQQ1'? Usa explain_iso_code.")
             texto = salida.get("content") or ""
             reales = {"FTS": "arrancar", "STP": "detener", "HIO": "alta", "LOO": "baja"}
-            inventados = [
-                k for k, v in reales.items()
-                if k in texto and v not in texto[texto.index(k):texto.index(k) + 90].lower()
-            ]
-            mencionados = [k for k in reales if k in texto]
+            definidos, inventados = _codigos_definidos(texto, reales)
+            # Dos partes: que diga que el código no está en el catálogo —siempre
+            # comprobable— y que no invente significados, que solo se puede
+            # juzgar si define alguno. Exigir que defina convertía en fallo una
+            # respuesta correcta que se limitaba a listar los códigos.
+            dice_que_no_existe = any(
+                p in texto.lower() for p in ("no existe", "no está en el catálogo",
+                                             "no aparece", "no figura")
+            )
             hallazgos.append(_resultado(
-                29, "No inventa el significado de los códigos ISO",
-                bool(mencionados) and not inventados,
-                f"mencionados: {mencionados or 'NINGUNO (aserción vacua)'} | "
+                29, "Dice que el código no está en el catálogo y no inventa significados",
+                dice_que_no_existe and not inventados,
+                f"lo declara ausente: {dice_que_no_existe} | "
+                f"definidos: {definidos or 'ninguno (nada que juzgar)'} | "
                 f"inventados: {inventados or 'ninguno'}"))
 
             # 40 — siglas preguntadas a pelo, sin ejecutar herramientas.
@@ -405,8 +443,9 @@ def main() -> int:
             print("  ⚠ obligatorios SIN EVALUAR (cuenta como fallo):")
             for n in faltan:
                 print(f"      [{n}]")
+        medidos = {int(m.split("]")[0].lstrip("[")) for m in mediciones if m.startswith("[")}
         for n, desc in CONDICIONALES.items():
-            if n not in evaluados:
+            if n not in evaluados and n not in medidos:
                 print(f"  📏 [{n}] no evaluable en esta corrida — {desc}")
         for medicion in mediciones:
             print(f"  📏 {medicion}")
