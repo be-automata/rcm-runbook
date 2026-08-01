@@ -195,7 +195,40 @@ def export_blockers(session: RCMSession) -> list[str]:
     ):
         for issue in check_gate(session, phase):
             issues.append(f"[Fase {phase.value}] {issue}")
+    issues.extend(tareas_contradictorias(session))
     return issues
+
+
+def tareas_contradictorias(session: RCMSession) -> list[str]:
+    """Dos tareas del mismo modo que se contradicen bloquean el entregable.
+
+    El guardián de casi-duplicados de `add_task` ataja las reformulaciones, pero
+    no puede cazar un sinónimo («Medición de vibraciones» frente a «Análisis de
+    vibración») sin una lista de sinónimos que rechazaría tareas legítimas. Esta
+    es la red que sí es determinista: no adivina si son la misma tarea, solo se
+    niega a entregar un plan donde dos filas del mismo modo mandan cosas
+    distintas — que es lo que el cliente se lleva al CMMS.
+
+    Se vio en el primer análisis completo real: «Mensual, 2 h, Mecánico, sin
+    paro» y «Semestral, 3 h, Instrumentista, con paro» para el mismo modo, y la
+    hoja AMEF mostró en silencio solo la primera.
+    """
+    problemas: list[str] = []
+    for fmid, tareas in session.tasks.items():
+        if len(tareas) < 2:
+            continue
+        for i, a in enumerate(tareas):
+            for b in tareas[i + 1 :]:
+                if a.requires_shutdown != b.requires_shutdown:
+                    problemas.append(
+                        f"[Plan] {fmid} tiene dos tareas que se contradicen sobre si "
+                        f"requiere paro de planta: '{a.description}' "
+                        f"({'con paro' if a.requires_shutdown else 'sin paro'}) y "
+                        f"'{b.description}' "
+                        f"({'con paro' if b.requires_shutdown else 'sin paro'}). "
+                        "Resuelva cuál vale antes de exportar."
+                    )
+    return problemas
 
 
 def validate_ja1011(session: RCMSession) -> list[str]:

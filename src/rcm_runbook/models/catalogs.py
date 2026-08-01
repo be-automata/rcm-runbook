@@ -172,6 +172,24 @@ class HiddenRoute(StrEnum):
     G = "G"
 
 
+
+# La letra sola no dice nada, y el modelo la rellenaba inventando: tres corridas
+# dieron tres alfabetos distintos y contradictorios, uno de ellos invirtiendo las
+# dos familias. La letra se escribe en el entregable del cliente (columnas «Falla
+# Evidente (ABCD)» y «Falla Oculta (AEFG)») y es la traza auditable de por qué se
+# eligió una política, así que inventarla contamina la auditoría. La verdad vivía
+# solo en un docstring del motor que el agente nunca ve.
+ROUTE_LABELS_ES: dict[str, str] = {
+    "A": "Consecuencia de Seguridad o Ambiente",
+    "B": "Consecuencia Operacional (falla evidente)",
+    "C": "Consecuencia No Operacional (falla evidente)",
+    "D": "Operar hasta la falla, tolerable (falla evidente)",
+    "E": "Consecuencia Operacional (falla oculta)",
+    "F": "Consecuencia No Operacional (falla oculta)",
+    "G": "Operar hasta la falla, tolerable (falla oculta)",
+}
+
+
 # ---------------------------------------------------------------------------
 # Fixture-backed vocabularies with typed, catalog-validated codes
 # ---------------------------------------------------------------------------

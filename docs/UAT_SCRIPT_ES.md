@@ -313,7 +313,10 @@ done
 | 31 | Un enlace de descarga con salto de directorio codificado (`%2e%2e`) no es clicable | ☐ |
 | 32 | Una tabla del agente se dibuja como tabla, sin barras `|` visibles, y no desborda la pantalla del teléfono | ☐ |
 | 33 | El plan de mantenimiento no trae dos tareas del mismo modo que se contradicen | ☐ |
-| 34 | Los métodos de FFI y la política de mantenimiento llegan con su significado, no como siglas peladas | ☐ |
+| 34 | Los métodos de FFI, la política y la **letra de ruta** llegan con su significado, no como siglas peladas | ☐ |
+| 35 | Una corrección de un modo o de una tarea no se descarta en silencio: o se aplica, o se avisa | ☐ |
+| 36 | Nada de lo registrado en un turno con varias herramientas se pierde (compárese lo que dijo el agente con `/sessions/<id>`) | ☐ |
+| 37 | Una causa que repite el modo se rechaza aunque se escriba sin tildes | ☐ |
 
 ## Limitación conocida — la compuerta del entregable definitivo
 

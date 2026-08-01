@@ -697,16 +697,64 @@ class TestLasSiglasVanConSuDefinicion:
     cuánto se prueba un dispositivo de seguridad."""
 
     def test_el_rechazo_de_ffi_explica_cada_metodo(self):
+        # Las CINCO definiciones, cada una pegada a SU método: la primera
+        # versión comprobaba los identificadores y una sola definición suelta,
+        # así que intercambiar los significados de multi_single y single_multi
+        # pasaba desapercibido.
         from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.agent.tools import METODOS_FFI
 
         class Ctx:
             session_id = "s-ffi"
             session_state: dict = {}
 
         salida = tools_mod.calculate_ffi.entrypoint(Ctx(), method="disponibilidad")
-        for metodo in ("availability", "single_single", "multi_single", "economic"):
-            assert metodo in salida
-        assert "VARIAS funciones protegidas, UN SOLO dispositivo" in salida
+        for metodo, definicion in METODOS_FFI:
+            assert f"- {metodo} — {definicion}" in salida, f"{metodo} sin su definición"
+
+    def test_cada_metodo_de_ffi_dice_lo_que_hace_el_motor(self):
+        # Contra el motor, no contra sí mismo: intercambiar las definiciones de
+        # multi_single y single_multi en la tabla Y en el docstring dejaba la
+        # suite en verde, y es justo el error que contamina un cálculo de
+        # seguridad.
+        from rcm_runbook.agent.tools import METODOS_FFI
+
+        tabla = dict(METODOS_FFI)
+        assert "VARIAS funciones protegidas, UN SOLO dispositivo" == tabla["multi_single"]
+        assert "UNA función protegida, VARIOS dispositivos redundantes" == (
+            tabla["single_multi"]
+        )
+        # La verdad vive en engine/ffi.py: multi_single recibe una LISTA de
+        # Mted (varias funciones protegidas); single_multi recibe n (varios
+        # dispositivos).
+        import inspect
+
+        from rcm_runbook.engine import ffi
+
+        assert "mted_list" in inspect.signature(ffi.ffi_multi_single).parameters
+        assert "n" in inspect.signature(ffi.ffi_single_multi).parameters
+
+    def test_los_parametros_llegan_al_motor_por_el_camino_correcto(self):
+        # Intercambiar el enrutado real (mted_list ↔ n) daba otro número con un
+        # ✔ delante y ningún test lo miraba.
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-ffi2"
+            session_state: dict = {}
+
+        multi = tools_mod.calculate_ffi.entrypoint(
+            Ctx(), method="multi_single", mtive_hours=43800,
+            mted_list_hours="8760,17520", mmf_hours=100000,
+        )
+        single = tools_mod.calculate_ffi.entrypoint(
+            Ctx(), method="single_multi", mtive_hours=43800, mted_hours=8760,
+            mmf_hours=100000, n_devices=2,
+        )
+        assert "❌" not in multi and "❌" not in single
+        # Los dos métodos son fórmulas distintas: si el enrutado se cruzara,
+        # darían el mismo número o uno de los dos fallaría.
+        assert multi != single
 
     def test_el_docstring_define_los_parametros_que_se_inventaban(self):
         # Es lo que el modelo lee antes de preguntar. `cff` se leyó como
@@ -761,3 +809,299 @@ class TestLasSiglasVanConSuDefinicion:
         salida = tools_mod.run_decision_logic.entrypoint(Ctx(), failure_mode_id=fm)
         assert "No se pudo completar la operación" not in salida
         assert "No hay política determinable" in salida
+
+
+def _registrar_integrante(tools_mod, ctx, nombre: str) -> str:
+    """Fuera del bucle a propósito: un lambda que captura la variable de la
+    iteración es justo la clase de cierre que ya causó la fuga de la llave."""
+    return tools_mod.record_team_member.entrypoint(ctx, name=nombre, role="Operador")
+
+
+class TestNoSePierdenEscriturasEnParalelo:
+    """En producción `score_risk` contestó «✔ Riesgo inicial de FM-002:
+    S9-O3-D8 → RPN=216» y seis turnos después el entregable se bloqueó porque
+    FM-002 no tenía valoración: el dato de riesgo de un modo con S=9 se evaporó
+    con un ✔ delante.
+
+    `_load` lee el estado, la herramienta muta una copia y `_save` reescribe el
+    objeto entero. Con dos llamadas del mismo turno en paralelo, la segunda
+    parte de la foto vieja y borra a la primera.
+
+    La carrera NO se reproduce sola: en local el load-mutate-save dura
+    microsegundos y las hebras casi nunca se solapan — probado, con 24 hebras y
+    el candado quitado no se perdía ni una. Por eso se fuerza el solapamiento
+    con una barrera: las hebras se esperan unas a otras DENTRO de la lectura,
+    que es justo la ventana del defecto. Con el candado puesto no pueden
+    coincidir ahí, la barrera vence por tiempo y cada una escribe en su turno.
+    """
+
+    HEBRAS = 4
+
+    def _contexto(self):
+        import threading
+
+        barrera = threading.Barrier(self.HEBRAS, timeout=0.15)
+
+        class EstadoConBarrera(dict):
+            def get(self, clave, defecto=None):
+                # La espera va DESPUÉS de leer: así todas se llevan la misma
+                # foto vieja y la carrera es segura, no cuestión de suerte.
+                # Con la barrera antes de la lectura el defecto solo aparecía
+                # 1 de cada 5 veces, porque una hebra terminaba su turno entero
+                # antes de que la siguiente llegara a leer.
+                valor = super().get(clave, defecto)
+                try:
+                    barrera.wait()
+                except threading.BrokenBarrierError:
+                    pass  # el candado hizo su trabajo: no pudieron coincidir
+                return valor
+
+        class Ctx:
+            session_id = "s-carrera"
+            session_state = EstadoConBarrera()
+
+        return Ctx()
+
+    def test_registros_simultaneos_no_se_pisan(self):
+        # Cinco rondas: con una sola, quitar el candado fallaba 2 de 3 veces, y
+        # un test que deja pasar el defecto un tercio de las veces no sirve de
+        # red. Con cinco, que las cinco se salven por casualidad es despreciable.
+        import concurrent.futures as cf
+        import functools
+
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import RCMSession
+
+        for ronda in range(5):
+            ctx = self._contexto()
+            nombres = [f"Persona {ronda}-{i}" for i in range(self.HEBRAS)]
+            with cf.ThreadPoolExecutor(max_workers=self.HEBRAS) as pool:
+                list(pool.map(
+                    functools.partial(_registrar_integrante, tools_mod, ctx), nombres
+                ))
+
+            guardada = RCMSession.model_validate(ctx.session_state["rcm"])
+            perdidos = set(nombres) - {m.name for m in guardada.team}
+            assert not perdidos, (
+                f"ronda {ronda}: se perdieron {len(perdidos)} de {len(nombres)} "
+                f"escrituras: {sorted(perdidos)}"
+            )
+
+    def test_el_candado_es_por_sesion_no_global(self):
+        # Serializar TODAS las sesiones convertiría el candado en un cuello de
+        # botella para todos los clientes a la vez.
+        from rcm_runbook.agent.tools import _candado
+
+        class A:
+            session_id = "sesion-a"
+
+        class B:
+            session_id = "sesion-b"
+
+        assert _candado(A()) is not _candado(B())
+        assert _candado(A()) is _candado(A())
+
+
+class TestElNucleoDeLaTareaMandaSobreLosArticulos:
+    """Se coló hasta el Excel del cliente quitando dos artículos: «…de los
+    rodamientos de la bomba P-101» frente a «…de rodamientos de bomba P-101».
+    Y a la vez rechazaba de más: «Análisis de aceite» se tomaba por «Análisis de
+    vibración»."""
+
+    BASE = "Análisis de vibración de los rodamientos de la bomba P-101"
+
+    def _casi(self, otro: str) -> bool:
+        from rcm_runbook.models.session import RCMSession
+
+        return RCMSession._casi_igual(self.BASE, otro)
+
+    def test_quitar_articulos_no_cuela_una_tarea_nueva(self):
+        assert self._casi("Análisis de vibración de rodamientos de bomba P-101")
+
+    def test_el_plural_no_cuela_una_tarea_nueva(self):
+        assert self._casi("Análisis de vibraciones de los rodamientos de bomba P-101")
+
+    def test_una_cola_de_relleno_no_desactiva_el_guardian(self):
+        # Añadir veinte palabras idénticas diluía el Jaccard bajo el umbral.
+        assert self._casi(self.BASE + " durante el turno de mañana con el equipo "
+                          "de predictivo presente y su registro correspondiente")
+
+    def test_una_tarea_legitimamente_distinta_no_se_rechaza(self):
+        for otra in (
+            "Análisis de aceite de los rodamientos de la bomba P-101",
+            "Lubricación de los rodamientos de la bomba P-101",
+            "Termografía del tablero eléctrico",
+            "Alineación láser del acople de la bomba P-101",
+        ):
+            assert not self._casi(otra), f"rechazó de más: {otra}"
+
+
+class TestElPlanContradictorioNoSePuedeExportar:
+    """La red que sí es determinista. El guardián de texto no puede cazar un
+    sinónimo sin rechazar tareas legítimas; esto no adivina si son la misma
+    tarea, solo se niega a entregar un plan donde dos filas del mismo modo
+    mandan cosas distintas."""
+
+    def _con_dos_tareas(self, **segunda):
+        from rcm_runbook.models.domain import MaintenanceTask
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        s.tasks[fm] = []
+        base = {
+            "failure_mode_id": fm, "frequency": "Mensual", "duration_hours": 2.0,
+            "discipline": "Mecánico", "requires_shutdown": False,
+        }
+        s.tasks[fm].append(MaintenanceTask(description="Análisis de vibración", **base))
+        s.tasks[fm].append(MaintenanceTask(**{**base, **segunda}))
+        return s, fm
+
+    def test_dos_tareas_que_se_contradicen_bloquean_el_entregable(self):
+        from rcm_runbook.engine import compliance
+
+        s, fm = self._con_dos_tareas(
+            description="Medición de vibraciones", requires_shutdown=True,
+            duration_hours=3.0, frequency="Semestral",
+        )
+        bloqueos = compliance.export_blockers(s)
+        contradiccion = [b for b in bloqueos if "se contradicen" in b]
+        assert contradiccion, f"el plan contradictorio se exporta: {bloqueos}"
+        assert fm in contradiccion[0]
+        assert "paro de planta" in contradiccion[0]
+
+    def test_dos_tareas_compatibles_no_bloquean(self):
+        # El contrapeso: un modo puede llevar varias tareas legítimas, y
+        # bloquear por tenerlas dejaría el producto inservible.
+        from rcm_runbook.engine import compliance
+
+        s, _ = self._con_dos_tareas(
+            description="Lubricación de rodamientos", frequency="Semestral",
+            duration_hours=1.0,
+        )
+        assert not [b for b in compliance.export_blockers(s) if "se contradicen" in b]
+
+
+class TestLaLetraDeRutaNoViajaSola:
+    """Quinta instancia del patrón. Tres corridas en producción dieron tres
+    alfabetos contradictorios: una invirtió las dos familias y glosó «CC» como
+    «Consecuencias Catastróficas» (real: Control de Calidad). La letra va al
+    entregable del cliente y es la traza auditable de por qué se eligió una
+    política, así que inventarla contamina la auditoría."""
+
+    def test_la_ruta_llega_con_su_significado(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(iter(sesion.failure_modes))
+
+        class Ctx:
+            session_id = "s-ruta"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        salida = tools_mod.run_decision_logic.entrypoint(
+            Ctx(), failure_mode_id=fm, pf_interval_sufficient=True,
+            approver="Ana Pérez, Supervisora HSE",
+        )
+        from rcm_runbook.models.catalogs import ROUTE_LABELS_ES
+
+        assert any(n in salida for n in ROUTE_LABELS_ES.values()), (
+            f"la ruta llegó como letra pelada: {salida[:120]}"
+        )
+
+    def test_estan_las_siete_letras_de_las_dos_familias(self):
+        from rcm_runbook.models.catalogs import (
+            ROUTE_LABELS_ES,
+            EvidentRoute,
+            HiddenRoute,
+        )
+
+        for r in list(EvidentRoute) + list(HiddenRoute):
+            assert r.value in ROUTE_LABELS_ES, f"la ruta {r.value} no tiene significado"
+
+    def test_la_A_es_seguridad_en_ambas_familias(self):
+        # Una corrida racionalizó la colisión con «Parecen iguales pero no lo
+        # son». Sí lo son: A es seguridad/ambiente en las dos.
+        from rcm_runbook.models.catalogs import ROUTE_LABELS_ES
+
+        assert "Seguridad" in ROUTE_LABELS_ES["A"]
+        assert "oculta" in ROUTE_LABELS_ES["E"] and "Operacional" in ROUTE_LABELS_ES["E"]
+        assert "evidente" in ROUTE_LABELS_ES["B"]
+
+
+class TestLaCausaNoSeCuelaSinTilde:
+    """`cause_must_differ_from_mode` bajaba a minúsculas pero no quitaba
+    acentos, así que el modo LITERAL escrito sin tildes pasaba como causa."""
+
+    def _crear(self, causa: str):
+        from rcm_runbook.models.domain import FailureMode
+
+        return FailureMode(
+            id="FM-001", functional_failure_id="FF-001",
+            description="Falla de rodamientos con vibración creciente",
+            mechanism="Desgaste abrasivo", iso_code="VIB", cause=causa,
+            root_cause="Intervalo de relubricación excedido",
+            failure_pattern="Fin de Vida Útil",
+        )
+
+    def test_el_modo_sin_tildes_no_pasa_como_causa(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="reformulación del modo"):
+            self._crear("falla de rodamientos con vibracion creciente")
+
+    def test_el_modo_con_tildes_sigue_sin_pasar(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="reformulación del modo"):
+            self._crear("Falla de rodamientos con vibración creciente")
+
+    def test_una_causa_de_verdad_sigue_aceptandose(self):
+        assert self._crear("Lubricante degradado por contaminación con agua")
+
+
+class TestElUmbralDeCasiIgualEstaFijado:
+    """El número que decide si dos tareas son la misma no tenía un solo assert:
+    toda la rama difusa era código sin cubrir, y `_sin_acentos` podía ser la
+    identidad con las 316 en verde."""
+
+    def _casi(self, a: str, b: str) -> bool:
+        from rcm_runbook.models.session import RCMSession
+
+        return RCMSession._casi_igual(a, b)
+
+    def test_los_acentos_no_distinguen_dos_tareas(self):
+        assert self._casi("Termografía del tablero", "Termografia del tablero")
+
+    def test_justo_en_el_umbral_es_la_misma_tarea(self):
+        # Jaccard = |comunes| / |unión|. Cuatro palabras comunes y cinco en la
+        # unión = 0.8 exacto, que es el umbral. Reordenadas para que no sea una
+        # subcadena de la otra, o entraría por el camino del containment y el
+        # umbral seguiría sin probarse.
+        assert self._casi(
+            "inspeccionar rodamiento bomba motor acople",
+            "bomba inspeccionar rodamiento motor",
+        )
+
+    def test_por_debajo_del_umbral_son_tareas_distintas(self):
+        # Tres comunes y cinco en la unión = 0.6: no puede fusionarlas.
+        assert not self._casi(
+            "inspeccionar rodamiento bomba motor acople",
+            "bomba inspeccionar rodamiento",
+        )
+
+    def test_una_descripcion_vacia_no_se_parece_a_nada(self):
+        assert not self._casi("", "Inspeccionar rodamientos")
+        assert not self._casi("   ", "   ")
+
+    def test_los_campos_comparados_son_todos_los_que_cambian_el_plan(self):
+        # Reducir la lista a duration_hours devolvía el defecto entero: una
+        # corrección de frecuencia, disciplina o paro se tragaba en silencio.
+        import inspect
+
+        from rcm_runbook.models.session import RCMSession
+
+        fuente = inspect.getsource(RCMSession.add_task)
+        for campo in ("frequency", "duration_hours", "discipline", "requires_shutdown"):
+            assert campo in fuente, f"{campo} no se compara: una corrección se perdería"

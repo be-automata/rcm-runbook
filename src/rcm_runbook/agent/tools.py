@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
@@ -32,6 +33,7 @@ from rcm_runbook.export.excel import export_xlsx
 from rcm_runbook.knowledge.handbook import consult
 from rcm_runbook.models.catalogs import (
     POLICY_LABELS_ES,
+    ROUTE_LABELS_ES,
     fixture,
     iso_code_info,
     normalize_data_source,
@@ -55,6 +57,28 @@ from rcm_runbook.models.session import (
 logger = logging.getLogger("rcm_runbook.tools")
 
 SESSION_KEY = "rcm"
+
+# Un candado por sesión, y toda la herramienta dentro.
+#
+# `_load` lee el estado, la herramienta muta una copia y `_save` reescribe el
+# objeto entero. Cuando el modelo emite dos llamadas en el mismo turno y agno
+# las ejecuta en paralelo, la segunda parte de la foto vieja y su `_save` borra
+# lo que escribió la primera. Observado en producción: `score_risk` contestó
+# «✔ Riesgo inicial de FM-002: S9-O3-D8 → RPN=216» y seis turnos después el
+# entregable se bloqueó porque FM-002 no tenía valoración. Un dato de riesgo con
+# S=9 desaparecido, con un ✔ delante.
+#
+# El candado va en `_spanish_errors`, que envuelve a TODAS las herramientas: es
+# el único punto por el que pasan todas, así que no hay forma de añadir una
+# herramienta nueva y olvidarse de protegerla.
+_CANDADOS: dict[str, threading.Lock] = {}
+_CANDADOS_LOCK = threading.Lock()
+
+
+def _candado(run_context: Any) -> threading.Lock:
+    sid = str(getattr(run_context, "session_id", "") or "sin-sesion")
+    with _CANDADOS_LOCK:
+        return _CANDADOS.setdefault(sid, threading.Lock())
 
 
 def _load(run_context: Any) -> RCMSession:
@@ -127,51 +151,58 @@ def _spanish_errors(fn: Callable[..., str]) -> Callable[..., str]:
 
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> str:
-        start = time.monotonic()
-        name = fn.__name__
-        try:
-            result = fn(*args, **kwargs)
-            logger.info(
-                json.dumps(
-                    {
-                        "tool": name,
-                        "outcome": "ok",
-                        "duration_ms": round((time.monotonic() - start) * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-            )
-            return result
-        except HITLRequired as exc:
-            logger.info(json.dumps({"tool": name, "outcome": "hitl_required"}))
-            return (
-                f"⚠ CONFIRMACIÓN HUMANA REQUERIDA: {exc.reason_es}\n"
-                "Pida al responsable (p.ej. supervisor HSE) que confirme, y registre "
-                "la decisión con run_decision_logic pasando approver='<nombre y cargo>'."
-            )
-        except ReglaDeNegocio as exc:
-            # El método diciendo que el dato no vale. No es una avería, y no
-            # puede llevar el banner técnico: el agente lo lee como sistema roto
-            # y se inventa la causa en vez de repreguntar.
-            logger.info(json.dumps({"tool": name, "outcome": "regla_de_negocio"}))
-            return f"❌ {exc}"
-        except Exception as exc:  # noqa: BLE001 — every tool failure surfaces in Spanish
-            logger.warning(json.dumps({"tool": name, "outcome": "error", "error": str(exc)[:300]}))
-            detail = str(exc)
-            if "validation error" in detail.lower():
-                # Pydantic messages already carry our Spanish validators; trim the noise
-                detail = "\n".join(
-                    line for line in detail.splitlines()
-                    if line.strip() and not line.startswith(("For further", "    "))
-                )
-                # Un dato que no pasa la validación es siempre una llamada mal
-                # armada, nunca una avería: el catálogo va en el propio mensaje,
-                # así que decirle «avise a quien opera el sistema» lo manda a
-                # buscar donde no es en lugar de corregir y reintentar.
-                return f"❌ El dato no es válido, corrija y reintente:\n{detail}"
-            return f"❌ No se pudo completar la operación: {detail}"
+        run_context = args[0] if args else kwargs.get("run_context")
+        with _candado(run_context):
+            return _ejecutar(fn, args, kwargs)
 
     return wrapper
+
+
+def _ejecutar(fn: Callable[..., str], args: Any, kwargs: Any) -> str:
+    """El cuerpo de la herramienta, ya con el candado de su sesión tomado."""
+    start = time.monotonic()
+    name = fn.__name__
+    try:
+        result = fn(*args, **kwargs)
+        logger.info(
+            json.dumps(
+                {
+                    "tool": name,
+                    "outcome": "ok",
+                    "duration_ms": round((time.monotonic() - start) * 1000),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return result
+    except HITLRequired as exc:
+        logger.info(json.dumps({"tool": name, "outcome": "hitl_required"}))
+        return (
+            f"⚠ CONFIRMACIÓN HUMANA REQUERIDA: {exc.reason_es}\n"
+            "Pida al responsable (p.ej. supervisor HSE) que confirme, y registre "
+            "la decisión con run_decision_logic pasando approver='<nombre y cargo>'."
+        )
+    except ReglaDeNegocio as exc:
+        # El método diciendo que el dato no vale. No es una avería, y no
+        # puede llevar el banner técnico: el agente lo lee como sistema roto
+        # y se inventa la causa en vez de repreguntar.
+        logger.info(json.dumps({"tool": name, "outcome": "regla_de_negocio"}))
+        return f"❌ {exc}"
+    except Exception as exc:  # noqa: BLE001 — every tool failure surfaces in Spanish
+        logger.warning(json.dumps({"tool": name, "outcome": "error", "error": str(exc)[:300]}))
+        detail = str(exc)
+        if "validation error" in detail.lower():
+            # Pydantic messages already carry our Spanish validators; trim the noise
+            detail = "\n".join(
+                line for line in detail.splitlines()
+                if line.strip() and not line.startswith(("For further", "    "))
+            )
+            # Un dato que no pasa la validación es siempre una llamada mal
+            # armada, nunca una avería: el catálogo va en el propio mensaje,
+            # así que decirle «avise a quien opera el sistema» lo manda a
+            # buscar donde no es en lugar de corregir y reintentar.
+            return f"❌ El dato no es válido, corrija y reintente:\n{detail}"
+        return f"❌ No se pudo completar la operación: {detail}"
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +523,10 @@ def run_decision_logic(
     )
     session.set_decision(decision)
     _save(run_context, session)
-    route = decision.evident_route or decision.hidden_route or "—"
+    letra = decision.evident_route or decision.hidden_route or ""
+    # Con su significado, como la política y como los métodos de FFI: es la
+    # quinta vez que una sigla pelada acaba inventada.
+    route = f"{letra} ({ROUTE_LABELS_ES[letra]})" if letra in ROUTE_LABELS_ES else "—"
     prov = " (PROVISIONAL — confirmar con el cliente)" if decision.provisional else ""
     logger.info(json.dumps({
         "decision": failure_mode_id, "policy": decision.policy,

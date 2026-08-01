@@ -769,15 +769,31 @@ class TestTablas:
         # cuadrático: 200.000 espacios bloqueaban el hilo principal 15,6 s.
         import time
 
-        # 60k y no 200k: con 200k el arnés revienta al serializar antes de que
-        # el defecto se manifieste. El validador midió 1430 ms a 60k y 15,6 s a
-        # 200k; sin el arreglo, 60k ya se sale del umbral.
-        texto = "| a | b |\n|---|---|\n| 1 | 2 |\n\n" + " " * 60000 + "fin"
+        # La línea larga va PEGADA a la tabla, sin línea en blanco: con la línea
+        # en blanco el bucle del cuerpo se para antes de llegar a ella y el test
+        # no tocaba el camino del defecto — pasaba con el coste cuadrático
+        # reintroducido. Medido en esta forma: 0,02 s con el arreglo, 1,46 s sin
+        # él. 60k y no 200k porque a 200k el arnés revienta al serializar.
+        texto = "| a | b |\n|---|---|\n| 1 | 2 |\n" + " " * 60000 + "fin"
         inicio = time.monotonic()
         salida = render(texto)
         transcurrido = time.monotonic() - inicio
         assert "table()" in salida
-        assert transcurrido < 3.0, f"tardó {transcurrido:.1f}s — el bucle se disparó"
+        # Se mide contra el MISMO texto sin la línea larga, no contra un
+        # segundero fijo: con umbral absoluto el defecto reintroducido pasaba
+        # con 2,90 s contra 3,0 — un 3% de margen y un test no determinista.
+        inicio_corto = time.monotonic()
+        render("| a | b |\n|---|---|\n| 1 | 2 |\nfin")
+        referencia = time.monotonic() - inicio_corto
+        assert transcurrido < referencia + 0.5, (
+            f"tardó {transcurrido:.2f}s contra {referencia:.2f}s de referencia — "
+            "el bucle recorre la línea larga"
+        )
+
+    def test_mas_celdas_en_el_separador_que_en_la_cabecera_tampoco_es_tabla(self):
+        # `===` cambiado por `<=` es el error más natural al reescribir la
+        # comprobación, y no lo veía nadie.
+        assert "table()" not in render("| a | b |\n|---|---|---|\n| 1 | 2 |")
 
     def test_los_bordes_de_la_celda_se_recortan(self):
         # Si celdas() deja de recortar las barras exteriores, toda tabla sale

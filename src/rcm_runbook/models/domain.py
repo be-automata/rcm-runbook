@@ -14,6 +14,7 @@ Rules encoded here (from domain review):
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -114,14 +115,25 @@ class FailureMode(BaseModel):
 
     @model_validator(mode="after")
     def cause_must_differ_from_mode(self) -> FailureMode:
-        cause = self.cause.strip().lower()
-        mode = self.description.strip().lower()
+        # Sin quitar acentos, el modo LITERAL escrito sin tildes pasaba como
+        # causa válida: «falla de rodamientos con vibracion creciente». El repo
+        # ya tenía el comparador correcto en RCMSession._same_text y este
+        # validador no lo usaba, así que add_failure_mode consideraba
+        # «vibracion» y «vibración» el mismo modo mientras este los veía
+        # distintos.
+        cause = _sin_acentos(self.cause).strip().lower()
+        mode = _sin_acentos(self.description).strip().lower()
         if cause == mode or (len(cause) > 12 and (cause in mode or mode in cause)):
             raise ValueError(
                 "La causa no puede ser una reformulación del modo de falla. "
                 "Modo = cómo se manifiesta técnicamente; causa = por qué se produce."
             )
         return self
+
+
+def _sin_acentos(t: str) -> str:
+    plano = unicodedata.normalize("NFKD", t)
+    return "".join(c for c in plano if not unicodedata.combining(c))
 
 
 MAINTENANCE_ASSUMPTION_MARKERS = (

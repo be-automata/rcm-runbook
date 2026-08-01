@@ -89,6 +89,18 @@ class KPI(BaseModel):
     target: str = ""
 
 
+# Artículos, preposiciones y conjunciones: no distinguen una tarea de otra, y
+# colarse quitándolos era el ataque más simple que existe. Se midió: «Análisis de
+# vibración de los rodamientos de la bomba P-101» y «…de vibración de rodamientos
+# de bomba P-101» llegaron como dos filas contradictorias al Excel del cliente.
+# Fuera de la clase porque pydantic trata los nombres con guion bajo como campos
+# privados del modelo.
+PALABRAS_VACIAS = frozenset(
+    "el la los las un una unos unas de del al a en y o u con para por sobre "
+    "que se su sus lo".split()
+)
+
+
 class RCMSession(BaseModel):
     schema_version: int = SCHEMA_VERSION
     phase: Phase = Phase.P1_ALCANCE
@@ -159,6 +171,22 @@ class RCMSession(BaseModel):
         )
 
     @staticmethod
+    def _palabras_con_peso(normalizado: str) -> set[str]:
+        """Las palabras que de verdad distinguen, en singular."""
+        peso = set()
+        for palabra in normalizado.split():
+            if palabra in PALABRAS_VACIAS:
+                continue
+            # Plural fuera: «vibración»/«vibraciones» es la misma tarea. Solo
+            # cuando queda algo con cuerpo, para no destrozar palabras cortas.
+            for sufijo in ("es", "s"):
+                if palabra.endswith(sufijo) and len(palabra) - len(sufijo) >= 4:
+                    palabra = palabra[: -len(sufijo)]
+                    break
+            peso.add(palabra)
+        return peso
+
+    @staticmethod
     def _casi_igual(a: str, b: str) -> bool:
         """Casi lo mismo, pero no igual — el caso que el guardián no veía.
 
@@ -180,7 +208,14 @@ class RCMSession(BaseModel):
         # «…rodamientos de bomba P-101 (cojinetes motor y bomba)» vs «…P-101».
         if na in nb or nb in na:
             return True
-        ta, tb = set(na.split()), set(nb.split())
+        # Ojo con la cola común: añadir veinte palabras de relleno idénticas
+        # diluía el Jaccard por debajo del umbral y desactivaba el guardián.
+        # Por eso se compara el núcleo, no el texto entero.
+        ta, tb = RCMSession._palabras_con_peso(na), RCMSession._palabras_con_peso(nb)
+        if not ta or not tb:
+            return False
+        if ta == tb:
+            return True  # solo cambiaron artículos, preposiciones o el plural
         return len(ta & tb) / len(ta | tb) >= 0.8
 
     def add_function(self, **kwargs: Any) -> Function:
@@ -224,10 +259,28 @@ class RCMSession(BaseModel):
             id="FM-000", functional_failure_id=functional_failure_id, **kwargs
         )
         for existing in self.failure_modes.values():
-            if existing.functional_failure_id == functional_failure_id and self._same_text(
-                existing.description, candidate.description
-            ):
-                return existing  # idempotente — el reintento del LLM no duplica
+            if existing.functional_failure_id != functional_failure_id:
+                continue
+            if not self._same_text(existing.description, candidate.description):
+                continue
+            # Comparar SOLO la descripción y devolver el existente convertía una
+            # corrección en un no-op con cara de éxito: el agente contestó
+            # «Actualizado: FM-001 ahora tiene causa = "…" ✅» y la sesión seguía
+            # con la causa vieja. Es el mismo descarte silencioso que ya había
+            # en add_task, en el método hermano.
+            distintos = [
+                campo
+                for campo, valor in candidate.model_dump().items()
+                if campo not in ("id",) and getattr(existing, campo) != valor
+            ]
+            if not distintos:
+                return existing  # idempotente: la misma llamada, otra vez
+            raise ReglaDeNegocio(
+                f"El modo {existing.id} ya existe con esa descripción, pero lo que "
+                f"llega cambia: {', '.join(distintos)}. Para corregirlo usa "
+                f"update_failure_mode sobre {existing.id}; si es otro modo, dale una "
+                "descripción que lo distinga."
+            )
         fmid = self._next_id("FM", self.failure_modes)
         fm = candidate.model_copy(update={"id": fmid})
         self.failure_modes[fmid] = fm
