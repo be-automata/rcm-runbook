@@ -3183,6 +3183,9 @@ class TestLaEnvolturaDelErrorEsLaQueDecide:
             ("Error code: 400 - {'type': 'error', 'error': {'type': "
              "'invalid_request_error', 'message': 'the rate limit field is "
              "not valid here'}}", "muchas consultas"),
+            ("Error code: 400 - {'type': 'error', 'error': {'type': "
+             "'invalid_request_error', 'message': 'the motor is overloaded "
+             "per the tool payload'}}", "saturado"),
         ],
     )
     def test_clasifica_por_el_tipo_del_error_no_por_una_palabra_suelta(
@@ -3193,6 +3196,33 @@ class TestLaEnvolturaDelErrorEsLaQueDecide:
         salida = en_espanol_si_es_fallo_del_proveedor(error)
         assert salida != error, "no lo tradujo"
         assert no_debe_decir not in salida, f"eligió el aviso equivocado: {salida}"
+
+    @pytest.mark.parametrize(
+        "legitima",
+        [
+            # `human_error` y `operator_error` son vocabulario LITERAL de FMEA,
+            # y los nombres de campo de un CMMS se parecen. Con `\w+_error`
+            # como envoltura, 10 de 10 respuestas que los mencionaban se
+            # sustituían por un aviso de avería: el defecto de las palabras
+            # sueltas por la puerta de al lado, cambiando una lista por un
+            # patrón que las abarcaba todas.
+            "El modo dominante es human_error según la taxonomía del cliente.",
+            "Clasifiqué la causa raíz como operator_error en el CMMS.",
+            "Hay que descartar common_cause_error antes de asignar la política.",
+            "El PLC registra el evento como sensor_error en su bitácora.",
+            "El campo del CMMS se llama failure_error y admite texto libre.",
+            "La columna se llama measurement_error y guarda la incertidumbre.",
+            "En SAP PM el código es ZERR_ERROR para fallas no clasificadas.",
+            "El informe distingue design_error de installation_error.",
+            "Anoté el modo como calibration_error del transmisor.",
+        ],
+    )
+    def test_el_vocabulario_de_fallas_no_se_confunde_con_un_error_de_la_api(
+        self, legitima
+    ):
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        assert en_espanol_si_es_fallo_del_proveedor(legitima) == legitima
 
     def test_un_error_del_proveedor_que_no_sabe_clasificar_igual_se_traduce(self):
         # Dejarlo pasar en inglés era el defecto original: un error que no
@@ -3205,3 +3235,161 @@ class TestLaEnvolturaDelErrorEsLaQueDecide:
         )
         assert "datacenter" not in salida and "Something" not in salida
         assert "fallo técnico" in salida
+
+
+class TestSoloSeTraduceLoQueDijoElAsistente:
+    """Se observó en producción la pregunta que escribió el usuario sustituida
+    por «el sistema tuvo un fallo técnico» —un aviso que además miente— y
+    visible cada vez que alguien recargaba la conversación. Recorrer todo
+    `content` sin mirar de quién es aplica a la ENTRADA del cliente una regla
+    pensada para la SALIDA del modelo. Por buena que sea la detección, ese texto
+    no lo escribió el proveedor."""
+
+    CRUDO = (
+        "Error code: 400 - {'type': 'error', 'error': {'type': "
+        "'invalid_request_error', 'message': 'Your credit balance is too low. "
+        "Please go to Plans & Billing.'}}"
+    )
+    DEL_USUARIO = (
+        "El modo de falla dominante es human_error durante el arranque manual "
+        "de la bomba P-901. El CMMS lo registra como Error code: 412."
+    )
+
+    def _historial(self) -> list:
+        return [{
+            "run_id": "r1",
+            "content": self.CRUDO,
+            "messages": [
+                {"role": "system", "content": "Eres el Facilitador RCM. Ante un "
+                                              "Error code: 500 cita el error."},
+                {"role": "user", "content": self.DEL_USUARIO},
+                {"role": "assistant", "content": self.CRUDO},
+            ],
+        }]
+
+    def test_el_mensaje_del_usuario_no_se_toca(self):
+        from rcm_runbook.app import _traducir_contenidos
+
+        salida = _traducir_contenidos(self._historial())
+        assert salida[0]["messages"][1]["content"] == self.DEL_USUARIO
+
+    def test_el_prompt_de_sistema_no_se_toca(self):
+        # Hoy se salvaba por suerte —no contiene `_error`—, no por diseño.
+        from rcm_runbook.app import _traducir_contenidos
+
+        salida = _traducir_contenidos(self._historial())
+        assert "Error code: 500" in salida[0]["messages"][0]["content"]
+
+    def test_y_lo_que_dijo_el_asistente_sí_se_traduce(self):
+        from rcm_runbook.app import _traducir_contenidos
+
+        salida = _traducir_contenidos(self._historial())
+        assert "credit balance" not in json.dumps(salida)
+        assert "no está disponible" in salida[0]["content"]
+        assert "no está disponible" in salida[0]["messages"][2]["content"]
+
+    def test_un_contenido_que_no_es_texto_se_deja_en_paz(self):
+        """agno usa listas de bloques en algunos turnos.
+
+        Quitar el `isinstance(..., str)` es un mutante EQUIVALENTE, y se deja
+        anotado en vez de forzar un test artificial:
+        `en_espanol_si_es_fallo_del_proveedor` ya devuelve intacto todo lo que
+        no sea cadena, así que la guarda de aquí es defensa en profundidad. Si
+        algún día esa función deja de comprobarlo, deja de serlo.
+        """
+        from rcm_runbook.app import _traducir_contenidos
+
+        bloques = [{"type": "text", "text": self.CRUDO}]
+        assert _traducir_contenidos({"content": bloques})["content"] == bloques
+
+    def test_un_cuerpo_sin_cambios_sale_byte_a_byte_igual(self):
+        """El camino común es que no haya nada que traducir, y ahí no se debe
+        pagar el `dumps`: comparar los diccionarios no lo fija, porque
+        reserializar produce un dict igual y bytes distintos."""
+        from rcm_runbook import app as app_mod
+
+        crudo = json.dumps(
+            {"content": "Analicemos la bomba P-101.", "messages": []},
+            indent=2,
+        ).encode()
+
+        async def responder(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [(b"content-type", b"application/json")]})
+            await send({"type": "http.response.body", "body": crudo})
+
+        recibido: list = []
+
+        async def recoger(m):
+            recibido.append(m)
+
+        async def vacio():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        asyncio.run(app_mod.TraducirFallosDelProveedor(responder)(
+            {"type": "http", "path": "/agents/x/runs"}, vacio, recoger))
+        salida = b"".join(m.get("body", b"") for m in recibido
+                          if m["type"].endswith("body"))
+        assert salida == crudo, "reserializó un cuerpo que no cambiaba"
+
+    def test_los_acentos_no_se_escapan_al_reescribir(self):
+        from rcm_runbook.app import _traducir_contenidos
+
+        cuerpo = json.dumps(
+            _traducir_contenidos({"content": self.CRUDO}), ensure_ascii=False
+        )
+        assert "\\u00e1" not in cuerpo and "está" in cuerpo
+
+
+class TestElContentLengthYLosClasificadores:
+    """Ocho mutantes sobrevivieron la ronda 29: la cabecera tras reescribir y
+    tres adiciones del clasificador que ningún test miraba."""
+
+    def _pasar(self, cuerpo: bytes) -> list:
+        from rcm_runbook import app as app_mod
+
+        async def responder(scope, receive, send):
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"content-length", str(len(cuerpo)).encode())]})
+            await send({"type": "http.response.body", "body": cuerpo})
+
+        recibido: list = []
+
+        async def recoger(m):
+            recibido.append(m)
+
+        async def vacio():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        asyncio.run(app_mod.TraducirFallosDelProveedor(responder)(
+            {"type": "http", "path": "/agents/x/runs"}, vacio, recoger))
+        return recibido
+
+    def test_la_cabecera_cuadra_con_el_cuerpo_reescrito(self):
+        crudo = json.dumps({"content": "Error code: 400 - {'type': 'error', "
+                                       "'error': {'type': 'api_error'}}"}).encode()
+        recibido = self._pasar(crudo)
+        cabeceras = [m for m in recibido if m["type"] == "http.response.start"]
+        largos = [v for m in cabeceras for k, v in m["headers"]
+                  if k.decode().lower() == "content-length"]
+        cuerpo = b"".join(m.get("body", b"") for m in recibido
+                          if m["type"].endswith("body"))
+        assert len(largos) == 1, f"content-length repetido: {largos}"
+        assert int(largos[0]) == len(cuerpo)
+
+    @pytest.mark.parametrize(
+        ("error", "debe_decir"),
+        [
+            ("Error code: 400 - {'type': 'error', 'error': {'type': "
+             "'billing_error'}}", "cuenta del sistema"),
+            ("Error code: 403 - {'type': 'error', 'error': {'type': "
+             "'permission_error'}}", "configuración del sistema"),
+            ("Error code: 529 - {'type': 'error', 'error': {'type': "
+             "'overloaded_error'}}", "saturado"),
+        ],
+    )
+    def test_cada_tipo_de_error_tiene_su_aviso(self, error, debe_decir):
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        assert debe_decir in en_espanol_si_es_fallo_del_proveedor(error)

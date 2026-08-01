@@ -1640,3 +1640,98 @@ class TestLaColetillaNoEsconde_UnInvento:
         )
         anotadas = " ".join(x for x in revisar if "siglas que el catálogo" in x)
         assert "OREDA" not in anotadas
+
+
+class TestLaConcesivaAlPrincipioNoAcusa:
+    """Cuarto intento sobre `_es_negacion`, y esta vez la regresión fue mía: si
+    la concesiva ABRE la frase, la primera cláusula queda vacía y no hay
+    negación que encontrar. Cinco de ocho formas correctas salían acusadas."""
+
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-con"
+            session_state: dict = {}
+
+        return V._definiciones_de_la_herramienta(
+            {"tools": [{"tool_name": "explain_iso_code",
+                        "result": tools_mod.explain_iso_code.entrypoint(
+                            Ctx(), code="QQQ1")}]}
+        )
+
+    @pytest.mark.parametrize(
+        "correcta",
+        [
+            "QQQ1 — aunque se parece a un código válido, no existe en el catálogo.",
+            "QQQ1 — pero no aparece en el catálogo del cliente.",
+            "QQQ1 — sin embargo no figura en la norma ISO 14224.",
+            "QQQ1 — no obstante, no consta en el catálogo.",
+            "QQQ1 — aunque lo busqué, no se encuentra en la base de códigos.",
+            "QQQ1 — si bien se parece a otros, no está en el catálogo.",
+        ],
+    )
+    def test_negar_empezando_por_la_concesiva_sigue_aprobando(self, correcta):
+        assert V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)[0], (
+            "la concesiva delante dejó la cláusula vacía y acusó"
+        )
+
+    @pytest.mark.parametrize(
+        "invento",
+        [
+            "QQQ1 — Falla de Calidad tipo 1. La frecuencia está pendiente de definir.",
+            "QQQ1 — Falla de Calidad, la severidad fue determinada en campo.",
+            "QQQ1 — Falla de Calidad tipo 1. No se pudo verificar la frecuencia.",
+        ],
+    )
+    def test_una_frase_corriente_no_lo_declara_ausente(self, invento):
+        """Unificar las listas arregló la desincronización y abrió el verde
+        falso contrario: buscar ~30 formas como subcadena en todo el texto
+        aprobaba inventos que nunca declaran ausente el código. «nada en»
+        casaba dentro de «determiNADA EN»; «pendiente de» y «no se pudo» son
+        frases corrientes en un análisis, por motivos ajenos al catálogo."""
+        ok, evidencia, _ = V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)
+        assert not ok, f"una coletilla corriente lo dio por ausente: {evidencia}"
+
+    @pytest.mark.parametrize(
+        ("texto", "aprueba"),
+        [
+            ("QQQ1 no existe en el catálogo.\n- fts — Falla en arrancar.", True),
+            # En minúsculas y con verbo de atribución: es lo que distingue el
+            # guardia sensible a mayúsculas del que no lo es.
+            ("QQQ1 no existe en el catálogo.\nfts significa Falla en arrancar "
+             "cuando es requerido.", True),
+            ("QQQ1 no existe en el catálogo.\nFTS significa Falla en arrancar.", True),
+            ("QQQ1 no está en el catálogo.\n\nSería una Falla de Calidad tipo 1.",
+             False),
+            ("QQQ1 no está en el catálogo.\n\nRevisé la norma.\n\nSería una "
+             "Falla de Calidad tipo 1.", False),
+            ("QQQ1 no está.\n- FTS — Falla en arrancar\n\nQQQ1 sería una Falla "
+             "de Calidad tipo 1.", False),
+        ],
+    )
+    def test_se_sigue_hablando_del_codigo_hasta_que_aparece_otro(
+        self, texto, aprueba
+    ):
+        """Mirar solo el renglón siguiente dejaba escapar el invento puesto dos
+        más abajo o tras una línea en blanco. Y el guardia del vecino adivinaba
+        su forma con un patrón genérico: exigiendo separador detrás se colaba
+        «FTS significa …»; sin exigirlo, «los» o «que» pasaban por código. Se
+        comprueba contra los códigos REALES, sin distinguir mayúsculas."""
+        assert V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0] is aprueba
+
+    def test_el_eco_del_catalogo_entero_sigue_aprobando(self):
+        reales = self.REALES
+        texto = "QQQ1 no existe en el catálogo.\n" + "\n".join(
+            f"- {c} — {d}" for c, d in reales.items()
+        )
+        ok, evidencia, _ = V._juzgar_codigo_iso(texto, "QQQ1", reales)
+        assert ok, f"acusó el eco literal: {evidencia}"
+
+    def test_sin_catalogo_no_se_traga_la_definicion_del_vecino(self):
+        # `otros` vacío: sin códigos con los que comparar, el guardia no puede
+        # distinguir la entrada del vecino, así que no se extiende el tramo.
+        assert not V._significado_atribuido(
+            "QQQ1 no existe.\nFTS — Falla en arrancar cuando es requerido.", "QQQ1"
+        )

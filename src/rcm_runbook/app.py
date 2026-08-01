@@ -195,10 +195,16 @@ class RequireKey:
 # contenido, el análisis del cliente desaparecía antes de salir del servidor.
 # «overloaded» es vocabulario de modo de falla en este mismo producto.
 _ENVOLTURA_DEL_PROVEEDOR = re.compile(
-    # «Error code: NNN» y los identificadores `algo_error` son de la API del
-    # proveedor: no aparecen en prosa técnica en español. El número suelto y las
-    # palabras sueltas sí, y por eso no valen como envoltura.
-    r"""Error code:\s*\d+|\b\w+_error\b|['"]type['"]\s*:\s*['"]error['"]""",
+    # «Error code: NNN» es el prefijo que pone el SDK, y `"type": "error"` es la
+    # forma del cuerpo. Los DOS son de la API del proveedor.
+    #
+    # `\w+_error` a secas NO vale, aunque lo pareciera: `human_error`,
+    # `operator_error`, `common_cause_error`, `design_error` son vocabulario
+    # literal de FMEA, y los nombres de campo de un CMMS también. 10 de 10
+    # respuestas legítimas que los mencionaban se sustituían por un aviso de
+    # avería. Es el defecto de la ronda 27 por la puerta de al lado: cambié una
+    # lista de palabras sueltas por un patrón que las abarca todas.
+    r"""Error code:\s*\d+|['"]type['"]\s*:\s*['"]error['"]""",
     re.I,
 )
 
@@ -302,7 +308,16 @@ def _traducir_contenidos(datos: Any) -> Any:
     if not isinstance(datos, dict):
         return datos
     salida = {k: _traducir_contenidos(v) for k, v in datos.items()}
-    if isinstance(salida.get("content"), str):
+    # SOLO lo que dijo el asistente. Recorrer todo `content` sin mirar de quién
+    # es aplicaba a la entrada del cliente una regla pensada para la salida del
+    # modelo: se observó en producción la pregunta que escribió el usuario
+    # —«el modo dominante es human_error durante el arranque»— sustituida por
+    # «el sistema tuvo un fallo técnico», un aviso que además miente, y visible
+    # cada vez que alguien recargaba la conversación. Ese texto no lo escribió
+    # el proveedor; por buena que sea la detección, traducirlo nunca es
+    # correcto. El prompt de sistema se salvaba por suerte, no por diseño.
+    papel = salida.get("role")
+    if papel in (None, "assistant", "model") and isinstance(salida.get("content"), str):
         salida["content"] = en_espanol_si_es_fallo_del_proveedor(salida["content"])
     return salida
 
@@ -318,8 +333,11 @@ async def _enviar_traducido(send: Callable, inicio: dict, cuerpo: bytes) -> None
         datos = json.loads(cuerpo)
         traducido = _traducir_contenidos(datos)
         if traducido != datos:
-            nuevo = json.dumps(traducido).encode()
-    except (ValueError, TypeError):  # pragma: no cover — cuerpo no JSON
+            nuevo = json.dumps(traducido, ensure_ascii=False).encode()
+    except (ValueError, TypeError, RecursionError):  # pragma: no cover
+        # `RecursionError` faltaba y el docstring prometía que cualquier
+        # tropiezo deja pasar el original: sin capturarla, un JSON muy anidado
+        # reventaba DESPUÉS de haber retenido la cabecera, o sea sin respuesta.
         nuevo = cuerpo
     cabeceras = [
         (k, v) for k, v in inicio["headers"] if k.decode().lower() != "content-length"

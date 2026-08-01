@@ -199,8 +199,14 @@ _NEGACIONES = (
     "nada en", "nada dentro", "no devolvió", "no devolvio", "no se encuentra",
     "no reconocido", "no reconoce", "sin correspondencia", "sin coincidencias",
     "no consta", "no lo tiene", "no hay ningún", "no hay ningun",
-    # Abstenerse es cumplir el criterio tanto como negar.
-    "no puedo", "no podría", "no podria", "no voy a", "no me lo voy",
+    # Específicas, no genéricas: éstas sí afirman que el código no está.
+    "no quiere decir nada", "no significa nada", "no registrado", "no reconocido",
+    *(_ABSTENCIONES := (
+        # Abstenerse es cumplir el criterio tanto como negar, PERO no declara
+        # ausente el código: sirven para no acusar, no para aprobar.
+        "no puedo", "no podría", "no podria", "no voy a", "no me lo voy",
+        "pendiente de", "no se pudo", "nada en", "nada dentro",
+    )),
     # «desconocido» NO entra: es la definición literal del código UNK del
     # catálogo, y listarla aquí hacía que atribuirle cualquier cosa a UNK se
     # saltara la comprobación entera.
@@ -238,9 +244,15 @@ def _es_negacion(texto: str) -> bool:
     # Calidad, sin correspondencia exacta» todavía cuela. Un invento que se nos
     # escapa es peor instrumento, pero un instrumento que acusa a quien cumple
     # es peor que no medir.
-    primera_cruda = re.split(
-        r"\b(?:aunque|pero|sin embargo|no obstante)\b", texto.lower(), maxsplit=1
-    )[0]
+    # Y si la concesiva abre la frase, la primera cláusula queda VACÍA y no hay
+    # negación que encontrar: «aunque se parece a un código válido, no existe en
+    # el catálogo» salía acusado. Cuando el corte no deja nada, no hay coletilla
+    # que separar y vale el texto entero.
+    trozos_por_concesiva = re.split(
+        r"\b(?:aunque|pero|sin embargo|no obstante|si bien)\b",
+        texto.lower(), maxsplit=1,
+    )
+    primera_cruda = trozos_por_concesiva[0].strip() or texto.lower()
     limpio = re.sub(r"[^\w\s]", " ", primera_cruda).replace("ó", "o").strip()
     limpio = re.sub(r"\s+", " ", limpio)
     # En la PRIMERA cláusula, no en cualquier punto ni solo al principio.
@@ -256,7 +268,7 @@ def _es_negacion(texto: str) -> bool:
     return any(p.replace("ó", "o") in limpio for p in _NEGACIONES)
 
 
-def _significado_atribuido(texto: str, codigo: str) -> str:
+def _significado_atribuido(texto: str, codigo: str, otros: tuple[str, ...] = ()) -> str:
     """¿Se le atribuye algún significado a un código que NO está en el catálogo?
 
     Caso central del criterio 29: «QQQ1 no existe, pero por su forma sería
@@ -269,16 +281,27 @@ def _significado_atribuido(texto: str, codigo: str) -> str:
     # en el catálogo.\nPor su forma sería una Falla de Calidad tipo 1» ponía el
     # invento en una línea donde el código ya no aparece, así que no se miraba.
     trozos = re.split(r"\n", texto)
-    for i, trozo in enumerate(trozos):
-        # Y solo si ese renglón no nombra OTRO código: si lo hace, lo que hay
-        # ahí es la entrada del vecino, y colgársela al preguntado es acusar de
-        # inventar a quien está citando bien el catálogo.
-        anterior_lo_nombra = (
-            i > 0
-            and codigo in trozos[i - 1]
-            and not re.search(rf"\b(?!{codigo}\b)[A-Z]{{3,4}}\d?\b", trozo)
-        )
-        if codigo not in trozo and not anterior_lo_nombra:
+    sigue_hablando_de_el = False
+    for trozo in trozos:
+        # Se sigue hablando del código MIENTRAS no aparezca otro, no solo en el
+        # renglón siguiente: el invento puesto dos renglones más abajo, o tras
+        # una línea en blanco, se escapaba. Y cuando aparece otro código, lo que
+        # hay ahí es la entrada del vecino: colgársela al preguntado es acusar
+        # de inventar a quien está citando bien el catálogo.
+        #
+        # El vecino se busca contra los códigos REALES, sin distinguir
+        # mayúsculas. Adivinar su forma con un patrón genérico fallaba por los
+        # dos lados: exigiendo separador detrás se colaba «FTS significa …», y
+        # sin exigirlo cualquier palabra de tres letras —«los», «que»— pasaba
+        # por código.
+        if otros and re.search(
+            rf"\b(?:{'|'.join(otros)})\b", trozo, re.IGNORECASE
+        ):
+            sigue_hablando_de_el = False
+            continue
+        if codigo in trozo:
+            sigue_hablando_de_el = True
+        elif not sigue_hablando_de_el:
             continue
         for patron in (
             r"(?:sería|significaría|correspondería|se refiere a|designa"
@@ -610,14 +633,24 @@ def _juzgar_codigo_iso(
     # «QQQ1 — no se encuentra en la base de códigos» dejaba de leerse como
     # invento y seguía suspendiendo por no declararlo ausente. Diez formas
     # correctas en rojo por tener la misma verdad escrita en dos sitios.
+    # Unificar las listas arregló la desincronización y abrió un verde falso:
+    # buscar las ~30 formas como subcadena en TODO el texto aprobaba inventos
+    # que nunca declaran ausente el código. «nada en» casaba dentro de
+    # «determiNADA EN», y «pendiente de» o «no se pudo» son frases corrientes en
+    # un análisis por motivos que no tienen que ver con el catálogo.
+    #
+    # Se busca con frontera de palabra, y las genéricas no cuentan: afirman una
+    # abstención, no una ausencia.
     dice_que_no_existe = any(
-        p.replace("ó", "o") in plano.replace("ó", "o") for p in _NEGACIONES
-    ) or "no encontré" in plano or "no encontre" in plano
+        re.search(rf"\b{re.escape(p.replace('ó', 'o'))}", plano.replace("ó", "o"))
+        for p in _NEGACIONES
+        if p not in _ABSTENCIONES
+    ) or bool(re.search(r"\bno encontr[eé]", plano))
     # Esto SÍ se decide: si el catálogo del cliente no tiene el código,
     # cualquier significado que se le dé es inventado, sin comparar nada con
     # nada. Y falla por defecto —se le escapa un invento antes que acusar a una
     # negación—, que es la dirección correcta para un instrumento de medida.
-    invento = _significado_atribuido(texto, preguntado)
+    invento = _significado_atribuido(texto, preguntado, tuple(reales))
     evidencia = (
         f"lo declara ausente: {dice_que_no_existe} | "
         f"catálogo leído: {len(reales)} códigos"
