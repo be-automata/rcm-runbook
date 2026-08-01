@@ -2792,3 +2792,72 @@ class TestElFfiSoloAplicaAFallasOcultas:
         assert "sale en el entregable" in salida
         guardada = RCMSession.model_validate(ctx.session_state["rcm"])
         assert oculto in guardada.ffi_por_modo
+
+
+class TestElFfiNoSobreviveASuModo:
+    """El intervalo se calculaba antes de registrar el efecto, el efecto
+    resultaba evidente, y nadie retiraba el FFI: viajaba al Excel con «NINGUNA
+    TAREA MARCADA» mientras la compuerta saltaba ese modo por no ser oculto.
+    Descarte silencioso número nueve, y el mismo que el commit anterior decía
+    haber cerrado — reabierto por el orden inverso de llamadas."""
+
+    def _ctx(self, quitar_efecto: str = ""):
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
+        if quitar_efecto:
+            sesion.effects.pop(fm)
+
+        class Ctx:
+            session_id = "s-ffi-orden"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        return Ctx(), fm
+
+    def _calcular(self, ctx, fm):
+        from rcm_runbook.agent import tools as tools_mod
+
+        return tools_mod.calculate_ffi.entrypoint(
+            ctx, method="single_single", mtive_hours=43800, mted_hours=17520,
+            mmf_hours=876000, failure_mode_id=fm,
+        )
+
+    def test_sin_efecto_registrado_no_se_calcula(self):
+        ctx, fm = self._ctx(quitar_efecto="sí")
+        salida = self._calcular(ctx, fm)
+        assert "no tiene efectos registrados" in salida
+        assert "sale en el entregable" not in salida
+
+    def test_corregir_el_efecto_a_evidente_retira_el_ffi(self):
+        from rcm_runbook.models.session import RCMSession
+
+        ctx, fm = self._ctx()
+        self._calcular(ctx, fm)
+        sesion = RCMSession.model_validate(ctx.session_state["rcm"])
+        assert fm in sesion.ffi_por_modo, "no llegó a registrarse"
+        sesion.set_effect(
+            fm, local="Se detiene la bomba sin aviso previo",
+            system="Pérdida de caudal en la línea", plant="Parada de la unidad",
+            is_hidden=False, operational=True,
+        )
+        assert fm not in sesion.ffi_por_modo, (
+            "el intervalo sobrevivió a la falla oculta que lo justificaba"
+        )
+
+    def test_corregir_el_efecto_manteniendolo_oculto_lo_conserva(self):
+        # El contrapeso: reformular el efecto sin cambiar su naturaleza no puede
+        # tirar un cálculo válido.
+        from rcm_runbook.models.session import RCMSession
+
+        ctx, fm = self._ctx()
+        self._calcular(ctx, fm)
+        sesion = RCMSession.model_validate(ctx.session_state["rcm"])
+        previo = sesion.effects[fm]
+        sesion.set_effect(
+            fm, local=previo.local, system=previo.system,
+            plant="Redacción corregida del efecto en planta",
+            is_hidden=True, safety=previo.safety, environment=previo.environment,
+            operational=previo.operational, non_operational=previo.non_operational,
+        )
+        assert fm in sesion.ffi_por_modo

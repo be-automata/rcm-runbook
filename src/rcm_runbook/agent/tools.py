@@ -759,7 +759,18 @@ def calculate_ffi(
         # Excel salía con un intervalo que no gobierna ninguna tarea: la promesa
         # de la herramienta desmentida en silencio por la compuerta.
         efecto = session.effects.get(failure_mode_id)
-        if efecto is not None and not efecto.is_hidden:
+        if efecto is None:
+            # Falta el dato, que no es lo mismo que estar bien: sin efecto
+            # registrado no se sabe si el modo es oculto, y calcularlo aquí
+            # dejaba un FFI que nadie retiraba si luego el efecto resultaba
+            # evidente. El intervalo viajaba al Excel con «NINGUNA TAREA
+            # MARCADA» y ninguna compuerta lo veía.
+            raise ReglaDeNegocio(
+                f"El modo {failure_mode_id} no tiene efectos registrados, así que "
+                "no se sabe si su falla es oculta. Registre el efecto con "
+                "record_effect antes de calcular el intervalo de búsqueda de fallas."
+            )
+        if not efecto.is_hidden:
             raise ReglaDeNegocio(
                 f"El modo {failure_mode_id} no es una falla oculta: su efecto está "
                 "registrado como evidente. El intervalo de búsqueda de fallas solo "

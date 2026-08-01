@@ -48,6 +48,34 @@ def _cabeceras() -> dict[str, str]:
     return {"Authorization": f"Bearer {LLAVE}"}
 
 
+class ProveedorCaido(RuntimeError):
+    """El proveedor del modelo dejó de atender a mitad de corrida.
+
+    Se comprueba `/health/modelo` al empezar, pero la cuenta puede quedarse sin
+    saldo después. Cuando pasó, el script siguió puntuando y culpó a seis
+    criterios que estaban bien: «2/8 obligatorios en verde» con el producto
+    intacto. Un instrumento que acusa al producto de su propia avería es peor
+    que no medir.
+    """
+
+
+_FALLOS_DEL_PROVEEDOR = (
+    "credit balance is too low",
+    "invalid_request_error",
+    "rate_limit_error",
+    "overloaded_error",
+    "authentication_error",
+)
+
+
+def _es_fallo_del_proveedor(salida: dict) -> str:
+    contenido = str(salida.get("content") or "")
+    for marca in _FALLOS_DEL_PROVEEDOR:
+        if marca in contenido:
+            return contenido[:160]
+    return ""
+
+
 def _turno(cliente: httpx.Client, sesion: str, mensaje: str, intentos: int = 3) -> dict:
     """Un turno del agente, reintentando el 503 del arranque en frío.
 
@@ -67,7 +95,11 @@ def _turno(cliente: httpx.Client, sesion: str, mensaje: str, intentos: int = 3) 
             time.sleep(20)
             continue
         r.raise_for_status()
-        return r.json()
+        salida = r.json()
+        fallo = _es_fallo_del_proveedor(salida)
+        if fallo:
+            raise ProveedorCaido(fallo)
+        return salida
     raise RuntimeError("el contenedor no llegó a atender")
 
 
@@ -158,14 +190,45 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     definidos: list[str] = []
     inventados: list[str] = []
     for codigo, esperado in reales.items():
-        # «FTS — Falla en arrancar», «FTS: falla…», «**FTS** — falla…»
-        m = re.search(rf"{codigo}\**\s*[—:-]\s*([^\n|]{{4,70}})", texto)
+        # Los formatos que el agente usa DE VERDAD. La versión anterior excluía
+        # `|` de la clase, y resulta que responde con una tabla markdown: contra
+        # la respuesta real no consideraba definido ni un solo código, así que la
+        # mitad de «no inventa» quedaba vacua. Cambiar una medición porque falla
+        # es la forma de aflojar la vara sin darse cuenta, y eso fue esto.
+        m = re.search(
+            rf"{codigo}\**\s*(?:[—:|-]|\bes\b|\bsignifica\b|\()\s*\**([^\n|)]{{4,70}})",
+            texto,
+        )
         if not m:
             continue
         definidos.append(codigo)
         if esperado not in m.group(1).lower():
             inventados.append(f"{codigo}→«{m.group(1).strip()[:40]}»")
     return definidos, inventados
+
+
+def _significado_atribuido(texto: str, codigo: str) -> str:
+    """¿Se le atribuye algún significado a un código que NO está en el catálogo?
+
+    Es el caso central del criterio 29 y no lo cubría nada: «QQQ1 no existe,
+    pero por su forma sería 'Falla de calidad tipo 1'» daba «lo declara ausente:
+    True, inventados: ninguno» y aprobaba.
+    """
+    for frase in re.split(r"[.\n]", texto):
+        if codigo not in frase:
+            continue
+        m = re.search(
+            r"(?:sería|significaría|correspondería|se refiere a|podría (?:ser|significar)"
+            r"|significa|es probablemente)\s+\**['«\"]?([^'»\"\n]{4,60})",
+            frase, re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).strip()
+        # También «| QQQ1 | Falla de calidad |» y «QQQ1 — Falla de calidad».
+        m = re.search(rf"{codigo}\**\s*[—:|-]\s*\**([^|\n]{{4,60}})", frase)
+        if m:
+            return m.group(1).strip()
+    return ""
 
 
 def _fases_mencionadas(texto: str) -> set[str]:
@@ -195,6 +258,88 @@ def _proveedor_atiende(cliente: httpx.Client) -> tuple[bool, str]:
     return r.status_code == 200, cuerpo.get("detalle", "")
 
 
+def _juzgar_codigo_iso(texto: str, preguntado: str, reales: dict[str, str]) -> tuple[bool, str]:
+    """Criterio 29, entero y comprobable.
+
+    Dos mitades: que diga que el código no está en el catálogo —siempre
+    comprobable— y que no atribuya significados falsos, ni a los códigos reales
+    ni al preguntado. Esa última parte no la cubría nada: «QQQ1 no existe, pero
+    por su forma sería 'Falla de calidad tipo 1'» aprobaba.
+    """
+    dice_que_no_existe = any(
+        p in texto.lower()
+        for p in ("no existe", "no está en el catálogo", "no aparece", "no figura")
+    )
+    definidos, inventados = _codigos_definidos(texto, reales)
+    invento = _significado_atribuido(texto, preguntado)
+    if invento:
+        inventados = [*inventados, f"{preguntado}→«{invento}»"]
+    evidencia = (
+        f"lo declara ausente: {dice_que_no_existe} | "
+        f"definidos: {definidos or 'ninguno (nada que juzgar)'} | "
+        f"inventados: {inventados or 'ninguno'}"
+    )
+    return dice_que_no_existe and not inventados, evidencia
+
+
+def _veces_que_llamo(salidas: list[dict], herramienta: str) -> int:
+    """En cuántos de los turnos se llamó a la herramienta.
+
+    Extraído del bucle de `main()`: allí no había forma de probarlo, y el
+    criterio 8 podía reportar siempre 0/3 sin que nada lo notara.
+    """
+    return sum(1 for s in salidas if herramienta in _herramientas(s))
+
+
+def _medicion_compuerta(llamadas: int, intentos: int) -> str:
+    """La línea de medición del criterio 8. Mide, no aprueba: depende de ALTA-2."""
+    return (
+        f"[8] La compuerta la decide la herramienta: {llamadas}/{intentos} "
+        "(ALTA-2, limitación conocida; el botón es el camino garantizado)"
+    )
+
+
+def _veredicto(
+    hallazgos: list[dict], mediciones: list[str], no_ejecutados: list[str]
+) -> int:
+    """Imprime el resumen y devuelve el código de salida.
+
+    Extraída de `main()` para poder probarla: el validador demostró que se podían
+    revertir los dos arreglos del veredicto —el denominador fijo y «un
+    obligatorio sin evaluar cuenta como fallo»— con la suite entera en verde,
+    porque nada de `main()` estaba cubierto.
+
+    Denominador FIJO: con `len(hallazgos)` como total, un criterio que dejaba de
+    ser evaluable bajaba el total y se imprimía «8/8 en verde» con salida 0, o
+    sea una regresión que se manifiesta como menos criterios comprobados.
+    """
+    fallidos = [h for h in hallazgos if not h["ok"]]
+    evaluados = {h["criterio"] for h in hallazgos}
+    obligatorios = [h for h in hallazgos if h["criterio"] in ESPERADOS]
+    verdes = len([h for h in obligatorios if h["ok"]])
+    print(f"\n{verdes}/{len(ESPERADOS)} criterios obligatorios en verde.")
+    faltan = [n for n in ESPERADOS if n not in evaluados]
+    if faltan:
+        # Con nombre, no con números pelados: es lo que se hace en el resto.
+        print("  ⚠ obligatorios SIN EVALUAR (cuenta como fallo):")
+        for n in faltan:
+            print(f"      [{n}]")
+    medidos = {int(m.split("]")[0].lstrip("[")) for m in mediciones if m.startswith("[")}
+    for n, desc in CONDICIONALES.items():
+        if n not in evaluados and n not in medidos:
+            print(f"  📏 [{n}] no evaluable en esta corrida — {desc}")
+    for medicion in mediciones:
+        print(f"  📏 {medicion}")
+    for pendiente in no_ejecutados:
+        print(f"  ⊘ NO EJECUTADO {pendiente}")
+    if fallidos:
+        print("Fallidos:")
+        for h in fallidos:
+            print(f"  ❌ [{h['criterio']}] {h['descripcion']} — {h['evidencia'][:90]}")
+    # Un obligatorio sin evaluar cuenta como fallo.
+    return 1 if (fallidos or faltan) else 0
+
+
 def main() -> int:
     if not LLAVE:
         print("✗ Falta OS_SECURITY_KEY en el entorno.")
@@ -209,6 +354,7 @@ def main() -> int:
             return 1
         print(f"✓ El proveedor atiende ({detalle}). Ejecutando los criterios.\n")
 
+        interrumpida = False
         sufijo = uuid.uuid4().hex[:8]
         sesiones: list[str] = []
         hallazgos: list[dict] = []
@@ -273,19 +419,16 @@ def main() -> int:
             # Fallar por ella dejaba el código de salida oscilando entre 0 y 1
             # según lo que decidiera el modelo esa vez, y una puerta que
             # parpadea no sirve de puerta: un fallo real no se distinguiría.
-            llamadas = 0
+            salidas = []
             for intento in range(3):
                 s = sesion(f"compuerta{intento}")
                 _turno(cliente, s, "Analicemos la bomba P-102, TAG P-102, planta sur.")
-                salida = _turno(
-                    cliente, s, "Quiero el Excel definitivo, el entregable final.")
-                usadas = _herramientas(salida)
-                if "export_excel" in usadas:
-                    llamadas += 1
-            mediciones.append(
-                f"[8] La compuerta la decide la herramienta: {llamadas}/3 "
-                f"(ALTA-2, limitación conocida; el botón es el camino garantizado)"
-            )
+                salidas.append(_turno(
+                    cliente, s, "Quiero el Excel definitivo, el entregable final."))
+            salida = salidas[-1]
+            usadas = _herramientas(salida)
+            llamadas = _veces_que_llamo(salidas, "export_excel")
+            mediciones.append(_medicion_compuerta(llamadas, 3))
             print(f"  📏 [8] export_excel llamado en {llamadas}/3 intentos (ALTA-2)")
             # Distinto del criterio 8: aquí se comprueba que los faltantes que
             # enumera vengan de la herramienta. Se contrastan contra los que
@@ -359,16 +502,10 @@ def main() -> int:
             # comprobable— y que no invente significados, que solo se puede
             # juzgar si define alguno. Exigir que defina convertía en fallo una
             # respuesta correcta que se limitaba a listar los códigos.
-            dice_que_no_existe = any(
-                p in texto.lower() for p in ("no existe", "no está en el catálogo",
-                                             "no aparece", "no figura")
-            )
+            ok29, evidencia29 = _juzgar_codigo_iso(texto, "QQQ1", reales)
             hallazgos.append(_resultado(
                 29, "Dice que el código no está en el catálogo y no inventa significados",
-                dice_que_no_existe and not inventados,
-                f"lo declara ausente: {dice_que_no_existe} | "
-                f"definidos: {definidos or 'ninguno (nada que juzgar)'} | "
-                f"inventados: {inventados or 'ninguno'}"))
+                ok29, evidencia29))
 
             # 40 — siglas preguntadas a pelo, sin ejecutar herramientas.
             s = sesion("siglas")
@@ -418,6 +555,11 @@ def main() -> int:
                 "[26] Ante un fallo técnico cita el error — provocarlo exige romper "
                 "algo del entorno del cliente")
 
+        except ProveedorCaido as exc:
+            print(f"\n✗ El proveedor dejó de atender a mitad de corrida: {exc}")
+            print("  Los criterios que quedaban NO se han medido. Esto no es un")
+            print("  fallo del producto: recargue la cuenta y vuelva a ejecutar.")
+            interrumpida = True
         finally:
             for sid in sesiones:
                 _borrar(cliente, sid)
@@ -427,42 +569,12 @@ def main() -> int:
             fugadas = [sid for sid in sesiones if sid in crudo]
             print(f"\nLimpieza: {'quedan ' + str(fugadas) if fugadas else 'sin residuos'}")
 
-        fallidos = [h for h in hallazgos if not h["ok"]]
-        # Denominador FIJO. Con `len(hallazgos)` como total, un criterio que
-        # dejara de ser evaluable bajaba el total y el script imprimía «8/8 en
-        # verde» con salida 0: una regresión se manifestaba como menos criterios
-        # comprobados, no como fallo.
-        evaluados = {h["criterio"] for h in hallazgos}
-        obligatorios = [h for h in hallazgos if h["criterio"] in ESPERADOS]
-        verdes = len([h for h in obligatorios if h["ok"]])
-        print(f"\n{verdes}/{len(ESPERADOS)} criterios obligatorios en verde.")
-        faltan = [n for n in ESPERADOS if n not in evaluados]
-        if faltan:
-            # Con nombre, no con números pelados: es lo que se hace en todas las
-            # demás líneas del script.
-            print("  ⚠ obligatorios SIN EVALUAR (cuenta como fallo):")
-            for n in faltan:
-                print(f"      [{n}]")
-        medidos = {int(m.split("]")[0].lstrip("[")) for m in mediciones if m.startswith("[")}
-        for n, desc in CONDICIONALES.items():
-            if n not in evaluados and n not in medidos:
-                print(f"  📏 [{n}] no evaluable en esta corrida — {desc}")
-        for medicion in mediciones:
-            print(f"  📏 {medicion}")
-        for pendiente in no_ejecutados:
-            print(f"  ⊘ NO EJECUTADO {pendiente}")
-        if fallidos:
-            print("Fallidos:")
-            for h in fallidos:
-                print(f"  ❌ [{h['criterio']}] {h['descripcion']} — {h['evidencia'][:90]}")
-        # Sale 0 si no hay fallos. Antes el criterio 26 estaba codificado a
-        # False, así que el script nunca podía salir 0 y como puerta de CI
-        # estaba permanentemente en rojo: un fallo real no se distinguía del
-        # estado normal.
-        # Un obligatorio sin evaluar cuenta como fallo: antes solo se imprimía un
-        # aviso, así que una regresión podía manifestarse como menos criterios
-        # comprobados en vez de como error.
-        return 1 if (fallidos or faltan) else 0
+        if interrumpida:
+            # Código 2, distinto del 1: una corrida truncada no es lo mismo que
+            # un criterio en rojo, y confundirlos es lo que hizo que seis
+            # criterios sanos aparecieran como fallidos.
+            return 2
+        return _veredicto(hallazgos, mediciones, no_ejecutados)
 
 
 if __name__ == "__main__":
