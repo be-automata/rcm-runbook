@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+import time
 import uuid
 
 import httpx
@@ -33,19 +35,50 @@ def _cabeceras() -> dict[str, str]:
     return {"Authorization": f"Bearer {LLAVE}"}
 
 
-def _turno(cliente: httpx.Client, sesion: str, mensaje: str) -> dict:
-    r = cliente.post(
-        f"{BASE}/agents/facilitador-rcm/runs",
-        headers=_cabeceras(),
-        data={"message": mensaje, "stream": "false", "session_id": sesion},
-        timeout=TIEMPO,
-    )
-    r.raise_for_status()
-    return r.json()
+def _turno(cliente: httpx.Client, sesion: str, mensaje: str, intentos: int = 3) -> dict:
+    """Un turno del agente, reintentando el 503 del arranque en frío.
+
+    Tras un despliegue, el contenedor tarda en levantar y el Worker devuelve la
+    página de espera con 503. Sin reintento, eso mataba la corrida entera a
+    mitad y dejaba sesiones sin borrar.
+    """
+    for intento in range(intentos):
+        r = cliente.post(
+            f"{BASE}/agents/facilitador-rcm/runs",
+            headers=_cabeceras(),
+            data={"message": mensaje, "stream": "false", "session_id": sesion},
+            timeout=TIEMPO,
+        )
+        if r.status_code == 503 and intento < intentos - 1:
+            print(f"       (el contenedor está arrancando; reintento {intento + 2})")
+            time.sleep(20)
+            continue
+        r.raise_for_status()
+        return r.json()
+    raise RuntimeError("el contenedor no llegó a atender")
 
 
 def _herramientas(salida: dict) -> list[str]:
     return [t.get("tool_name") for t in (salida.get("tools") or [])]
+
+
+def _borrar(cliente: httpx.Client, sesion: str, intentos: int = 3) -> None:
+    """Borra de verdad: httpx no lanza en 5xx, así que un DELETE que devolvía
+    503 durante un arranque en frío pasaba por bueno y dejaba la sesión viva.
+    Se comprobó: la corrida anterior dejó tres."""
+    for intento in range(intentos):
+        try:
+            r = cliente.delete(f"{BASE}/sessions/{sesion}", headers=_cabeceras(),
+                               timeout=60)
+        except Exception as exc:  # noqa: BLE001 — la limpieza informa, no revienta
+            print(f"  ⚠ {sesion}: {exc}")
+        else:
+            if r.status_code in (200, 204, 404):
+                return
+            print(f"  ⚠ {sesion}: HTTP {r.status_code}")
+        if intento < intentos - 1:
+            time.sleep(10)
+    print(f"  ⚠ NO SE PUDO BORRAR {sesion} — bórrela a mano")
 
 
 def _resultado(numero: int, criterio: str, ok: bool, evidencia: str) -> dict:
@@ -71,22 +104,24 @@ def _equipo_registrado(estado: dict) -> list[str]:
     return [m.get("name", "") for m in rcm.get("team", []) if isinstance(m, dict)]
 
 
-def _faltantes_del_boton(cliente: httpx.Client, sesion: str) -> list[str]:
-    """Los bloqueadores reales, pedidos por el camino que no pasa por el modelo."""
-    r = cliente.get(f"{BASE}/exports/{sesion}", headers=_cabeceras(), timeout=120)
-    if r.status_code == 200:
-        return []
-    try:
-        detalle = r.json().get("detail", "")
-    except ValueError:
-        return []
-    return [linea.strip("- ").strip() for linea in str(detalle).splitlines() if "-" in linea]
+def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
+    """Los bloqueadores tal como los devolvió `export_excel`, no como los contó
+    el modelo."""
+    for t in salida.get("tools") or []:
+        if t.get("tool_name") != "export_excel":
+            continue
+        resultado = str(t.get("result") or "")
+        return [
+            linea.strip("- ").strip()
+            for linea in resultado.splitlines()
+            if linea.strip().startswith("-")
+        ]
+    return []
 
 
-def _nucleo(faltante: str) -> str:
-    """La parte del faltante que se puede buscar en la respuesta del agente."""
-    limpio = faltante.split("]")[-1].strip().lower()
-    return limpio[:28]
+def _fases_mencionadas(texto: str) -> set[str]:
+    """Los números de fase que aparecen en un texto, como '1', '3'…"""
+    return set(re.findall(r"[Ff]ase\s*(\d)", texto))
 
 
 def _proveedor_atiende(cliente: httpx.Client) -> tuple[bool, str]:
@@ -168,15 +203,32 @@ def main() -> int:
             # Distinto del criterio 8: aquí se comprueba que los faltantes que
             # enumera vengan de la herramienta. Se contrastan contra los que
             # devuelve el endpoint del botón, que no pasa por el modelo.
-            reales = _faltantes_del_boton(cliente, s)
+            # Los faltantes reales vienen en el `result` de la propia llamada a
+            # export_excel: es lo que devolvió la herramienta, no lo que el
+            # modelo dice que devolvió. El endpoint del botón no sirve para
+            # esto —entrega un BORRADOR válido, no una lista de bloqueadores.
+            # Exigir coincidencia literal era demasiado frágil: el agente
+            # parafrasea, y eso es correcto. Lo que NO puede hacer es enumerar
+            # fases pendientes que la herramienta no mencionó — esa es la firma
+            # de la lista inventada. Observado en producción: «Si intento
+            # exportar ahora, la herramienta va a rechazarlo» seguido de las
+            # seis fases, sin haberla llamado.
+            reales = _faltantes_de_la_herramienta(salida)
             texto_rechazo = salida.get("content") or ""
-            coincide = bool(reales) and any(
-                _nucleo(f) and _nucleo(f) in texto_rechazo.lower() for f in reales
-            )
+            fases_tool = _fases_mencionadas(" ".join(reales))
+            fases_agente = _fases_mencionadas(texto_rechazo)
+            inventadas = sorted(fases_agente - fases_tool)
+            if "export_excel" not in usadas:
+                evidencia = ("no llamó a export_excel: decidió la compuerta él "
+                             "(limitación conocida ALTA-2, 3/12)")
+            elif inventadas:
+                evidencia = f"enumera fases que la herramienta no dijo: {inventadas}"
+            else:
+                evidencia = f"faltantes de la herramienta: {reales[:2]}"
             hallazgos.append(_resultado(
-                27, "Los faltantes son los reales, no una lista inventada",
-                "export_excel" in usadas and coincide,
-                f"faltantes reales: {reales[:2]}"))
+                27, "Los faltantes que enumera salen de la herramienta",
+                "export_excel" in usadas and bool(reales) and not inventadas,
+                evidencia))
 
             # 23 y 25 — exportación por chat y enlace clicable.
             s = sesion("export")
@@ -261,11 +313,7 @@ def main() -> int:
 
         finally:
             for sid in sesiones:
-                try:
-                    cliente.delete(f"{BASE}/sessions/{sid}", headers=_cabeceras(),
-                                   timeout=60)
-                except Exception as exc:  # noqa: BLE001 — la limpieza informa, no revienta
-                    print(f"  ⚠ no se pudo borrar {sid}: {exc}")
+                _borrar(cliente, sid)
             restantes = cliente.get(
                 f"{BASE}/sessions?limit=100", headers=_cabeceras(), timeout=120).json()
             crudo = json.dumps(restantes)

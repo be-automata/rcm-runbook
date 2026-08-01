@@ -334,7 +334,8 @@ done
 ## Los criterios que necesitan al modelo
 
 Once criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26, 27,
-29, 36 y 40**. Se ejecutan solos.
+29, 36 y 40**. Se ejecutan solos y la última corrida dio **10/10** (el 26 queda
+NO EJECUTADO a propósito).
 
 No hay que reconstruirlos a mano. Están escritos y se ejecutan solos:
 
