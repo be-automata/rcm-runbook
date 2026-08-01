@@ -186,23 +186,43 @@ class RequireKey:
 # la mitad de los caminos y justo la que un integrador ve primero. La capa que
 # traduce errores envuelve las llamadas a herramientas, no la del modelo, así
 # que el único fallo que estaba ocurriendo era precisamente el que no cubría.
+# Se reconoce PRIMERO la envoltura del error y solo después se clasifica. Al
+# revés —buscando «overloaded», «rate limit» o «529» sueltos— el traductor se
+# comía respuestas legítimas del Facilitador: «la presión de diseño es 529 kPa»,
+# «el MTBF del sello es de 529 horas», «el modo es "motor overloaded" según ISO
+# 14224», «el PLC aplica un rate-limit a la señal». 10 de 12 respuestas técnicas
+# realistas se convertían en un aviso de avería, y como aquí se SUSTITUYE el
+# contenido, el análisis del cliente desaparecía antes de salir del servidor.
+# «overloaded» es vocabulario de modo de falla en este mismo producto.
+_ENVOLTURA_DEL_PROVEEDOR = re.compile(
+    # «Error code: NNN» y los identificadores `algo_error` son de la API del
+    # proveedor: no aparecen en prosa técnica en español. El número suelto y las
+    # palabras sueltas sí, y por eso no valen como envoltura.
+    r"""Error code:\s*\d+|\b\w+_error\b|['"]type['"]\s*:\s*['"]error['"]""",
+    re.I,
+)
+
 _FALLOS_DEL_PROVEEDOR: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"credit balance is too low", re.I),
+    (re.compile(r"credit balance is too low|billing", re.I),
      "El servicio no está disponible en este momento por un problema de la "
      "cuenta del sistema. Avise a quien le compartió este enlace; su análisis "
      "queda guardado y puede retomarlo después."),
-    (re.compile(r"rate.?limit|too many requests", re.I),
+    (re.compile(r"rate_limit_error|too many requests", re.I),
      "El sistema está recibiendo muchas consultas a la vez. Espere unos "
      "segundos y vuelva a enviar su mensaje."),
-    (re.compile(r"overloaded|\b529\b", re.I),
+    (re.compile(r"overloaded_error", re.I),
      "El servicio está saturado en este momento. Espere unos segundos y vuelva "
      "a intentarlo."),
-    (re.compile(r"authentication_error|invalid x-api-key", re.I),
+    (re.compile(r"authentication_error|permission_error|invalid x-api-key", re.I),
      "El servicio no está disponible por un problema de configuración del "
      "sistema. Avise a quien le compartió este enlace."),
-    (re.compile(r"Error code: \d+ - \{'type': 'error'", re.I),
-     "El sistema tuvo un fallo técnico al procesar su mensaje. Avise a quien le "
-     "compartió este enlace; su análisis queda guardado."),
+)
+
+# Un error del proveedor que no reconozco sigue siendo un error del proveedor:
+# dejarlo pasar en inglés era el defecto original.
+_FALLO_GENERICO = (
+    "El sistema tuvo un fallo técnico al procesar su mensaje. Avise a quien le "
+    "compartió este enlace; su análisis queda guardado."
 )
 
 
@@ -212,15 +232,15 @@ def en_espanol_si_es_fallo_del_proveedor(texto: str) -> str:
     Devuelve el original si no reconoce ningún fallo: traducir de más
     convertiría una respuesta legítima del agente en un aviso de avería.
     """
-    if not isinstance(texto, str):
+    if not isinstance(texto, str) or not _ENVOLTURA_DEL_PROVEEDOR.search(texto):
         return texto
+    # Sin adjuntar el original: lleva dentro el estado de facturación del
+    # operador, que no es asunto del cliente.
+    logger.warning("fallo del proveedor servido al cliente: %s", texto[:200])
     for patron, en_espanol in _FALLOS_DEL_PROVEEDOR:
         if patron.search(texto):
-            # Sin adjuntar el original: lleva dentro el estado de facturación
-            # del operador, que no es asunto del cliente.
-            logger.warning("fallo del proveedor servido al cliente: %s", texto[:200])
             return en_espanol
-    return texto
+    return _FALLO_GENERICO
 
 
 class TraducirFallosDelProveedor:
@@ -267,6 +287,26 @@ class TraducirFallosDelProveedor:
         await self.app(scope, receive, interceptar)
 
 
+def _traducir_contenidos(datos: Any) -> Any:
+    """Recorre el JSON entero traduciendo cada `content` que sea un fallo.
+
+    Mirar solo la raíz cuando era un `dict` dejaba fuera el historial:
+    `/sessions/{id}/runs` devuelve una LISTA de turnos, así que el turno con el
+    error se servía tal cual y la facturación del operador salía en claro cada
+    vez que alguien recargaba la conversación. La traducción había subido al
+    servidor para el turno vivo y se había quedado abajo para el historial —una
+    promesa a medias es peor que no haberla hecho, porque nadie vuelve a mirar.
+    """
+    if isinstance(datos, list):
+        return [_traducir_contenidos(x) for x in datos]
+    if not isinstance(datos, dict):
+        return datos
+    salida = {k: _traducir_contenidos(v) for k, v in datos.items()}
+    if isinstance(salida.get("content"), str):
+        salida["content"] = en_espanol_si_es_fallo_del_proveedor(salida["content"])
+    return salida
+
+
 async def _enviar_traducido(send: Callable, inicio: dict, cuerpo: bytes) -> None:
     """Reescribe `content` si trae un fallo del proveedor y reenvía la respuesta.
 
@@ -276,11 +316,9 @@ async def _enviar_traducido(send: Callable, inicio: dict, cuerpo: bytes) -> None
     nuevo = cuerpo
     try:
         datos = json.loads(cuerpo)
-        if isinstance(datos, dict) and isinstance(datos.get("content"), str):
-            traducido = en_espanol_si_es_fallo_del_proveedor(datos["content"])
-            if traducido != datos["content"]:
-                datos["content"] = traducido
-                nuevo = json.dumps(datos).encode()
+        traducido = _traducir_contenidos(datos)
+        if traducido != datos:
+            nuevo = json.dumps(traducido).encode()
     except (ValueError, TypeError):  # pragma: no cover — cuerpo no JSON
         nuevo = cuerpo
     cabeceras = [

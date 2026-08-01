@@ -3004,6 +3004,19 @@ class TestElFalloDelProveedorNoSaleEnInglesNiConLaFacturacion:
             "El modo FTS es el más frecuente en bombas centrífugas.",
             "Hubo un error al registrar la tarea: la frecuencia es obligatoria.",
             "Le devuelvo el borrador del Excel con lo registrado hasta ahora.",
+            # Estas doce son prosa técnica realista de RCM, y con el traductor
+            # clasificando por palabras sueltas 10 de 12 se convertían en un
+            # aviso de avería falso. Como aquí se SUSTITUYE el contenido, el
+            # análisis del cliente desaparecía antes de salir del servidor.
+            "La presión de descarga de diseño de la bomba P-101 es 529 kPa.",
+            "Con los datos de OREDA, el MTBF del sello mecánico es 529 horas.",
+            "El equipo TK-529 no tiene registro de fallas en 24 meses.",
+            "El modo de falla es 'motor overloaded' según ISO 14224.",
+            "El criterio de aceptación es un failure rate limit de 1e-4 por hora.",
+            "El PLC aplica un rate-limit a la señal del transmisor de presión.",
+            "La bomba operó 529 horas antes de la parada programada.",
+            "Se detectó overloaded en el arranque; es un modo evidente.",
+            "El código de error del PLC es 400 y no afecta al análisis.",
         ],
     )
     def test_una_respuesta_legitima_no_se_convierte_en_un_aviso_de_averia(
@@ -3091,3 +3104,104 @@ class TestElFalloDelProveedorNoSaleEnInglesNiConLaFacturacion:
         arranques = [m for m in recibido if m["type"] == "http.response.start"]
         assert len(arranques) == 1, f"cabeceras enviadas: {len(arranques)}"
         assert dict(arranques[0]["headers"])[b"content-type"] == b"text/event-stream"
+
+
+class TestElTraductorNoSeQuedaEnElTurnoVivo:
+    """El historial de una sesión (`/sessions/{id}/runs`) devuelve una LISTA de
+    turnos, y el traductor solo miraba la raíz cuando era un `dict`: la
+    facturación del operador salía en claro cada vez que alguien recargaba la
+    conversación. La traducción había subido al servidor para el turno vivo y se
+    había quedado abajo para el historial."""
+
+    CRUDO = (
+        "Error code: 400 - {'type': 'error', 'error': {'type': "
+        "'invalid_request_error', 'message': 'Your credit balance is too low to "
+        "access the Anthropic API. Please go to Plans & Billing to upgrade.'}}"
+    )
+
+    def test_el_historial_como_lista_tambien_se_traduce(self):
+        from rcm_runbook.app import _traducir_contenidos
+
+        historial = [
+            {"run_id": "r1", "content": "Analicemos la bomba P-101."},
+            {"run_id": "r2", "content": self.CRUDO, "metrics": {"tokens": 12}},
+        ]
+        salida = _traducir_contenidos(historial)
+        entero = json.dumps(salida)
+        for prohibido in ("credit balance", "Plans & Billing", "Anthropic API"):
+            assert prohibido not in entero, f"el historial filtró «{prohibido}»"
+        assert salida[0]["content"] == "Analicemos la bomba P-101.", "tocó lo sano"
+        assert salida[1]["metrics"] == {"tokens": 12}, "se comió los metadatos"
+        assert salida[1]["run_id"] == "r2"
+
+    def test_tambien_anidado_dentro_de_los_mensajes(self):
+        from rcm_runbook.app import _traducir_contenidos
+
+        salida = _traducir_contenidos(
+            [{"messages": [{"role": "assistant", "content": self.CRUDO}]}]
+        )
+        assert "credit balance" not in json.dumps(salida)
+        assert "no está disponible" in salida[0]["messages"][0]["content"]
+
+    def test_una_estructura_sin_contenidos_sale_igual(self):
+        from rcm_runbook.app import _traducir_contenidos
+
+        datos = {"a": [1, 2, {"b": None}], "c": "texto normal"}
+        assert _traducir_contenidos(datos) == datos
+
+
+class TestLaEnvolturaDelErrorEsLaQueDecide:
+    """Clasificar por palabras sueltas —«overloaded», «rate limit», «529»— es lo
+    que destruía respuestas correctas. Primero se reconoce que el texto ES un
+    error del proveedor; solo después se clasifica."""
+
+    @pytest.mark.parametrize(
+        "envoltura",
+        [
+            "Error code: 400 - {'type': 'error'}",
+            "Error code: 429 - rate_limit_error: too many requests",
+            "{'type': 'error', 'error': {'type': 'api_error'}}",
+        ],
+    )
+    def test_reconoce_las_formas_en_que_llega_el_error(self, envoltura):
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        assert en_espanol_si_es_fallo_del_proveedor(envoltura) != envoltura
+
+    @pytest.mark.parametrize(
+        ("error", "no_debe_decir"),
+        [
+            # La envoltura evita la fuga, pero clasificar por palabra suelta
+            # sigue eligiendo mal el aviso: un error de petición que MENCIONA
+            # 529 no es saturación, y uno que menciona un límite de tasa del
+            # equipo no es exceso de consultas. El cliente actúa según lo que
+            # lee —«espere unos segundos» frente a «avise a quien le compartió
+            # el enlace»—, así que el aviso equivocado le hace perder el turno.
+            ("Error code: 400 - {'type': 'error', 'error': {'type': "
+             "'invalid_request_error', 'message': 'max_tokens 529 exceeds "
+             "the model limit'}}", "saturado"),
+            ("Error code: 400 - {'type': 'error', 'error': {'type': "
+             "'invalid_request_error', 'message': 'the rate limit field is "
+             "not valid here'}}", "muchas consultas"),
+        ],
+    )
+    def test_clasifica_por_el_tipo_del_error_no_por_una_palabra_suelta(
+        self, error, no_debe_decir
+    ):
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        salida = en_espanol_si_es_fallo_del_proveedor(error)
+        assert salida != error, "no lo tradujo"
+        assert no_debe_decir not in salida, f"eligió el aviso equivocado: {salida}"
+
+    def test_un_error_del_proveedor_que_no_sabe_clasificar_igual_se_traduce(self):
+        # Dejarlo pasar en inglés era el defecto original: un error que no
+        # reconozco sigue siendo un error del proveedor.
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        salida = en_espanol_si_es_fallo_del_proveedor(
+            "Error code: 503 - {'type': 'error', 'error': {'type': 'unknown_error', "
+            "'message': 'Something went wrong in our datacenter'}}"
+        )
+        assert "datacenter" not in salida and "Something" not in salida
+        assert "fallo técnico" in salida

@@ -1530,3 +1530,113 @@ class TestLoQueHayQueRevisarSeImprime:
     def test_sin_pendientes_no_promete_una_lista_vacia(self, capsys):
         V._veredicto(self._hallazgo(), [], [], [])
         assert "puntos para revisar" not in capsys.readouterr().out
+
+
+class TestLaColetillaNoEsconde_UnInvento:
+    """Ampliar `_NEGACIONES` para dejar de acusar formas correctas abrió cuatro
+    maneras nuevas de colar una falsa: cada negación era una coletilla más tras
+    la que esconder un invento. La avería de la ronda 26 en la otra dirección."""
+
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-col"
+            session_state: dict = {}
+
+        return V._definiciones_de_la_herramienta(
+            {"tools": [{"tool_name": "explain_iso_code",
+                        "result": tools_mod.explain_iso_code.entrypoint(
+                            Ctx(), code="QQQ1")}]}
+        )
+
+    @pytest.mark.parametrize(
+        "invento",
+        [
+            "QQQ1 no existe en el catálogo.\nPor su forma sería una Falla de "
+            "Calidad tipo 1, aunque no consta en OREDA.",
+            "QQQ1 no existe. Significaría una falla de calidad, aunque no "
+            "devolvió nada.",
+            "QQQ1 no existe. Sería Fuga Total del Sistema, aunque no está "
+            "confirmado en OREDA.",
+            "QQQ1 no existe. Sería una Falla de Calidad pero no está registrado.",
+            "QQQ1 no está en el catálogo.\nSu significado sería «Falla de "
+            "Calidad tipo 1».",
+            "QQQ1 — Falla de calidad tipo 1.",
+            "QQQ1 significa Quality Quick Quench.",
+            "QQQ1 quiere decir falla del sistema de calidad.",
+        ],
+    )
+    def test_el_invento_con_concesiva_no_aprueba(self, invento):
+        assert not V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)[0], (
+            "la coletilla absolvió el invento"
+        )
+
+    @pytest.mark.parametrize(
+        "correcta",
+        [
+            "QQQ1 no existe en el catálogo ISO 14224.",
+            "QQQ1 — no está en el catálogo.",
+            "QQQ1 no quiere decir nada en ISO 14224.",
+            "QQQ1 significa que la consulta no devolvió resultados.",
+            "QQQ1 — no se encuentra en la base de códigos.",
+            "QQQ1 — código no reconocido por la herramienta.",
+            "QQQ1: sin correspondencia en la norma.",
+            "QQQ1 - no consta en el catálogo cargado.",
+            "QQQ1 — sin coincidencias en el catálogo.",
+            "QQQ1: no hay ningún modo con ese código.",
+            "QQQ1 (no registrado) — no puedo darte un significado.",
+            "No encontré QQQ1 en el catálogo.",
+            "**NO** existe el código QQQ1 en el catálogo del cliente.",
+            "QQQ1 no existe en el catálogo, aunque FTS y STP sí están.",
+            "QQQ1 no existe en el catálogo.\nLos que sí están son FTS, STP y BRD.",
+        ],
+    )
+    def test_y_las_formas_correctas_de_negar_siguen_aprobando(self, correcta):
+        assert V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)[0], (
+            f"suspendió una forma correcta de negar: {correcta}"
+        )
+
+    def test_una_abstencion_con_coma_no_se_lee_como_atribucion(self):
+        # Cortar por cualquier coma —y no solo por la concesiva— convertía
+        # «consultado y revisado, sin resultados» en una acusación.
+        assert V._es_negacion("explain_iso_code consultado y revisado, sin resultados")
+
+    def test_la_definicion_del_vecino_no_se_le_cuelga_al_preguntado(self):
+        # Mirar el renglón siguiente hacía que la entrada del código de al lado
+        # se leyera como significado atribuido al preguntado: acusar de inventar
+        # a quien está citando bien el catálogo.
+        reales = self.REALES
+        texto = (
+            "QQQ1 no está en el catálogo.\n"
+            + "\n".join(f"{c} significa {d}" for c, d in list(reales.items())[:4])
+        )
+        ok, evidencia, _ = V._juzgar_codigo_iso(texto, "QQQ1", reales)
+        assert ok, f"acusó con la definición del vecino: {evidencia}"
+
+    def test_las_dos_listas_de_ausencia_son_la_misma(self):
+        # Estaban duplicadas: la ronda 26 añadió trece formas a una sola, así
+        # que «no se encuentra en la base de códigos» dejaba de leerse como
+        # invento y seguía suspendiendo por no declararlo ausente.
+        for forma in ("no se encuentra", "sin correspondencia", "no consta"):
+            ok, _, _ = V._juzgar_codigo_iso(f"QQQ1 {forma} en el catálogo.",
+                                            "QQQ1", self.REALES)
+            assert ok, f"«{forma}» cuenta para una comprobación y no para la otra"
+
+    def test_el_suelo_de_la_definicion_esta_fijado(self):
+        # `{4,120}` → `{1,120}` inflaba el catálogo con basura de una letra, y
+        # `bool(reales)` —que ahora decide— se satisfacía con cualquier cosa.
+        catalogo = V._definiciones_de_la_herramienta(
+            {"tools": [{"tool_name": "explain_iso_code", "result": "- FTS — a"}]}
+        )
+        assert catalogo == {}, f"entró una definición de una letra: {catalogo}"
+
+    def test_el_techo_del_ancho_de_sigla_esta_fijado(self):
+        # `{3,4}` → `{3,5}` devolvía OREDA al ruido de la revisión.
+        _, _, revisar = V._juzgar_codigo_iso(
+            "QQQ1 no existe. Según OREDA, el modo FTS es el más frecuente.",
+            "QQQ1", self.REALES,
+        )
+        anotadas = " ".join(x for x in revisar if "siglas que el catálogo" in x)
+        assert "OREDA" not in anotadas

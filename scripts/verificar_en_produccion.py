@@ -199,6 +199,8 @@ _NEGACIONES = (
     "nada en", "nada dentro", "no devolvió", "no devolvio", "no se encuentra",
     "no reconocido", "no reconoce", "sin correspondencia", "sin coincidencias",
     "no consta", "no lo tiene", "no hay ningún", "no hay ningun",
+    # Abstenerse es cumplir el criterio tanto como negar.
+    "no puedo", "no podría", "no podria", "no voy a", "no me lo voy",
     # «desconocido» NO entra: es la definición literal del código UNK del
     # catálogo, y listarla aquí hacía que atribuirle cualquier cosa a UNK se
     # saltara la comprobación entera.
@@ -224,7 +226,33 @@ def _es_negacion(texto: str) -> bool:
     # Sin recortar: el llamador ya capa su captura a 60 caracteres, así que
     # cualquier ventana aquí sería inerte. (Comprobado: reponerla no cambia
     # ninguna respuesta, es un mutante equivalente.)
-    limpio = re.sub(r"[^\w\s]", " ", texto.lower()).replace("ó", "o").strip()
+    # La pausa se busca ANTES de limpiar: quitar la puntuación primero borraba
+    # la coma, y sin coma no hay primera cláusula que aislar.
+    # Solo la concesiva, no cualquier coma. La concesiva es la forma en que un
+    # invento se disfraza —«sería una Falla de Calidad tipo 1, AUNQUE no consta
+    # en OREDA»—; una coma a secas separa dos partes de la misma abstención
+    # —«consultado y revisado, sin resultados»—, y cortar por ella convertía esa
+    # abstención legítima en una acusación.
+    #
+    # Queda un hueco conocido, y en la dirección buena: «sería una Falla de
+    # Calidad, sin correspondencia exacta» todavía cuela. Un invento que se nos
+    # escapa es peor instrumento, pero un instrumento que acusa a quien cumple
+    # es peor que no medir.
+    primera_cruda = re.split(
+        r"\b(?:aunque|pero|sin embargo|no obstante)\b", texto.lower(), maxsplit=1
+    )[0]
+    limpio = re.sub(r"[^\w\s]", " ", primera_cruda).replace("ó", "o").strip()
+    limpio = re.sub(r"\s+", " ", limpio)
+    # En la PRIMERA cláusula, no en cualquier punto ni solo al principio.
+    #
+    # «En cualquier punto» convertía cada negación de la lista en una coletilla
+    # tras la que esconder un invento: «sería una Falla de Calidad tipo 1,
+    # aunque no consta en OREDA» aprobaba. «Solo al principio» era lo contrario
+    # y suspendía diez formas correctas, porque muchas empiezan por el
+    # sustantivo: «código no reconocido por la herramienta».
+    #
+    # La diferencia entre negar y atribuir con coletilla está en dónde cae la
+    # negación respecto de la primera pausa. Se corta ahí.
     return any(p.replace("ó", "o") in limpio for p in _NEGACIONES)
 
 
@@ -237,9 +265,20 @@ def _significado_atribuido(texto: str, codigo: str) -> str:
     # Por oraciones, pero mirando también la siguiente: el invento suele ir tras
     # un punto —«…no existe en el catálogo. Por su forma sería…»— y partir por
     # puntos lo dejaba fuera.
+    # Y también el renglón SIGUIENTE al que nombra el código: «QQQ1 no existe
+    # en el catálogo.\nPor su forma sería una Falla de Calidad tipo 1» ponía el
+    # invento en una línea donde el código ya no aparece, así que no se miraba.
     trozos = re.split(r"\n", texto)
-    for trozo in trozos:
-        if codigo not in trozo:
+    for i, trozo in enumerate(trozos):
+        # Y solo si ese renglón no nombra OTRO código: si lo hace, lo que hay
+        # ahí es la entrada del vecino, y colgársela al preguntado es acusar de
+        # inventar a quien está citando bien el catálogo.
+        anterior_lo_nombra = (
+            i > 0
+            and codigo in trozos[i - 1]
+            and not re.search(rf"\b(?!{codigo}\b)[A-Z]{{3,4}}\d?\b", trozo)
+        )
+        if codigo not in trozo and not anterior_lo_nombra:
             continue
         for patron in (
             r"(?:sería|significaría|correspondería|se refiere a|designa"
@@ -566,13 +605,14 @@ def _juzgar_codigo_iso(
     # Sin la decoración: «**NO** existe» partía la frase en dos y la negación
     # dejaba de reconocerse, así que enfatizar la respuesta la suspendía.
     plano = re.sub(r"[*_`]+", "", texto).lower()
+    # La MISMA lista que usa `_significado_atribuido`. Estaban duplicadas y se
+    # desincronizaron: la ronda 26 añadió trece formas a una sola, así que
+    # «QQQ1 — no se encuentra en la base de códigos» dejaba de leerse como
+    # invento y seguía suspendiendo por no declararlo ausente. Diez formas
+    # correctas en rojo por tener la misma verdad escrita en dos sitios.
     dice_que_no_existe = any(
-        p in plano
-        for p in ("no existe", "no está en el catálogo", "no esta en el catálogo",
-                  "no aparece", "no figura", "no está registrado",
-                  "no esta registrado", "sin resultados", "no pertenece",
-                  "no está en la norma", "no es un código")
-    )
+        p.replace("ó", "o") in plano.replace("ó", "o") for p in _NEGACIONES
+    ) or "no encontré" in plano or "no encontre" in plano
     # Esto SÍ se decide: si el catálogo del cliente no tiene el código,
     # cualquier significado que se le dé es inventado, sin comparar nada con
     # nada. Y falla por defecto —se le escapa un invento antes que acusar a una
