@@ -23,6 +23,45 @@ from rcm_runbook.models.session import RCMSession
 OAUTH_BETA_HEADER = {"anthropic-beta": "oauth-2025-04-20"}
 
 
+def sondear_modelo(cfg: Settings) -> tuple[bool, str]:
+    """¿Responde de verdad el proveedor del modelo? (ok, detalle en español).
+
+    `/health` mira que el proceso esté vivo y devolvía 200 mientras el producto
+    estaba completamente muerto: la cuenta del proveedor se quedó sin crédito y
+    cada turno del chat devolvía un error, con la vigilancia en verde. Un
+    servicio cuya única sonda no puede distinguir «funciona» de «no funciona»
+    no es observable, por muchos 200 que devuelva.
+
+    Cuesta un token y va detrás de la llave: sin eso, cualquiera puede gastar la
+    cuenta del operador recargando una URL.
+    """
+    if cfg.provider != "anthropic":
+        return True, f"Proveedor '{cfg.provider}': sondeo no implementado."
+    try:
+        from anthropic import Anthropic as AnthropicClient
+
+        if cfg.claude_code_oauth_token:
+            cliente = AnthropicClient(
+                auth_token=cfg.claude_code_oauth_token, default_headers=OAUTH_BETA_HEADER
+            )
+        else:
+            cliente = AnthropicClient()
+        cliente.messages.create(
+            model=cfg.model_id, max_tokens=1, messages=[{"role": "user", "content": "ok"}]
+        )
+    except Exception as exc:  # noqa: BLE001 — la sonda informa, no revienta
+        detalle = str(exc)
+        if "credit balance" in detalle:
+            return False, "La cuenta del proveedor del modelo no tiene saldo."
+        if "authentication" in detalle.lower() or "api key" in detalle.lower():
+            return False, "Las credenciales del proveedor del modelo no son válidas."
+        if "rate" in detalle.lower() and "limit" in detalle.lower():
+            return False, "El proveedor del modelo está limitando el ritmo de peticiones."
+        logger.warning("sondeo del modelo falló: %s", detalle[:200])
+        return False, "El proveedor del modelo no respondió correctamente."
+    return True, "El proveedor del modelo responde."
+
+
 def build_model(cfg: Settings) -> Any:
     if cfg.provider == "anthropic":
         from agno.models.anthropic import Claude

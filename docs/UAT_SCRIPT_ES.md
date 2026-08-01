@@ -326,6 +326,26 @@ done
 | 44 | Un fallo del proveedor del modelo se explica en español y no enseña la facturación del operador | ☐ |
 | 45 | La fase avanza al completarse su compuerta, sin depender de que el agente lo pida, y el agente lo anuncia | ☐ |
 | 46 | El agente no repregunta datos que el interesado ya dio (ve el estado sin tener que consultarlo) | ☐ |
+| 47 | `GET /health/modelo` (con llave) distingue «el proceso vive» de «el producto funciona», y responde 503 cuando el proveedor está caído | ☐ |
+
+## Vigilancia — qué mirar para enterarse de una caída
+
+`/health` dice si el proceso vive, y **es público y barato**. Respondió 200
+durante toda una caída en la que cada turno del chat devolvía un error: la
+cuenta del proveedor del modelo se había quedado sin saldo. Con esa sonda sola,
+nadie se entera.
+
+**Lo que hay que vigilar es `GET /health/modelo`** (con `Authorization: Bearer`):
+hace una llamada real de un token y responde `503` con el motivo en español si
+el proveedor no atiende. Va detrás de la llave a propósito — gasta saldo del
+operador, y una sonda pública sería una forma cómoda de vaciar la cuenta
+recargando una URL.
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $OS_SECURITY_KEY" \
+  https://rcm-demo.beautomata.com/health/modelo      # 200 = atiende, 503 = caído
+```
 
 ## Pendiente de confirmar con el cliente — «Quinquenal»
 

@@ -1660,3 +1660,83 @@ class TestElAgenteVeElEstadoSinPedirlo:
         # defecto y no falla, así que ese caso no probaba nada.
         texto = _digest_de_la_sesion({"rcm": {"phase": "no-es-una-fase"}})
         assert "get_progress" in texto
+
+
+class TestLaSondaDistingueVivoDeFuncionando:
+    """La cuenta del proveedor se quedó sin saldo, cada turno del chat devolvía
+    un error, y `/health` respondió 200 durante toda la caída. Un servicio cuya
+    única sonda no puede distinguir «funciona» de «no funciona» no es
+    observable, por muchos 200 que devuelva."""
+
+    def test_la_sonda_profunda_exige_la_llave(self, client, con_llave):
+        # Gasta un token del operador: pública sería una forma cómoda de
+        # vaciarle la cuenta a alguien recargando una URL.
+        assert client.get("/health/modelo").status_code == 401
+
+    def test_health_sigue_siendo_publico_y_barato(self, client, con_llave):
+        assert client.get("/health").status_code == 200
+
+    def test_sin_saldo_responde_degradado_y_lo_explica(self, client, con_llave, monkeypatch):
+        from rcm_runbook import app as app_mod
+
+        monkeypatch.setattr(
+            app_mod, "sondear_modelo",
+            lambda _cfg: (False, "La cuenta del proveedor del modelo no tiene saldo."),
+        )
+        r = client.get("/health/modelo", headers={"Authorization": f"Bearer {con_llave}"})
+        assert r.status_code == 503, "una caída total respondía 200"
+        assert r.json()["estado"] == "degradado"
+        assert "saldo" in r.json()["detalle"]
+
+    def test_cuando_responde_dice_ok(self, client, con_llave, monkeypatch):
+        from rcm_runbook import app as app_mod
+
+        monkeypatch.setattr(
+            app_mod, "sondear_modelo", lambda _cfg: (True, "El proveedor responde.")
+        )
+        r = client.get("/health/modelo", headers={"Authorization": f"Bearer {con_llave}"})
+        assert r.status_code == 200 and r.json()["estado"] == "ok"
+
+    def test_el_sondeo_traduce_los_fallos_conocidos(self, monkeypatch):
+        from rcm_runbook.agent.factory import sondear_modelo
+        from rcm_runbook.config import settings
+
+        class ClienteRoto:
+            def __init__(self, *a, **k):
+                pass
+
+            class messages:  # noqa: N801
+                @staticmethod
+                def create(**_kw):
+                    raise RuntimeError("Error code: 400 - your credit balance is too low")
+
+        import anthropic
+
+        monkeypatch.setattr(anthropic, "Anthropic", ClienteRoto)
+        ok, detalle = sondear_modelo(settings)
+        assert ok is False
+        assert "saldo" in detalle
+        assert "credit balance" not in detalle, "le enseña la facturación a quien sondee"
+
+    def test_un_fallo_que_no_reconoce_tambien_es_degradado(self, monkeypatch):
+        # Lo peligroso no es no saber traducirlo: es decir «ok» cuando el
+        # proveedor no respondió. Esa es exactamente la forma de la caída que
+        # tuvo el producto muerto con la vigilancia en verde.
+        from rcm_runbook.agent.factory import sondear_modelo
+        from rcm_runbook.config import settings
+
+        class ClienteRoto:
+            def __init__(self, *a, **k):
+                pass
+
+            class messages:  # noqa: N801
+                @staticmethod
+                def create(**_kw):
+                    raise RuntimeError("algo raro que nadie previó")
+
+        import anthropic
+
+        monkeypatch.setattr(anthropic, "Anthropic", ClienteRoto)
+        ok, detalle = sondear_modelo(settings)
+        assert ok is False, "un fallo desconocido se reportó como servicio sano"
+        assert "no respondió" in detalle

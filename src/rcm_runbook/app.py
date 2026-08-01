@@ -24,7 +24,7 @@ from fastapi import HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.background import BackgroundTask
 
-from rcm_runbook.agent.factory import build_agent
+from rcm_runbook.agent.factory import build_agent, sondear_modelo
 from rcm_runbook.config import settings
 from rcm_runbook.demo_page import DEMO_HTML
 from rcm_runbook.observability import setup_observability
@@ -289,6 +289,25 @@ def download_export(session_id: str, filename: str, request: Request) -> FileRes
     if generado is None:
         raise HTTPException(status_code=404, detail="Entregable no encontrado.")
     return _servir(generado, filename, temporal=generado.parent.parent)
+
+
+@app.get("/health/modelo")
+def health_modelo() -> JSONResponse:
+    """Sonda profunda: ¿puede el sistema atender un turno de verdad?
+
+    Va detrás de la llave a propósito (no está en _PUBLIC_PATHS): gasta un token
+    del operador, y una sonda pública sería una forma cómoda de vaciarle la
+    cuenta a alguien recargando una URL.
+
+    `/health` sigue siendo la sonda barata para saber si el proceso vive. Esta es
+    la que hay que vigilar para enterarse de una caída como la del saldo, que
+    dejó el producto muerto con la otra en verde.
+    """
+    ok, detalle = sondear_modelo(settings)
+    return JSONResponse(
+        {"estado": "ok" if ok else "degradado", "detalle": detalle},
+        status_code=200 if ok else 503,
+    )
 
 
 @app.get("/favicon.ico")
