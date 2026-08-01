@@ -191,10 +191,16 @@ def run_scripted_eval(exports_dir: str | None = None) -> RCMSession:
                     f"la política de {fmid} debió ser {expected}", out)
         ffi = scenario.get("ffi")
         if ffi:
+            # El escenario ya declaraba `failure_mode_ref` y el simulador no lo
+            # pasaba: el FFI se calculaba y no quedaba atado a ningún modo, que
+            # es justo cómo desaparecía del entregable.
             out = _call(t.calculate_ffi, ctx, method=ffi["method"],
                         mtive_hours=ffi["mtive_hours"], mted_hours=ffi["mted_hours"],
-                        mmf_hours=ffi["mmf_hours"])
+                        mmf_hours=ffi["mmf_hours"],
+                        failure_mode_id=ffi["failure_mode_ref"])
             _expect("FFI" in out and out.startswith("✔"), "el cálculo de FFI falló", out)
+            _expect("sale en el entregable" in out,
+                    "el FFI se calculó pero no quedó registrado", out)
         for action in scenario["actions"]:
             _call(t.record_action, ctx, failure_mode_id=action["failure_mode_ref"],
                   what=action["what"], who=action["who"], when=action["when"],
