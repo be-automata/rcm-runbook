@@ -73,7 +73,7 @@ detrás del proxy que prefiera.
 ## Verificación
 
 ```bash
-uv run ruff check && uv run mypy src   # estático
+uv run ruff check && uv run mypy src scripts   # estático
 uv run pytest                          # unit + export dorado (sin LLM)
 uv run pytest -m eval                  # eval conversacional (requiere API key)
 ```

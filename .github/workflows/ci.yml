@@ -13,5 +13,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --all-groups
       - run: uv run ruff check
-      - run: uv run mypy src
+      # `scripts/` también: el arnés de verificación tenía una llamada muerta
+      # con el tipo equivocado que reventaba toda la corrida en producción, y
+      # ni pytest ni ruff la veían. mypy la cazaba en una línea.
+      - run: uv run mypy src scripts
       - run: uv run pytest -m "not eval"

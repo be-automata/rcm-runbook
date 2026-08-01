@@ -17,6 +17,7 @@ import shutil
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from agno.os import AgentOS
 from agno.os.settings import AgnoAPISettings
@@ -79,9 +80,11 @@ _PUBLIC_PATHS = frozenset({"/demo", "/health", "/favicon.ico"})
 # Orígenes que AgentOS ya autoriza por CORS. Sin esto, nuestro 401 sale sin
 # cabeceras CORS (envolvemos al CORSMiddleware) y os.agno.com muestra un error
 # opaco de CORS en vez del mensaje en español.
+# `cast` porque los tipos de Starlette declaran `cls` y `kwargs` de forma que
+# mypy no puede seguir; el acceso es correcto en tiempo de ejecución.
 _CORS_ORIGINS = frozenset(
     o
-    for m in app.user_middleware
+    for m in cast("list[Any]", app.user_middleware)
     if m.cls.__name__ == "CORSMiddleware"
     for o in m.kwargs.get("allow_origins", [])
 )
@@ -182,7 +185,16 @@ def _sesion_guardada(session_id: str):
     """
     from rcm_runbook.models.session import RCMSession
 
-    registro = agent.db.get_session(session_id=session_id, deserialize=False)
+    # `cast` a dict: `get_session` declara una unión que incluye la variante
+    # asíncrona y los modelos de sesión de agno, pero con `deserialize=False` y
+    # el cliente síncrono devuelve el diccionario crudo.
+    db = agent.db
+    if db is None:
+        return None
+    registro = cast(
+        "dict[str, Any] | None",
+        db.get_session(session_id=session_id, deserialize=False),
+    )
     if not registro:
         return None
     estado = (registro.get("session_data") or {}).get("session_state") or {}

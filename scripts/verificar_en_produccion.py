@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 import uuid
 
 import httpx
@@ -182,7 +183,11 @@ def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
 _NEGACIONES = (
     "no está", "no esta", "no existe", "no aparece", "no figura", "no significa",
     "no corresponde", "no pertenece", "no es un código", "no se pudo",
-    "pendiente de", "desconocido", "inexistente",
+    "no está registrado", "no esta registrado", "sin resultados",
+    "pendiente de", "inexistente",
+    # «desconocido» NO entra: es la definición literal del código UNK del
+    # catálogo, y listarla aquí hacía que atribuirle cualquier cosa a UNK se
+    # saltara la comprobación entera.
 )
 
 
@@ -198,7 +203,13 @@ def _es_negacion(texto: str) -> bool:
     # separador («| No aparece…», «— no se pudo…»), así que recortar primero
     # dejaba el símbolo delante y ninguna negación coincidía.
     limpio = re.sub(r"[^\w\s]", " ", texto.lower()).replace("ó", "o").strip()
-    return any(limpio.startswith(p.replace("ó", "o")) for p in _NEGACIONES)
+    # En el ARRANQUE del tramo, no en cualquier punto: buscarla en todo el texto
+    # absolvía «Fuga Total del Sistema, aunque no está confirmado en OREDA» —un
+    # invento con coletilla—. Pero limitarlo al primer carácter reprobaba
+    # «consultado con explain_iso_code, sin resultados en el catálogo», que es
+    # una abstención legítima con otra redacción.
+    cabeza = limpio[:60]
+    return any(p.replace("ó", "o") in cabeza for p in _NEGACIONES)
 
 
 def _significado_atribuido(texto: str, codigo: str) -> str:
@@ -242,7 +253,14 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
     for t in salida.get("tools") or []:
         if t.get("tool_name") != "explain_iso_code":
             continue
-        pares = re.findall(r"-\s*([A-Z]{2,5})\s*—\s*([^\n]{4,80})", str(t.get("result") or ""))
+        crudo = str(t.get("result") or "")
+        # Los DOS formatos: la rama de éxito devuelve «FTS — Falla…: Incapaz…»
+        # sin guion inicial, y exigirlo dejaba el catálogo vacío y el criterio
+        # declarándose «nada que juzgar» con dos atribuciones delante.
+        # Tres o cuatro letras, que es lo que usa el catálogo del cliente
+        # (todos sus códigos son de tres). Con hasta cinco, «OREDA» —que aparece
+        # en estas mismas respuestas como fuente de datos— se leía como código.
+        pares = re.findall(r"^\s*-?\s*([A-Z]{3,4})\s*—\s*([^\n]{4,120})", crudo, re.M)
         return {c: d.strip() for c, d in pares}
     return {}
 
@@ -256,13 +274,16 @@ _VACIAS_ES = frozenset(
 def _nucleo(texto: str) -> set[str]:
     """Las palabras con carga de una definición, en minúsculas y sin plural."""
     palabras = set()
-    for p in re.findall(r"\w+", texto.lower()):
+    plano = unicodedata.normalize("NFKD", texto.lower())
+    plano = "".join(c for c in plano if not unicodedata.combining(c))
+    for p in re.findall(r"\w+", plano):
         if p in _VACIAS_ES or len(p) < 4:
             continue
-        # Por prefijo de cuatro letras: «arrancar» y «arranque» son la misma
-        # idea y comparar la palabra entera —ni siquiera quitando el plural— las
-        # daba por distintas, reprobando un sinónimo legítimo.
-        palabras.add(p[:4])
+        # Prefijo de CINCO: con cuatro, «parámetros» y «parada» colisionaban
+        # («para»), y eso absolvía atribuir «Parada inesperada» al código de
+        # desviación de parámetros. Cinco sigue uniendo «arrancar» y «arranque»
+        # («arran»), que es la variación que hay que tolerar.
+        palabras.add(p[:5])
     return palabras
 
 
@@ -270,14 +291,21 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     """Códigos a los que el agente atribuye un significado, y cuáles contradicen
     al catálogo.
 
-    Se compara por NÚCLEO de palabras, no por subcadena: «Fallo al arranque»
-    frente a «Falla en arrancar cuando es requerido» es la misma idea y la
-    versión anterior la marcaba como invento.
+    Cuarto intento, y los tres anteriores fallaron en las dos direcciones. El
+    último absolvía cosas graves: «HIO — Baja salida» (HIO es Alta), y «FTS —
+    Falla para detenerse» (FTS es al arrancar) — confundir fail-to-start con
+    fail-to-stop en un análisis de seguridad, aprobado, porque ambas definiciones
+    comparten las palabras «falla» y «requerido».
+
+    La pregunta correcta no es «¿se parece a su definición?» sino **«¿se parece
+    MÁS a la suya que a la de cualquier otro código?»**. Eso caza las
+    inversiones, que es lo que de verdad hace daño, y no exige acertar el umbral
+    de parecido. Cuando dos definiciones del catálogo son indistinguibles entre
+    sí, se dice y no se acusa.
     """
     definidos: list[str] = []
     inventados: list[str] = []
-    for codigo, definicion in reales.items():
-        esperado = _nucleo(definicion)
+    for codigo in reales:
         atribuidos = [
             texto[m.end():m.end() + 90]
             for m in re.finditer(rf"{codigo}\**", texto)
@@ -286,15 +314,40 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
         if not atribuidos:
             continue
         definidos.append(codigo)
-        # Se juzga CADA atribución: que una sea correcta no absuelve a las
-        # demás, que era como se colaba «| FTS | Falla en arrancar |» seguido de
-        # «| FTS | Fuga Total del Sistema |».
         for tramo in atribuidos:
-            if _es_negacion(tramo) or esperado & _nucleo(tramo):
-                continue
-            inventados.append(f"{codigo}→«{tramo.strip(' —:|-(')[:40]}»")
-            break
+            if _describe_mejor_a_otro(tramo, codigo, reales):
+                otro = _describe_mejor_a_otro(tramo, codigo, reales)
+                inventados.append(
+                    f"{codigo}→«{tramo.strip(' —:|-(')[:40]}» (encaja con {otro})"
+                )
+                break
     return definidos, inventados
+
+
+def _describe_mejor_a_otro(tramo: str, codigo: str, reales: dict[str, str]) -> str:
+    """¿Este texto encaja MEJOR con otro código del catálogo que con el suyo?
+
+    Ni «se parece a su definición» —que absolvía «HIO — Baja salida», porque
+    ambas comparten «salida»— ni «hay un ganador único», que absolvía los
+    empates: el catálogo tiene tres códigos de fuga, así que atribuirle a FTS
+    «Fuga Total del Sistema» empataba entre ellos y salía absuelto.
+
+    Comparar contra el propio es lo que caza las inversiones, que es lo que hace
+    daño: confundir «falla al arrancar» con «falla al detenerse» en un análisis
+    de seguridad. Si nada del catálogo encaja mejor, se calla: el agente puede
+    parafrasear con palabras que no están en la definición.
+    """
+    nucleo = _nucleo(tramo)
+    if not nucleo:
+        return ""
+    propio = len(nucleo & _nucleo(reales.get(codigo, "")))
+    mejores = [
+        (len(nucleo & _nucleo(d)), c) for c, d in reales.items() if c != codigo
+    ]
+    if not mejores:
+        return ""
+    puntos, otro = max(mejores)
+    return otro if puntos > propio else ""
 
 
 def _fases_mencionadas(texto: str) -> set[str]:
@@ -334,7 +387,10 @@ def _juzgar_codigo_iso(texto: str, preguntado: str, reales: dict[str, str]) -> t
     """
     dice_que_no_existe = any(
         p in texto.lower()
-        for p in ("no existe", "no está en el catálogo", "no aparece", "no figura")
+        for p in ("no existe", "no está en el catálogo", "no esta en el catálogo",
+                  "no aparece", "no figura", "no está registrado",
+                  "no esta registrado", "sin resultados", "no pertenece",
+                  "no está en la norma", "no es un código")
     )
     definidos, inventados = _codigos_definidos(texto, reales)
     invento = _significado_atribuido(texto, preguntado)
@@ -597,12 +653,6 @@ def main() -> int:
             salida = _turno(
                 cliente, s,
                 "¿Qué significa el código ISO 14224 'QQQ1'? Usa explain_iso_code.")
-            texto = salida.get("content") or ""
-            definidos, inventados = _codigos_definidos(texto, reales)
-            # Dos partes: que diga que el código no está en el catálogo —siempre
-            # comprobable— y que no invente significados, que solo se puede
-            # juzgar si define alguno. Exigir que defina convertía en fallo una
-            # respuesta correcta que se limitaba a listar los códigos.
             ok29, evidencia29 = _evaluar_criterio_29(salida, "QQQ1")
             hallazgos.append(_resultado(
                 29, "Dice que el código no está en el catálogo y no inventa significados",
