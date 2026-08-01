@@ -289,6 +289,7 @@
   // Tabla: una fila es cualquier línea con al menos una barra, y la segunda
   // línea es el separador (|---|:--:|). Se exige el separador porque una frase
   // con una barra suelta no es una tabla y convertirla arruinaría el párrafo.
+  var RE_HR = /^\s*([-*_])\s*\1\s*\1[-*_\s]*$/;
   var RE_FILA = /^\s*\|?.*\|.*$/;
   var RE_SEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
@@ -308,6 +309,14 @@
     });
   }
 
+  // GFM exige que el separador tenga tantas celdas como la cabecera. Sin esta
+  // comprobación, «Opciones: A | B» seguido de «---» se convertía en tabla y se
+  // comía el <hr>. Medido: 0 casos en 56 respuestas reales, porque el agente
+  // deja línea en blanco — pero el defecto estaba y no dependía de su suerte.
+  function mismasCeldas(cabecera, separador){
+    return celdas(cabecera).length === celdas(separador).length;
+  }
+
   function tabla(lineas, i, destino){
     var alineada = alineaciones(lineas[i + 1]);
     var tabl = document.createElement('table');
@@ -323,7 +332,11 @@
     thead.appendChild(filaCab); tabl.appendChild(thead);
     var tbody = document.createElement('tbody');
     var j = i + 2;
-    while(j < lineas.length && RE_FILA.test(lineas[j]) && !/^\s*$/.test(lineas[j])){
+    // El indexOf va primero a propósito: RE_FILA sobre una línea larguísima sin
+    // barra costaba tiempo cuadrático — 200.000 espacios congelaban la pestaña
+    // 15,6 s. Una comprobación lineal descarta el 99% de los casos antes.
+    while(j < lineas.length && lineas[j].indexOf('|') !== -1
+          && RE_FILA.test(lineas[j]) && !/^\s*$/.test(lineas[j])){
       var tr = document.createElement('tr');
       celdas(lineas[j]).forEach(function(c, k){
         var td = document.createElement('td');
@@ -360,12 +373,12 @@
         pre.appendChild(cod); destino.appendChild(pre);
         continue;
       }
-      if(/^\s*([-*_])\s*\1\s*\1[-*_\s]*$/.test(l)){   // línea horizontal: --- *** ___
+      if(RE_HR.test(l)){                         // línea horizontal: --- *** ___
         destino.appendChild(document.createElement('hr'));
         i++; continue;
       }
       if(l.indexOf('|') !== -1 && i + 1 < lineas.length && RE_SEP.test(lineas[i + 1])
-         && RE_FILA.test(l)){
+         && RE_FILA.test(l) && mismasCeldas(l, lineas[i + 1])){
         i = tabla(lineas, i, destino);
         continue;
       }
@@ -395,8 +408,10 @@
       var parrafo = [];
       while(i < lineas.length && !/^\s*$/.test(lineas[i]) && !/^\s*```/.test(lineas[i])
             && !/^\s*#{1,6}\s/.test(lineas[i]) && !RE_ORD.test(lineas[i]) && !RE_VIN.test(lineas[i])
+            && !RE_HR.test(lineas[i])
             && !(lineas[i].indexOf('|') !== -1 && i + 1 < lineas.length
-                 && RE_SEP.test(lineas[i + 1]) && RE_FILA.test(lineas[i]))){
+                 && RE_SEP.test(lineas[i + 1]) && RE_FILA.test(lineas[i])
+                 && mismasCeldas(lineas[i], lineas[i + 1]))){
         parrafo.push(lineas[i]); i++;
       }
       var p = document.createElement('p');

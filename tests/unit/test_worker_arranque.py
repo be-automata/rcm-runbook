@@ -76,3 +76,89 @@ class TestArranqueEnFrio:
         # Si un fallo real de la app se tratara como arranque, el cliente vería
         # «iniciando…» para siempre y nadie se enteraría de que algo se rompió.
         assert _decide(500, "Internal Server Error: ZeroDivisionError") is False
+
+
+def _fuente_espera() -> str:
+    """La página de espera y su selector, listos para ejecutar en node."""
+    texto = WORKER.read_text(encoding="utf-8")
+    inicio = texto.index("function paginaDespertando")
+    fin = texto.index("export default")
+    trozo = texto[inicio:fin]
+    assert "respuestaDeEspera" in trozo, "cambió la forma del worker"
+    return (
+        trozo.replace("(): Response", "()")
+        .replace("(request: Request): Response", "(request)")
+        .replace("res: Response", "res")
+        .replace(": Promise<boolean>", "")
+    )
+
+
+class TestLaPaginaDeEspera:
+    """El arnés cortaba justo antes de `respuestaDeEspera`, así que el criterio
+    28 —«sale la página de espera en español, no un 500 en inglés»— no tenía ni
+    un assert."""
+
+    def _responder(self, accept: str) -> dict:
+        guion = (
+            _fuente_espera()
+            + "const r = respuestaDeEspera(new Request('https://x/', "
+            + f"{{headers: {{accept: {json.dumps(accept)}}}}}));"
+            + "r.text().then(t => console.log(JSON.stringify("
+            + "{status: r.status, tipo: r.headers.get('content-type'), cuerpo: t})));"
+        )
+        salida = subprocess.run(
+            ["node", "--input-type=module", "-e", guion],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        return json.loads(salida.stdout.strip())
+
+    def test_al_navegador_le_llega_html_en_español(self):
+        r = self._responder("text/html,application/xhtml+xml")
+        assert r["status"] == 503
+        assert "text/html" in r["tipo"]
+        assert 'lang="es"' in r["cuerpo"]
+        assert "Iniciando el Facilitador RCM" in r["cuerpo"]
+        assert "está arrancando" in r["cuerpo"]
+
+    def test_no_se_le_cuela_ni_una_frase_en_inglés(self):
+        cuerpo = self._responder("text/html")["cuerpo"]
+        for frase in ("container", "Container", "not running", "Error proxying",
+                      "starting", "Please wait"):
+            assert frase not in cuerpo, f"texto en inglés en la página: {frase}"
+
+    def test_se_recarga_sola_para_que_el_cliente_no_haga_nada(self):
+        cuerpo = self._responder("text/html")["cuerpo"]
+        assert 'http-equiv="refresh"' in cuerpo
+
+    def test_a_la_api_le_llega_json_no_html(self):
+        r = self._responder("application/json")
+        assert r["status"] == 503
+        assert "application/json" in r["tipo"]
+        assert "iniciando" in json.loads(r["cuerpo"])["detail"].lower()
+
+
+class TestElSelectorEstaCableado:
+    """Desconectar `estaArrancando` del `fetch` dejaba 281 tests en verde. Es
+    literalmente la regresión que el docstring del archivo dice prevenir: la
+    primera versión del arreglo era código muerto y parecía correcta."""
+
+    def test_el_fetch_consulta_estaArrancando(self):
+        texto = WORKER.read_text(encoding="utf-8")
+        cuerpo = texto[texto.index("export default"):]
+        assert "await estaArrancando(res)" in cuerpo, (
+            "el selector existe pero nadie lo llama: código muerto"
+        )
+        assert cuerpo.index("contenedor.fetch(request)") < cuerpo.index("estaArrancando"), (
+            "se consulta antes de tener la respuesta"
+        )
+
+    def test_lo_que_no_es_arranque_se_devuelve_tal_cual(self):
+        cuerpo = WORKER.read_text(encoding="utf-8")
+        cuerpo = cuerpo[cuerpo.index("export default"):]
+        assert "if (!(await estaArrancando(res))) return res;" in cuerpo
+
+    def test_solo_se_reintenta_lo_idempotente(self):
+        # Un POST a /runs reintentado duplicaría el turno del cliente y le
+        # cobraría dos veces el modelo.
+        cuerpo = WORKER.read_text(encoding="utf-8")
+        assert 'request.method === "GET" || request.method === "HEAD"' in cuerpo

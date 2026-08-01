@@ -6,11 +6,14 @@ errors in Spanish. Serialization crosses exactly one boundary:
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from enum import IntEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from rcm_runbook.errors import ReglaDeNegocio
 from rcm_runbook.models.domain import (
     Control,
     DecisionResult,
@@ -132,10 +135,53 @@ class RCMSession(BaseModel):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _sin_acentos(t: str) -> str:
+        plano = unicodedata.normalize("NFKD", t)
+        return "".join(c for c in plano if not unicodedata.combining(c))
+
+    @staticmethod
+    def _normalizar(t: str) -> str:
+        """Baja el texto a sus palabras: sin acentos, sin puntuación, sin
+        paréntesis explicativos y sin espacios de más. Solo para _casi_igual —
+        aplicarlo también a _same_text haría pasar por «la misma llamada» una
+        corrección con paréntesis, y se descartaría el dato corregido."""
+        sin_parentesis = re.sub(r"\([^)]*\)", " ", t)
+        plano = RCMSession._sin_acentos(sin_parentesis)
+        return " ".join(re.sub(r"[^\w\s]", " ", plano).casefold().split())
+
+    @staticmethod
     def _same_text(a: str, b: str) -> bool:
-        """Idempotency guard: LLM retries after validation errors must not create
-        near-duplicate entities."""
-        return a.strip().casefold() == b.strip().casefold()
+        """El mismo texto: el LLM repite la llamada literal tras un error de
+        validación y no debe duplicar la entidad. Nada más que mayúsculas,
+        acentos y espacios."""
+        return " ".join(RCMSession._sin_acentos(a).casefold().split()) == " ".join(
+            RCMSession._sin_acentos(b).casefold().split()
+        )
+
+    @staticmethod
+    def _casi_igual(a: str, b: str) -> bool:
+        """Casi lo mismo, pero no igual — el caso que el guardián no veía.
+
+        El docstring prometía «near-duplicate» y el código comparaba texto
+        exacto. Bastaba con que el modelo reformulara para colar una segunda
+        tarea del mismo modo: en el primer análisis completo real salieron dos
+        filas contradictorias («1 h, no requiere paro» y «3 h, sí requiere
+        paro») y la hoja AMEF mostró en silencio la equivocada.
+
+        No se fusionan solas: fusionar a ciegas borraría una tarea legítima
+        distinta. Quien llama decide, y aquí solo se responde a la pregunta.
+        """
+        na, nb = RCMSession._normalizar(a), RCMSession._normalizar(b)
+        if not na or not nb:
+            return False
+        if na == nb:
+            return True
+        # Una descripción contenida en la otra es reformulación, no otra tarea:
+        # «…rodamientos de bomba P-101 (cojinetes motor y bomba)» vs «…P-101».
+        if na in nb or nb in na:
+            return True
+        ta, tb = set(na.split()), set(nb.split())
+        return len(ta & tb) / len(ta | tb) >= 0.8
 
     def add_function(self, **kwargs: Any) -> Function:
         candidate = Function(id="F-000", **kwargs)
@@ -222,9 +268,39 @@ class RCMSession(BaseModel):
     def add_task(self, task: MaintenanceTask) -> None:
         self._require("modo de falla", task.failure_mode_id, self.failure_modes)
         existing_tasks = self.tasks.setdefault(task.failure_mode_id, [])
+        campos = ("frequency", "duration_hours", "discipline", "requires_shutdown")
         for existing in existing_tasks:
             if self._same_text(existing.description, task.description):
-                return  # idempotente
+                if all(getattr(existing, c) == getattr(task, c) for c in campos):
+                    return  # idempotente: la misma llamada, otra vez
+                # Mismo texto y distintos datos es una corrección, no un
+                # reintento. Quedarse con la primera en silencio deja en el plan
+                # el dato viejo justo cuando alguien intentaba arreglarlo.
+                raise ReglaDeNegocio(
+                    f"Ya hay una tarea con esa misma descripción para "
+                    f"{task.failure_mode_id}, pero con otros datos: "
+                    f"'{existing.description}' ({existing.frequency}, "
+                    f"{existing.duration_hours} h, "
+                    f"{'requiere paro' if existing.requires_shutdown else 'sin paro'}). "
+                    "Si quieres corregirla, dilo explícitamente; si es otra "
+                    "tarea, dale una descripción que las distinga."
+                )
+            if self._casi_igual(existing.description, task.description):
+                # Ni se duplica ni se fusiona en silencio: las dos salidas
+                # calladas producen un plan de mantenimiento en el que el
+                # cliente no puede confiar. Se devuelve la pelota con el dato
+                # concreto para que quien sabe decida.
+                raise ReglaDeNegocio(
+                    f"Ya hay una tarea casi idéntica para {task.failure_mode_id}: "
+                    f"'{existing.description}' ({existing.frequency}, "
+                    f"{existing.duration_hours} h, "
+                    f"{'requiere paro' if existing.requires_shutdown else 'sin paro'}). "
+                    f"La nueva sería '{task.description}' ({task.frequency}, "
+                    f"{task.duration_hours} h, "
+                    f"{'requiere paro' if task.requires_shutdown else 'sin paro'}). "
+                    "Si es la misma tarea corregida, dilo y la reemplazo; si son "
+                    "dos tareas distintas, diferencia las descripciones."
+                )
         existing_tasks.append(task)
 
     # ------------------------------------------------------------------

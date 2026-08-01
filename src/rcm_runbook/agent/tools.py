@@ -27,9 +27,15 @@ from rcm_runbook.engine.decision_logic import (
 )
 from rcm_runbook.engine.ffi import calculate_ffi as _calculate_ffi
 from rcm_runbook.engine.scoring import anchor_es, summarize
+from rcm_runbook.errors import ReglaDeNegocio
 from rcm_runbook.export.excel import export_xlsx
 from rcm_runbook.knowledge.handbook import consult
-from rcm_runbook.models.catalogs import fixture, iso_code_info, normalize_data_source
+from rcm_runbook.models.catalogs import (
+    POLICY_LABELS_ES,
+    fixture,
+    iso_code_info,
+    normalize_data_source,
+)
 from rcm_runbook.models.domain import (
     FunctionKind,
     MaintenanceTask,
@@ -104,14 +110,16 @@ def _en_espanol(mensaje: str) -> str:
     return mensaje
 
 
-class ReglaDeNegocio(Exception):
-    """El método rechaza el dato — no es una avería del sistema.
-
-    La diferencia importa río abajo: el agente trata el banner técnico como
-    «algo se rompió», deja de trabajar y se inventa una causa. Un rechazo del
-    método es lo contrario: el sistema funcionando, y el agente tiene que
-    repreguntar con la opción correcta a la vista.
-    """
+# Los identificadores del motor son ingleses y no se traducen (los fija su
+# propia suite); lo que faltaba era su significado al lado, que es lo que el
+# modelo copiaba mal cuando no lo tenía.
+METODOS_FFI: tuple[tuple[str, str], ...] = (
+    ("availability", "una indisponibilidad objetivo dada (usa u_fraction)"),
+    ("single_single", "UNA función protegida, UN dispositivo, sin redundancia"),
+    ("multi_single", "VARIAS funciones protegidas, UN SOLO dispositivo"),
+    ("single_multi", "UNA función protegida, VARIOS dispositivos redundantes"),
+    ("economic", "equilibra costos; solo si la consecuencia es puramente económica"),
+)
 
 
 def _spanish_errors(fn: Callable[..., str]) -> Callable[..., str]:
@@ -462,17 +470,23 @@ def run_decision_logic(
         redesign_identified=redesign_identified,
         consequences_tolerable=consequences_tolerable,
     )
-    if approver:
-        session.request_hitl(failure_mode_id, "Consecuencia de seguridad/ambiente")
-        session.confirm_hitl(failure_mode_id, approver)
-        decision = decide_confirmed(fm, effect, answers, approver=approver)
-    else:
-        try:
-            decision = decide(fm, effect, answers)
-        except HITLRequired as exc:
-            session.request_hitl(failure_mode_id, exc.reason_es)
-            _save(run_context, session)
-            raise
+    try:
+        if approver:
+            session.request_hitl(failure_mode_id, "Consecuencia de seguridad/ambiente")
+            session.confirm_hitl(failure_mode_id, approver)
+            decision = decide_confirmed(fm, effect, answers, approver=approver)
+        else:
+            try:
+                decision = decide(fm, effect, answers)
+            except HITLRequired as exc:
+                session.request_hitl(failure_mode_id, exc.reason_es)
+                _save(run_context, session)
+                raise
+    except ValueError as exc:
+        # «No hay política determinable con las respuestas dadas…» es el motor
+        # diciendo qué falta preguntarle al equipo, en español y accionable. Con
+        # el banner técnico delante, el agente lo leía como avería y se paraba.
+        raise ReglaDeNegocio(str(exc)) from exc
     decision = decision.model_copy(
         update={"input_hash": session.current_snapshot(failure_mode_id)}
     )
@@ -485,8 +499,15 @@ def run_decision_logic(
         "consequence": decision.consequence_class, "route": str(route),
         "hitl": decision.hitl_confirmed_by or "",
     }, ensure_ascii=False))
+    # Con el nombre al lado del acrónimo. POLICY_LABELS_ES llevaba escrito desde
+    # el principio y sin cablear, y mientras tanto la herramienta devolvía 'Rd'
+    # pelado: exactamente el hueco que el modelo rellena inventando («Rd» leído
+    # como «reducción», «BF» como «by-pass funcional»). Es la misma causa que ya
+    # estropeó los códigos ISO y los métodos de FFI.
+    nombre = POLICY_LABELS_ES.get(decision.policy, "")
+    politica = f"{decision.policy.value} ({nombre})" if nombre else decision.policy.value
     return (
-        f"✔ Decisión de {failure_mode_id}: {decision.policy.value}{prov} "
+        f"✔ Decisión de {failure_mode_id}: {politica}{prov} "
         f"(consecuencia: {decision.consequence_class.value}, ruta: {route}).\n"
         f"Justificación: {decision.justification}"
     )
@@ -507,16 +528,45 @@ def calculate_ffi(
     cmf: float = 0,
 ) -> str:
     """Calcula el intervalo de búsqueda de fallas (FFI) — SOLO para modos de falla
-    ocultos de dispositivos de protección. method: 'availability', 'single_single',
-    'multi_single', 'single_multi' o 'economic'. mted_list_hours: lista separada por
-    comas para multi_single. La aceptación del Mmf con consecuencia de seguridad es
-    una decisión humana."""
-    metodos = ("availability", "single_single", "multi_single", "single_multi", "economic")
-    if method not in metodos:
+    ocultos de dispositivos de protección.
+
+    Cada método y cada parámetro va con su definición: una sigla sin definir es un
+    hueco que se rellena inventando, y aquí lo inventado acaba fijando cada cuánto
+    se prueba un dispositivo de seguridad. Medido: cuatro corridas dieron cuatro
+    significados distintos de 'multi_single', 'cff' y 'mted', ninguno correcto.
+
+    method (usa EXACTAMENTE uno de estos identificadores):
+    - 'availability' — una indisponibilidad objetivo dada. Usa u_fraction y
+      mtive_hours. NO usa cff ni cmf.
+    - 'single_single' — UNA función protegida, UN dispositivo, sin redundancia.
+      Usa mtive_hours, mted_hours, mmf_hours.
+    - 'multi_single' — VARIAS funciones protegidas, UN SOLO dispositivo (p. ej. un
+      supresor de sobretensión que protege varios equipos). Usa mted_list_hours.
+    - 'single_multi' — UNA función protegida, VARIOS dispositivos redundantes.
+      Usa n_devices.
+    - 'economic' — equilibra costos. SOLO si la falla múltiple tiene consecuencia
+      puramente económica: seguridad y ambiente no se negocian por costo.
+
+    Parámetros (todos en horas salvo donde se indique):
+    - mtive_hours — TPEF del DISPOSITIVO DE PROTECCIÓN (cada cuánto falla él).
+      No es la duración de la prueba.
+    - mted_hours — TPEF de la FUNCIÓN PROTEGIDA (cada cuánto se le demanda).
+    - mted_list_hours — los TPEF de cada función protegida, separados por comas,
+      para 'multi_single'.
+    - mmf_hours — TPEF tolerado de la FALLA MÚLTIPLE (cada cuánto se acepta que
+      coincidan). Con consecuencia de seguridad, aceptarlo es decisión humana.
+    - u_fraction — indisponibilidad objetivo, fracción entre 0 y 1 (0.02 = 2%).
+    - n_devices — cuántos dispositivos redundantes hay.
+    - cff — COSTO en dinero de ejecutar una búsqueda de falla. No es un
+      coeficiente ni una fracción.
+    - cmf — COSTO en dinero de la falla múltiple. No es un coeficiente.
+    """
+    if method not in dict(METODOS_FFI):
         # El motor rechaza en inglés («Unknown FFI method»); quien conversa en
         # español escribe 'disponibilidad' y recibía un fallo técnico ajeno.
         raise ReglaDeNegocio(
-            f"Método de FFI desconocido: '{method}'. Válidos: {', '.join(metodos)}."
+            f"Método de FFI desconocido: '{method}'. Los válidos, con lo que "
+            "significa cada uno:\n" + "\n".join(f"- {m} — {d}" for m, d in METODOS_FFI)
         )
     params: dict[str, Any] = {}
     if method == "availability":

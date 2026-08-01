@@ -49,7 +49,12 @@ function serializa(n) {
   if (n == null) return '';
   if (typeof n === 'string') return n;
   const atributos = ['className', 'href', 'target', 'rel', 'start']
-    .filter((a) => n[a]).map((a) => `${a}=${n[a]}`).join(',');
+    .filter((a) => n[a]).map((a) => `${a}=${n[a]}`)
+    // El estilo en línea también se serializa: la alineación de las tablas se
+    // aplica por ahí y sin esto ningún test podía verla.
+    .concat(Object.keys(n.style || {}).filter((k) => n.style[k])
+      .map((k) => `${k}=${n.style[k]}`))
+    .join(',');
   const attr = atributos ? `{${atributos}}` : '';
   const propio = n.textContent || '';
   const hijos = (n.children || []).map(serializa).filter(Boolean);
@@ -745,3 +750,44 @@ class TestTablas:
         # cadena desaparezca, sino que no haya nada que pulsar.
         assert "a(){href=javascript" not in salida
         assert "a()" not in salida
+
+    def test_un_parrafo_con_barra_seguido_de_guiones_no_es_tabla(self):
+        # El <hr> desaparecía y «Opciones: A | B» salía como cabecera de una
+        # tabla con el cuerpo vacío. GFM exige tantas celdas en el separador
+        # como en la cabecera; esa comprobación no existía.
+        salida = render("Opciones: A | B\n---\nSigue el texto")
+        assert "table()" not in salida, "convirtió un párrafo y un <hr> en tabla"
+        assert "hr()" in salida
+        assert "Opciones: A | B" in salida
+
+    def test_el_separador_debe_tener_tantas_celdas_como_la_cabecera(self):
+        assert "table()" not in render("| a | b | c |\n|---|---|\n| 1 | 2 | 3 |")
+        assert "table()" in render("| a | b | c |\n|---|---|---|\n| 1 | 2 | 3 |")
+
+    def test_una_linea_enorme_sin_barras_no_congela_la_pestana(self):
+        # RE_FILA sobre una línea larguísima sin barra costaba tiempo
+        # cuadrático: 200.000 espacios bloqueaban el hilo principal 15,6 s.
+        import time
+
+        # 60k y no 200k: con 200k el arnés revienta al serializar antes de que
+        # el defecto se manifieste. El validador midió 1430 ms a 60k y 15,6 s a
+        # 200k; sin el arreglo, 60k ya se sale del umbral.
+        texto = "| a | b |\n|---|---|\n| 1 | 2 |\n\n" + " " * 60000 + "fin"
+        inicio = time.monotonic()
+        salida = render(texto)
+        transcurrido = time.monotonic() - inicio
+        assert "table()" in salida
+        assert transcurrido < 3.0, f"tardó {transcurrido:.1f}s — el bucle se disparó"
+
+    def test_los_bordes_de_la_celda_se_recortan(self):
+        # Si celdas() deja de recortar las barras exteriores, toda tabla sale
+        # con una columna vacía delante y otra detrás — y pasaban 78 tests.
+        salida = render(self.NORMAL)
+        assert "th()[]" not in salida and "td()[]" not in salida
+        assert salida.count("th()") == 2, "sobran o faltan columnas"
+
+    def test_la_alineacion_declarada_se_aplica(self):
+        salida = render("| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |")
+        assert "textAlign=center" in salida
+        assert "textAlign=right" in salida
+        assert salida.count("textAlign") == 4, "no la aplica a cabecera y cuerpo"

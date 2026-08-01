@@ -75,11 +75,25 @@ Responda como interesado (puede apoyarse en el escenario
 
 Registre **dos modos de falla**:
 
-1. **Evidente/operacional**: falla de rodamientos con vibración creciente
-   (causa: lubricante degradado; patrón Aleatoria/Fin de Vida Útil; P-F ≈ 1440 h;
-   TPEF 17.520 h fuente OREDA).
-2. **Oculto/seguridad** (sobre la protección): presostato sin respuesta
-   (causa: deriva de calibración; TPEF 43.800 h, opinión de experto).
+`record_failure_mode` **exige** mecanismo, código ISO, causa, causa raíz y
+patrón — todos obligatorios. El guion no los daba, y quien lo siguiera al pie de
+la letra se quedaba 14 turnos con el agente pidiéndolos, sin llegar nunca a las
+fases 4, 5 y 6. Aquí van completos:
+
+1. **Evidente/operacional**: falla de rodamientos con vibración creciente.
+   - mecanismo: desgaste abrasivo por lubricante contaminado
+   - código ISO: `VIB`
+   - causa: lubricante degradado
+   - causa raíz: intervalo de relubricación mayor que el especificado
+   - patrón: `Fin de Vida Útil` (uno solo del catálogo, no dos)
+   - P-F ≈ 1440 h; TPEF 17.520 h, fuente OREDA
+2. **Oculto/seguridad** (sobre la protección): presostato sin respuesta.
+   - mecanismo: deriva del elemento sensor
+   - código ISO: `FTS`
+   - causa: deriva de calibración
+   - causa raíz: sin verificación periódica de calibración
+   - patrón: `Aleatoria`
+   - TPEF 43.800 h, opinión de experto
 
 Pruebas negativas:
 
@@ -124,14 +138,19 @@ controles actuales de cada modo.
    disponibilidad, cumplimiento del plan), disparadores de revisión y la
    validación con operaciones y mantenimiento.
 3. Pida el export definitivo.
-   - [ ] Responde con la ruta del archivo y la URL
-     `/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`.
-   - [ ] El enlace **funciona al hacer clic** (la llave viene incluida): sin ella
-     la descarga responde 401 y el cliente se queda sin su Excel.
+   - [ ] Responde con un enlace markdown clicable
+     `[Descargar el Excel](/exports/<session_id>/AMEF_P-101.xlsx)`.
+     **Sin `?key=`**: se quitó a propósito (commit 05cd9d8) porque un enlace con
+     la llave a la vista se reenvía por WhatsApp con la llave dentro. La página
+     la adjunta como cabecera al pulsar.
+   - [ ] El enlace **funciona al hacer clic** desde la propia página del chat.
+     Pegado en otra pestaña responde 401, y eso es correcto.
 
 ## 7. Descarga y reanudación (5 min)
 
-1. Abra en el navegador, **con la llave** (la descarga está protegida):
+1. Abra en el navegador, **con la llave en la URL** — esta es la vía manual del
+   verificador, no la que usa el cliente (él pulsa el enlace del chat, que lleva
+   la llave en la cabecera):
    `$BASE/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`
    El archivo se **regenera** desde la base de datos, no se lee de disco.
    - [ ] Descarga un `.xlsx` válido (no un error 404/400). **Este paso presupone
@@ -293,14 +312,18 @@ done
 | 30 | Un dato que la herramienta rechaza (frecuencia, método de FFI, tipo de función) se explica en español y pide corregir, sin hablar de fallo técnico | ☐ |
 | 31 | Un enlace de descarga con salto de directorio codificado (`%2e%2e`) no es clicable | ☐ |
 | 32 | Una tabla del agente se dibuja como tabla, sin barras `|` visibles, y no desborda la pantalla del teléfono | ☐ |
+| 33 | El plan de mantenimiento no trae dos tareas del mismo modo que se contradicen | ☐ |
+| 34 | Los métodos de FFI y la política de mantenimiento llegan con su significado, no como siglas peladas | ☐ |
 
 ## Limitación conocida — la compuerta del entregable definitivo
 
 Si el interesado pide **por escrito** el Excel definitivo, el agente a veces
 rechaza por su cuenta en vez de llamar a `export_excel`, y entonces la lista de
 faltantes que enumera es inventada: no son los bloqueadores reales del
-entregable. Medido en producción tras dos rondas de refuerzo de instrucciones:
-**6 de 10** llamadas correctas.
+entregable. Medido en producción de forma independiente, con el alcance y el equipo
+registrados antes de pedir el entregable: **3 de 12** llamadas correctas (25 %).
+Una medición mía anterior dio 6 de 10; la buena es esta, que es la del validador
+y usó sesiones mejor preparadas.
 
 **El camino garantizado es el botón «Descargar Excel»**, que llama al endpoint
 sin pasar por el modelo: siempre entrega el archivo, y si el análisis está

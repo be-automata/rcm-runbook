@@ -620,3 +620,144 @@ class TestElCatalogoIsoLlegaComoLista:
         salida = tools_mod.explain_iso_code.entrypoint(Ctx(), code="QQQ1")
         assert "|" not in salida
         assert "- FTS — " in salida
+
+
+class TestElPlanNoSaleConTareasContradictorias:
+    """El primer análisis completo real produjo dos filas para el mismo modo,
+    una «1 h, sin paro» y otra «3 h, requiere paro», y la hoja AMEF mostró en
+    silencio la equivocada. El guardián prometía «near-duplicate» en su docstring
+    y comparaba texto exacto: bastaba con reformular para colarse."""
+
+    def _sesion_con_un_modo(self):
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        s.tasks.pop(fm, None)
+        return s, fm
+
+    def _tarea(self, fm, descripcion, **campos):
+        from rcm_runbook.models.domain import MaintenanceTask
+
+        base = {
+            "failure_mode_id": fm, "description": descripcion, "frequency": "Mensual",
+            "duration_hours": 1.0, "discipline": "Mecánico", "requires_shutdown": False,
+        }
+        base.update(campos)
+        return MaintenanceTask(**base)
+
+    def test_el_reintento_literal_sigue_siendo_idempotente(self):
+        s, fm = self._sesion_con_un_modo()
+        s.add_task(self._tarea(fm, "Inspeccionar rodamientos"))
+        s.add_task(self._tarea(fm, "  inspeccionar  RODAMIENTOS "))
+        assert len(s.tasks[fm]) == 1, "el reintento del LLM duplicó la tarea"
+
+    def test_una_reformulacion_no_se_cuela_como_tarea_nueva(self):
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+
+        s, fm = self._sesion_con_un_modo()
+        s.add_task(self._tarea(fm, "Inspeccionar rodamientos de bomba P-101"))
+        with pytest.raises(ReglaDeNegocio) as exc:
+            s.add_task(self._tarea(
+                fm, "Inspeccionar rodamientos de bomba P-101 (cojinetes motor y bomba)",
+                duration_hours=3.0, requires_shutdown=True,
+            ))
+        assert "casi idéntica" in str(exc.value)
+        assert "requiere paro" in str(exc.value), "no muestra en qué se contradicen"
+        assert len(s.tasks[fm]) == 1
+
+    def test_misma_descripcion_con_otros_datos_no_se_descarta_en_silencio(self):
+        # Es una corrección, no un reintento: quedarse con la primera deja el
+        # dato viejo justo cuando alguien intentaba arreglarlo.
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+
+        s, fm = self._sesion_con_un_modo()
+        s.add_task(self._tarea(fm, "Termografía del tablero"))
+        with pytest.raises(ReglaDeNegocio):
+            s.add_task(self._tarea(fm, "Termografía del tablero", duration_hours=4.0))
+
+    def test_dos_tareas_de_verdad_distintas_conviven(self):
+        # El contrapeso: fusionar de más borraría una tarea legítima del plan.
+        s, fm = self._sesion_con_un_modo()
+        s.add_task(self._tarea(fm, "Inspeccionar rodamientos"))
+        s.add_task(self._tarea(fm, "Lubricar acoples", discipline="Mecánico"))
+        s.add_task(self._tarea(fm, "Análisis de vibraciones del motor"))
+        assert len(s.tasks[fm]) == 3
+
+
+class TestLasSiglasVanConSuDefinicion:
+    """Tercera y cuarta instancia del mismo defecto: donde la herramienta da una
+    sigla pelada, el modelo inventa su significado. Con los códigos ISO se midió
+    (5 códigos, 3 corridas, 15/15 mal); con los métodos de FFI, 4 corridas y 4
+    significados distintos, ninguno correcto — y ahí lo inventado fija cada
+    cuánto se prueba un dispositivo de seguridad."""
+
+    def test_el_rechazo_de_ffi_explica_cada_metodo(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-ffi"
+            session_state: dict = {}
+
+        salida = tools_mod.calculate_ffi.entrypoint(Ctx(), method="disponibilidad")
+        for metodo in ("availability", "single_single", "multi_single", "economic"):
+            assert metodo in salida
+        assert "VARIAS funciones protegidas, UN SOLO dispositivo" in salida
+
+    def test_el_docstring_define_los_parametros_que_se_inventaban(self):
+        # Es lo que el modelo lee antes de preguntar. `cff` se leyó como
+        # «coeficiente adimensional» y `mtive` como «duración de la prueba».
+        from rcm_runbook.agent import tools as tools_mod
+
+        doc = tools_mod.calculate_ffi.entrypoint.__doc__ or ""
+        assert "COSTO en dinero de ejecutar una búsqueda" in doc
+        assert "TPEF del DISPOSITIVO DE PROTECCIÓN" in doc
+        assert "No es la duración de la prueba" in doc
+
+    def test_la_politica_de_mantenimiento_no_llega_como_acronimo_pelado(self):
+        # Ejecutando la herramienta, no leyendo su código: la primera versión de
+        # este test miraba el fuente y sobrevivía a la mutación que devolvía el
+        # acrónimo pelado.
+        from rcm_runbook.agent import tools as tools_mod
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(iter(sesion.failure_modes))
+
+        class Ctx:
+            session_id = "s-pol"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        salida = tools_mod.run_decision_logic.entrypoint(
+            Ctx(), failure_mode_id=fm, pf_interval_sufficient=True,
+            approver="Ana Pérez, Supervisora HSE",
+        )
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+
+        # Contra el nombre real, no contra «hay un paréntesis»: la primera
+        # versión de esta aserción se conformaba con el «(» de «(consecuencia:»
+        # y sobrevivía a la mutación que devolvía el acrónimo pelado.
+        assert any(n in salida for n in POLICY_LABELS_ES.values()), (
+            f"la política llegó como acrónimo pelado: {salida[:100]}"
+        )
+
+    def test_sin_politica_determinable_no_es_una_averia(self):
+        # El motor está diciendo qué falta preguntarle al equipo. Con el banner
+        # técnico delante, el agente lo leía como sistema roto y se paraba.
+        from rcm_runbook.agent import tools as tools_mod
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(iter(sesion.failure_modes))
+
+        class Ctx:
+            session_id = "s-nopol"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        salida = tools_mod.run_decision_logic.entrypoint(Ctx(), failure_mode_id=fm)
+        assert "No se pudo completar la operación" not in salida
+        assert "No hay política determinable" in salida
