@@ -433,6 +433,22 @@ class RCMSession(BaseModel):
         self._require("modo de falla", action.failure_mode_id, self.failure_modes)
         self.actions.setdefault(action.failure_mode_id, []).append(action)
 
+    @staticmethod
+    def _ficha(tarea: MaintenanceTask) -> str:
+        """Cómo se describe una tarea en un mensaje de rechazo.
+
+        Incluye la marca de búsqueda de fallas: sin ella, marcar una tarea ya
+        registrada producía «otros datos» seguido de datos idénticos, porque el
+        único campo que cambiaba no salía en el mensaje. Y es justo la llamada
+        que el bloqueo del FFI manda hacer.
+        """
+        return (
+            f"{tarea.frequency}, {tarea.duration_hours} h, {tarea.discipline}, "
+            + ("requiere paro" if tarea.requires_shutdown else "sin paro")
+            + (", marcada como búsqueda de fallas" if tarea.es_busqueda_de_fallas
+               else ", sin marcar como búsqueda de fallas")
+        )
+
     def add_task(self, task: MaintenanceTask, reemplazar: bool = False) -> None:
         self._require("modo de falla", task.failure_mode_id, self.failure_modes)
         existing_tasks = self.tasks.setdefault(task.failure_mode_id, [])
@@ -458,10 +474,9 @@ class RCMSession(BaseModel):
                 # el dato viejo justo cuando alguien intentaba arreglarlo.
                 raise ReglaDeNegocio(
                     f"Ya hay una tarea con esa misma descripción para "
-                    f"{task.failure_mode_id}, pero con otros datos: "
-                    f"'{existing.description}' ({existing.frequency}, "
-                    f"{existing.duration_hours} h, "
-                    f"{'requiere paro' if existing.requires_shutdown else 'sin paro'}). "
+                    f"{task.failure_mode_id}, pero con otros datos.\n"
+                    f"  Registrada: '{existing.description}' ({self._ficha(existing)})\n"
+                    f"  La nueva:   '{task.description}' ({self._ficha(task)})\n"
                     "Si es una corrección, vuelve a llamar con reemplazar=True; "
                     "si es otra tarea, dale una descripción que las distinga."
                 )
@@ -474,13 +489,9 @@ class RCMSession(BaseModel):
                 # cliente no puede confiar. Se devuelve la pelota con el dato
                 # concreto para que quien sabe decida.
                 raise ReglaDeNegocio(
-                    f"Ya hay una tarea casi idéntica para {task.failure_mode_id}: "
-                    f"'{existing.description}' ({existing.frequency}, "
-                    f"{existing.duration_hours} h, "
-                    f"{'requiere paro' if existing.requires_shutdown else 'sin paro'}). "
-                    f"La nueva sería '{task.description}' ({task.frequency}, "
-                    f"{task.duration_hours} h, "
-                    f"{'requiere paro' if task.requires_shutdown else 'sin paro'}). "
+                    f"Ya hay una tarea casi idéntica para {task.failure_mode_id}.\n"
+                    f"  Registrada: '{existing.description}' ({self._ficha(existing)})\n"
+                    f"  La nueva:   '{task.description}' ({self._ficha(task)})\n"
                     "Si es la misma tarea corregida, vuelve a llamar con "
                     "reemplazar=True; si son dos tareas distintas, diferencia las "
                     "descripciones."

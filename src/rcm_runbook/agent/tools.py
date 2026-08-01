@@ -753,6 +753,19 @@ def calculate_ffi(
             raise ReglaDeNegocio(
                 f"No existe modo de falla '{failure_mode_id}'. Registrados: {known}."
             )
+        # El FFI solo aplica a fallas OCULTAS de dispositivos de protección. Sin
+        # esta comprobación la herramienta contestaba «queda registrado y sale en
+        # el entregable», la compuerta saltaba ese modo por no ser oculto, y el
+        # Excel salía con un intervalo que no gobierna ninguna tarea: la promesa
+        # de la herramienta desmentida en silencio por la compuerta.
+        efecto = session.effects.get(failure_mode_id)
+        if efecto is not None and not efecto.is_hidden:
+            raise ReglaDeNegocio(
+                f"El modo {failure_mode_id} no es una falla oculta: su efecto está "
+                "registrado como evidente. El intervalo de búsqueda de fallas solo "
+                "aplica a fallas ocultas de dispositivos de protección. Si el modo "
+                "sí es oculto, corrija el efecto con record_effect."
+            )
         session.ffi_por_modo[failure_mode_id] = FFIRegistro(
             horas=result.ffi_hours, metodo=method, formula=result.formula,
             avisos=avisos,

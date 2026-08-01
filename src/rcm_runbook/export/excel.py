@@ -238,18 +238,6 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         Font(bold=True)
     )
     row += 1
-    # Leyenda de políticas en la hoja VISIBLE. Ponerla solo en LOOKUPS no servía
-    # de nada: esa hoja es `sheet_state="hidden"`, así que el comentario decía
-    # «quien abre el libro veía Rd y ExEd sin nada que los explicara» y seguía
-    # sin verlo. En LOOKUPS se queda igualmente, para quien la desoculte.
-    row += 1
-    ws.cell(row=row, column=1, value="Políticas de mantenimiento").font = Font(bold=True)
-    row += 1
-    for politica, nombre in POLICY_LABELS_ES.items():
-        ws.cell(row=row, column=1, value=politica.value)
-        ws.cell(row=row, column=2, value=nombre)
-        row += 1
-
     if session.ffi_por_modo:
         # Quien abre esta hoja es el ingeniero de mantenimiento, no el modelo:
         # `Mtive`/`Mted`/`Mmf` estaban definidos con esmero en el docstring de la
@@ -308,6 +296,18 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
     for miembro in session.team:
         ws.cell(row=row, column=1, value=miembro.name)
         ws.cell(row=row, column=2, value=miembro.role)
+        row += 1
+
+    # Leyenda de políticas en la hoja VISIBLE. Ponerla solo en LOOKUPS no servía
+    # de nada: esa hoja es `sheet_state="hidden"`, así que el comentario decía
+    # «quien abre el libro veía Rd y ExEd sin nada que los explicara» y seguía
+    # sin verlo. En LOOKUPS se queda igualmente, para quien la desoculte.
+    row += 1
+    ws.cell(row=row, column=1, value="Políticas de mantenimiento").font = Font(bold=True)
+    row += 1
+    for politica, nombre in POLICY_LABELS_ES.items():
+        ws.cell(row=row, column=1, value=politica.value)
+        ws.cell(row=row, column=2, value=nombre)
         row += 1
 
     row += 1

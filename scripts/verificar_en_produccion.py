@@ -30,9 +30,18 @@ BASE = os.environ.get("RCM_BASE_URL", "https://rcm-demo.beautomata.com")
 LLAVE = os.environ.get("OS_SECURITY_KEY") or os.environ.get("RCM_OS_SECURITY_KEY") or ""
 TIEMPO = 240.0
 
-# Los criterios que esta corrida DEBE cubrir. El 8 mide (ver abajo) y el 26 no se
-# ejecuta a propósito, así que ninguno de los dos entra aquí.
-ESPERADOS = (1, 4, 10, 23, 25, 27, 29, 36, 40)
+# Los criterios que esta corrida DEBE cubrir siempre.
+#
+# Fuera quedan los tres que no dependen solo del producto:
+#   [8] y [27] dependen de ALTA-2 —si el agente no llama a export_excel, no hay
+#       nada que juzgar— así que se MIDEN y se informan aparte.
+#   [26] no se ejecuta: exige romper el entorno del cliente.
+#
+# Meter el 27 aquí producía «8/9 en verde» con salida 0 en un sistema sano: un
+# titular que parece un fallo.
+ESPERADOS = (1, 4, 10, 23, 25, 29, 36, 40)
+CONDICIONALES = {8: "la compuerta la decide la herramienta (ALTA-2)",
+                 27: "los faltantes salen de la herramienta (solo si llamó)"}
 
 
 def _cabeceras() -> dict[str, str]:
@@ -385,10 +394,20 @@ def main() -> int:
         # dejara de ser evaluable bajaba el total y el script imprimía «8/8 en
         # verde» con salida 0: una regresión se manifestaba como menos criterios
         # comprobados, no como fallo.
-        no_evaluados = [n for n in ESPERADOS if n not in {h["criterio"] for h in hallazgos}]
-        print(f"\n{len(hallazgos) - len(fallidos)}/{len(ESPERADOS)} criterios en verde.")
-        if no_evaluados:
-            print(f"  ⚠ sin evaluar en esta corrida: {no_evaluados}")
+        evaluados = {h["criterio"] for h in hallazgos}
+        obligatorios = [h for h in hallazgos if h["criterio"] in ESPERADOS]
+        verdes = len([h for h in obligatorios if h["ok"]])
+        print(f"\n{verdes}/{len(ESPERADOS)} criterios obligatorios en verde.")
+        faltan = [n for n in ESPERADOS if n not in evaluados]
+        if faltan:
+            # Con nombre, no con números pelados: es lo que se hace en todas las
+            # demás líneas del script.
+            print("  ⚠ obligatorios SIN EVALUAR (cuenta como fallo):")
+            for n in faltan:
+                print(f"      [{n}]")
+        for n, desc in CONDICIONALES.items():
+            if n not in evaluados:
+                print(f"  📏 [{n}] no evaluable en esta corrida — {desc}")
         for medicion in mediciones:
             print(f"  📏 {medicion}")
         for pendiente in no_ejecutados:
@@ -401,7 +420,10 @@ def main() -> int:
         # False, así que el script nunca podía salir 0 y como puerta de CI
         # estaba permanentemente en rojo: un fallo real no se distinguía del
         # estado normal.
-        return 1 if fallidos else 0
+        # Un obligatorio sin evaluar cuenta como fallo: antes solo se imprimía un
+        # aviso, así que una regresión podía manifestarse como menos criterios
+        # comprobados en vez de como error.
+        return 1 if (fallidos or faltan) else 0
 
 
 if __name__ == "__main__":

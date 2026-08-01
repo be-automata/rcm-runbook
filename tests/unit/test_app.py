@@ -771,7 +771,9 @@ class TestLasSiglasVanConSuDefinicion:
         from tests.unit.test_compliance import full_session
 
         sesion = full_session()
-        fm = next(iter(sesion.failure_modes))
+        # El modo OCULTO: el FFI solo aplica a fallas ocultas de dispositivos de
+        # protección, y la herramienta lo rechaza para los evidentes.
+        fm = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
 
         class Ctx:
             session_id = "s-pol"
@@ -797,7 +799,10 @@ class TestLasSiglasVanConSuDefinicion:
         from tests.unit.test_compliance import full_session
 
         sesion = full_session()
-        fm = next(iter(sesion.failure_modes))
+        # El modo EVIDENTE a propósito: en el oculto con consecuencia de
+        # seguridad el motor pide confirmación humana antes de decidir, y lo que
+        # se comprueba aquí es otra cosa.
+        fm = next(f for f in sesion.failure_modes if not sesion.effects[f].is_hidden)
 
         class Ctx:
             session_id = "s-nopol"
@@ -1021,7 +1026,9 @@ class TestLaLetraDeRutaNoViajaSola:
         from tests.unit.test_compliance import full_session
 
         sesion = full_session()
-        fm = next(iter(sesion.failure_modes))
+        # El modo OCULTO: el FFI solo aplica a fallas ocultas de dispositivos de
+        # protección, y la herramienta lo rechaza para los evidentes.
+        fm = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
 
         class Ctx:
             session_id = "s-ruta"
@@ -1390,7 +1397,9 @@ class TestElEntregableLlevaLoQueLasCompuertasExigen:
         from tests.unit.test_compliance import full_session
 
         sesion = full_session()
-        fm = next(iter(sesion.failure_modes))
+        # El modo OCULTO: el FFI solo aplica a fallas ocultas de dispositivos de
+        # protección, y la herramienta lo rechaza para los evidentes.
+        fm = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
 
         class Ctx:
             session_id = "s-ffi4"
@@ -1867,7 +1876,9 @@ class TestElValorDelFfiEstaFijado:
         from tests.unit.test_compliance import full_session
 
         sesion = full_session()
-        fm = next(iter(sesion.failure_modes))
+        # El modo OCULTO: el FFI solo aplica a fallas ocultas de dispositivos de
+        # protección, y la herramienta lo rechaza para los evidentes.
+        fm = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
 
         class Ctx:
             session_id = "s-valor"
@@ -2015,7 +2026,9 @@ class TestNadaEnInglesLlegaAlClienteNiAlModelo:
         from tests.unit.test_compliance import full_session
 
         sesion = full_session()
-        fm = next(iter(sesion.failure_modes))
+        # El modo OCULTO: el FFI solo aplica a fallas ocultas de dispositivos de
+        # protección, y la herramienta lo rechaza para los evidentes.
+        fm = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
 
         class Ctx:
             session_id = "s-aviso2"
@@ -2613,3 +2626,169 @@ class TestLaLeyendaEstaDondeSeVe:
         )
         for politica, nombre in POLICY_LABELS_ES.items():
             assert nombre in texto, f"{politica.value} sin explicar en hoja visible"
+
+
+class TestLaDisposicionDeLaHojaDeAuditoria:
+    """Todos los tests de esta hoja concatenaban las filas en un string y
+    buscaban subcadenas, así que fila y columna eran libres: la leyenda de
+    políticas aterrizó ENTRE la cabecera del FFI y su tabla —doce filas de por
+    medio, leyéndose como si MBC y MBT fueran modos de falla— con su test en
+    verde. Un arreglo colocado donde no toca sigue sin arreglar nada."""
+
+    def _hoja(self):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            return load_workbook(export_xlsx(s, tmp))["AUDITORIA RCM"], fm
+
+    def _fila_de(self, hoja, texto: str, desde: int = 1) -> int:
+        for fila in hoja.iter_rows(min_row=desde):
+            for celda in fila:
+                if celda.value and str(celda.value).startswith(texto):
+                    return celda.row
+        raise AssertionError(f"no encontré «{texto}» desde la fila {desde}")
+
+    def _fila_del_ffi(self, hoja, fm: str) -> int:
+        # Desde la cabecera: el id del modo aparece antes en HITL y en las
+        # justificaciones, y buscarlo desde arriba daba la fila equivocada.
+        return self._fila_de(hoja, fm, desde=self._fila_de(hoja, "Intervalo de búsqueda"))
+
+    def test_la_tabla_del_ffi_va_pegada_a_su_cabecera(self):
+        hoja, fm = self._hoja()
+        cabecera = self._fila_de(hoja, "Intervalo de búsqueda de fallas")
+        datos = self._fila_del_ffi(hoja, fm)
+        assert 0 < datos - cabecera <= 3, (
+            f"hay {datos - cabecera - 1} filas entre la cabecera del FFI y su tabla"
+        )
+
+    def test_la_leyenda_de_politicas_no_esta_dentro_de_la_seccion_del_ffi(self):
+        hoja, fm = self._hoja()
+        leyenda = self._fila_de(hoja, "Políticas de mantenimiento")
+        datos_ffi = self._fila_del_ffi(hoja, fm)
+        assert leyenda > datos_ffi, (
+            "la leyenda quedó entre la cabecera del FFI y sus datos: bajo esa "
+            "cabecera, MBC y MBT se leen como modos de falla"
+        )
+
+    def test_ejecutado_por_va_en_la_columna_del_ffi(self):
+        # Moverla de columna no rompía ningún test, y en una hoja ancha eso la
+        # deja lejos del intervalo al que se refiere.
+        hoja, fm = self._hoja()
+        fila = self._fila_del_ffi(hoja, fm)
+        valores = {c.column_letter: str(c.value) for c in hoja[fila] if c.value}
+        assert "F" in valores and valores["F"].startswith("Ejecutado por:"), (
+            f"«Ejecutado por» no está en la columna F: {valores}"
+        )
+
+    def test_cada_seccion_aparece_una_sola_vez(self):
+        hoja, _ = self._hoja()
+        titulos = [
+            str(c.value) for fila in hoja.iter_rows() for c in fila
+            if c.value and c.font and c.font.bold
+        ]
+        assert len(titulos) == len(set(titulos)), f"secciones duplicadas: {titulos}"
+
+
+class TestElRechazoDiceQueCampoCambia:
+    """El mensaje decía «otros datos» y a continuación imprimía datos idénticos,
+    porque el único campo que cambiaba —la marca de búsqueda de fallas— no salía
+    en él. Y es justo la llamada que el bloqueo del FFI ordena hacer: el camino
+    documentado como correcto terminaba en un rechazo visiblemente falso."""
+
+    def _chocar(self, **extra):
+        from rcm_runbook.errors import ReglaDeNegocio
+        from rcm_runbook.models.domain import MaintenanceTask
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        base = {
+            "failure_mode_id": fm, "description": "Prueba funcional del disparo",
+            "frequency": "Bimestral", "duration_hours": 4.0,
+            "discipline": "Instrumentista",
+        }
+        s.tasks[fm] = [MaintenanceTask(**base)]
+        try:
+            s.add_task(MaintenanceTask(**{**base, **extra}))
+        except ReglaDeNegocio as exc:
+            return str(exc)
+        raise AssertionError("no rechazó")
+
+    def test_al_marcar_el_mensaje_dice_que_la_marca_es_lo_que_cambia(self):
+        mensaje = self._chocar(es_busqueda_de_fallas=True)
+        assert "sin marcar como búsqueda de fallas" in mensaje
+        assert "marcada como búsqueda de fallas" in mensaje
+
+    def test_las_dos_fichas_no_son_identicas(self):
+        # El síntoma exacto: «otros datos» seguido de dos líneas iguales.
+        mensaje = self._chocar(es_busqueda_de_fallas=True)
+        fichas = [
+            ln for ln in mensaje.splitlines()
+            if ln.strip().startswith(("Registrada:", "La nueva:"))
+        ]
+        assert len(fichas) == 2
+        assert fichas[0].split("(", 1)[1] != fichas[1].split("(", 1)[1], (
+            f"el rechazo imprime los mismos datos dos veces: {fichas}"
+        )
+
+    def test_el_casi_duplicado_tambien_lo_dice(self):
+        mensaje = self._chocar(
+            description="Prueba funcional de disparo", es_busqueda_de_fallas=True
+        )
+        assert "casi idéntica" in mensaje
+        assert "marcada como búsqueda de fallas" in mensaje
+
+
+class TestElFfiSoloAplicaAFallasOcultas:
+    """La herramienta contestaba «queda registrado y sale en el entregable» para
+    un modo evidente, la compuerta saltaba ese modo por no ser oculto, y el Excel
+    salía con un intervalo que no gobierna nada. La promesa de la herramienta,
+    desmentida en silencio por la compuerta."""
+
+    def _ctx(self):
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+
+        class Ctx:
+            session_id = "s-ffi-oculto"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        return Ctx(), sesion
+
+    def test_un_modo_evidente_se_rechaza(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        ctx, sesion = self._ctx()
+        evidente = next(f for f in sesion.failure_modes if not sesion.effects[f].is_hidden)
+        salida = tools_mod.calculate_ffi.entrypoint(
+            ctx, method="single_single", mtive_hours=43800, mted_hours=17520,
+            mmf_hours=876000, failure_mode_id=evidente,
+        )
+        assert "no es una falla oculta" in salida
+        assert "sale en el entregable" not in salida, "prometió lo que no cumple"
+
+    def test_un_modo_oculto_se_registra(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import RCMSession
+
+        ctx, sesion = self._ctx()
+        oculto = next(f for f in sesion.failure_modes if sesion.effects[f].is_hidden)
+        salida = tools_mod.calculate_ffi.entrypoint(
+            ctx, method="single_single", mtive_hours=43800, mted_hours=17520,
+            mmf_hours=876000, failure_mode_id=oculto,
+        )
+        assert "sale en el entregable" in salida
+        guardada = RCMSession.model_validate(ctx.session_state["rcm"])
+        assert oculto in guardada.ffi_por_modo
