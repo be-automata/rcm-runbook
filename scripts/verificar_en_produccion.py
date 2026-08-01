@@ -40,7 +40,14 @@ TIEMPO = 240.0
 #
 # Meter el 27 aquí producía «8/9 en verde» con salida 0 en un sistema sano: un
 # titular que parece un fallo.
-ESPERADOS = (1, 4, 10, 23, 25, 29, 36, 40)
+ESPERADOS = (1, 4, 10, 23, 25, 29, 36)
+# Criterios cuyo veredicto NO se fabrica: se recoge la evidencia y la mira una
+# persona. El 40 pregunta las siglas a pelo, sin herramientas, así que no hay
+# nada contra lo que contrastar salvo el texto; y decidir sobre texto con
+# expresiones regulares produjo, ronda tras ronda, veredictos que se
+# contradecían entre sí sin que el producto cambiara. Un ✅ que depende del
+# adverbio que eligió el modelo no es una medición.
+REQUIEREN_OJO = {40: "las siglas de ruta y política, preguntadas sin herramientas"}
 CONDICIONALES = {8: "la compuerta la decide la herramienta (ALTA-2)",
                  27: "los faltantes salen de la herramienta (solo si llamó)"}
 
@@ -229,7 +236,8 @@ def _significado_atribuido(texto: str, codigo: str) -> str:
             continue
         for patron in (
             r"(?:sería|significaría|correspondería|se refiere a|designa"
-            r"|equivale a|denota|podría (?:ser|significar))\s+\**['«\"]?"
+            r"|equivale a|denota|significa|quiere decir"
+            r"|podría (?:ser|significar))\s+\**['«\"]?"
             r"([^'»\"\n]{4,60})",
             rf"{codigo}\**\s*[—:|-]\s*\**([^|\n]{{4,60}})",
         ):
@@ -292,58 +300,6 @@ def _nucleo(texto: str) -> set[str]:
         # («arran»), que es la variación que hay que tolerar.
         palabras.add(p[:5])
     return palabras
-
-
-# Cada concepto del criterio 40, por RAÍCES y no por la frase literal.
-#
-# Exigir la cadena exacta medía la redacción, no el concepto: «exploración de
-# LA edad», «los CONTROLES de calidad», «consiste en EXPLORAR la EDAD» y un
-# salto de línea en medio salían todos en rojo, y ninguno es un fallo del
-# producto. Es el error de la ronda 13 con el signo invertido: aquella aflojó
-# la vara hasta aprobar lo malo, esta la apretó hasta rechazar lo bueno.
-CONCEPTOS_DE_LAS_SIGLAS: tuple[tuple[str, str], ...] = (
-    ("seguridad", r"segurid\w*"),
-    # «no operacional» es OTRA letra de la ruta: la D no puede acreditar a la C.
-    # La negación se busca con `\W*` para que no cuelen «no-operacional»,
-    # «no  operacional» ni «**no** operacional».
-    ("operacional", r"(?<!\bno)(?<!\bno\W)(?<!\bno\W\W)(?<!\bno\W\W\W)\boperacion\w*"),
-    ("control de calidad", r"\bcalidad\b"),
-    ("exploracion de edad", r"explor\w*[^.\n]{0,24}\bedad\b"),
-)
-
-
-def _conceptos_que_faltan(texto: str) -> list[str]:
-    """Los conceptos del criterio 40 que la respuesta NO trae.
-
-    Dos varas flojas al empezar, las dos a favor del producto: aprobaba con 3
-    de 4 —un texto que no mencionaba ExEd en absoluto pasaba— y «operacional»
-    se acreditaba con «no operacional». Al corregirlas se abrió la falta
-    contraria, rechazar respuestas correctas; de ahí las raíces.
-
-    Se compara sin tildes y sin saltos de línea: «exploración» bien escrita y
-    «exploracion» dicen lo mismo, y penalizar la variante correcta es medir la
-    ortografía. Los saltos pasan a espacio para que la frase partida por el
-    ancho de la terminal siga siendo la misma frase.
-    """
-    plano = unicodedata.normalize("NFKD", texto.lower())
-    plano = "".join(c for c in plano if not unicodedata.combining(c))
-    plano = re.sub(r"\s+", " ", plano)
-    return [nombre for nombre, patron in CONCEPTOS_DE_LAS_SIGLAS
-            if not re.search(patron, plano)]
-
-
-def _veredicto_criterio_40(texto: str) -> tuple[bool, str]:
-    """El veredicto tal como lo usa `main()`, no solo el conteo.
-
-    Vive aquí porque la vara estaba escrita en el sitio de llamada: se podía
-    reponer el «aprueba con 3 de 4» con los 592 tests en verde, ya que ninguno
-    miraba dónde el conteo se convierte en ✅ o ❌.
-    """
-    faltan = _conceptos_que_faltan(texto)
-    detalle = f"{len(CONCEPTOS_DE_LAS_SIGLAS) - len(faltan)}/4 conceptos correctos"
-    if faltan:
-        detalle += f" — falta: {', '.join(faltan)}"
-    return not faltan, detalle
 
 
 def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], list[str]]:
@@ -515,13 +471,72 @@ def _proveedor_atiende(cliente: httpx.Client) -> tuple[bool, str]:
     return r.status_code == 200, cuerpo.get("detalle", "")
 
 
-def _juzgar_codigo_iso(texto: str, preguntado: str, reales: dict[str, str]) -> tuple[bool, str]:
-    """Criterio 29, entero y comprobable.
+# Siglas del dominio que aparecen en cualquier respuesta y NO son códigos de
+# modo de falla. Lista corta y cerrada: al revés que la gramática del
+# castellano, el vocabulario técnico de este producto sí está acotado, y una
+# sigla nueva produce una acusación VISIBLE que se arregla añadiéndola aquí —
+# no un descarte silencioso.
+SIGLAS_QUE_NO_SON_CODIGOS = frozenset({
+    "RCM", "ISO", "SAE", "AMEF", "FMEA", "TAG", "CMMS", "GMAO", "FFI", "EPS",
+    "UAT", "PDF", "CSV", "XLSX", "API", "URL", "HITL", "OK", "NA", "ND",
+    "ABCD", "CC", "EXED", "MTBF", "MTTR", "RPN", "NPR", "SOD", "BF", "OHF",
+})
 
-    Dos mitades: que diga que el código no está en el catálogo —siempre
-    comprobable— y que no atribuya significados falsos, ni a los códigos reales
-    ni al preguntado. Esa última parte no la cubría nada: «QQQ1 no existe, pero
-    por su forma sería 'Falla de calidad tipo 1'» aprobaba.
+
+def _codigos_ajenos(texto: str, del_catalogo: dict[str, str], preguntado: str = "") -> list[str]:
+    """Siglas que el texto usa como códigos y que el catálogo del cliente no tiene.
+
+    Esta comprobación NO lee prosa: compara dos conjuntos. Las siglas del texto
+    contra las que la herramienta devolvió en esta misma corrida. Un código que
+    el cliente no tiene es un invento, se escriba como se escriba.
+
+    Es lo que sustituye a cuatro rondas de cortar el texto para adivinar qué
+    definición se atribuía a qué código. Aquello intentaba decidir una frontera
+    de discurso con dos miradas de un carácter, y cada arreglo movía el fallo de
+    flanco: la última versión ponía en rojo 129 de 380 respuestas correctas
+    según qué conector eligiera el modelo —«También» fallaba, «y» pasaba—.
+    """
+    if not del_catalogo:
+        # Sin catálogo no hay contra qué comparar, y dar por ajeno todo lo que
+        # parezca una sigla acusaría de inventar justo al que citó bien los
+        # veinte códigos del cliente. Se abstiene: el que no haya catálogo lo
+        # reporta `_definiciones_de_la_herramienta`, no esta función.
+        return []
+    candidatas = set(re.findall(r"\b[A-Z]{2,4}\d?\b", texto))
+    ajenas = candidatas - set(del_catalogo) - SIGLAS_QUE_NO_SON_CODIGOS
+    return sorted(ajenas - {preguntado.upper()})
+
+
+def _significados_para_revisar(texto: str, reales: dict[str, str]) -> list[str]:
+    """Lo que el texto parece atribuir a cada código, para que lo mire una persona.
+
+    Sale de la misma maquinaria de antes, pero ya no decide: imprime. La
+    diferencia importa, porque como veredicto se equivocaba en las dos
+    direcciones —absolvía inversiones reales y acusaba citas literales del
+    catálogo— y ninguna de las dos se veía sin un barrido de 380 pares.
+    """
+    definidos, sospechas = _codigos_definidos(texto, reales)
+    if not definidos:
+        return []
+    return [f"atribuye significado a {', '.join(definidos)}",
+            *(f"posible inversión: {s}" for s in sospechas)]
+
+
+def _juzgar_codigo_iso(
+    texto: str, preguntado: str, reales: dict[str, str]
+) -> tuple[bool, str, list[str]]:
+    """Criterio 29: la parte que se puede decidir sin interpretar lenguaje.
+
+    Dos comprobaciones, las dos de conjuntos y ninguna de gramática:
+
+    - Que diga que el código preguntado no está en el catálogo.
+    - Que no use ninguna sigla como código fuera del catálogo del cliente.
+
+    La tercera —«no inventa el SIGNIFICADO de los códigos que sí existen»— no
+    se decide aquí. Se devuelve como evidencia para revisión humana. Cuatro
+    rondas seguidas produjeron cuatro veredictos distintos sobre los mismos
+    textos sin que el producto cambiara: un instrumento así no mide, opina, y
+    un ✅ suyo vale menos que un «no lo sé» honesto.
     """
     dice_que_no_existe = any(
         p in texto.lower()
@@ -530,16 +545,23 @@ def _juzgar_codigo_iso(texto: str, preguntado: str, reales: dict[str, str]) -> t
                   "no esta registrado", "sin resultados", "no pertenece",
                   "no está en la norma", "no es un código")
     )
-    definidos, inventados = _codigos_definidos(texto, reales)
+    ajenos = _codigos_ajenos(texto, reales, preguntado)
+    # Esto SÍ se decide: si el catálogo del cliente no tiene el código,
+    # cualquier significado que se le dé es inventado, sin comparar nada con
+    # nada. Y falla por defecto —se le escapa un invento antes que acusar a una
+    # negación—, que es la dirección correcta para un instrumento de medida.
     invento = _significado_atribuido(texto, preguntado)
-    if invento:
-        inventados = [*inventados, f"{preguntado}→«{invento}»"]
     evidencia = (
         f"lo declara ausente: {dice_que_no_existe} | "
-        f"definidos: {definidos or 'ninguno (nada que juzgar)'} | "
-        f"inventados: {inventados or 'ninguno'}"
+        f"códigos fuera del catálogo: {ajenos or 'ninguno'}"
     )
-    return dice_que_no_existe and not inventados, evidencia
+    if invento:
+        evidencia += f" | le atribuye un significado: «{invento}»"
+    return (
+        dice_que_no_existe and not ajenos and not invento,
+        evidencia,
+        _significados_para_revisar(texto, reales),
+    )
 
 
 def _veces_que_llamo(salidas: list[dict], herramienta: str) -> int:
@@ -559,7 +581,7 @@ def _medicion_compuerta(llamadas: int, intentos: int) -> str:
     )
 
 
-def _evaluar_criterio_29(salida: dict, preguntado: str) -> tuple[bool, str]:
+def _evaluar_criterio_29(salida: dict, preguntado: str) -> tuple[bool, str, list[str]]:
     """Criterio 29 entero, contra la salida real de la herramienta.
 
     El catálogo lo pone `explain_iso_code` en esta misma corrida, no una tabla
@@ -593,7 +615,10 @@ def _codigo_final(
 
 
 def _veredicto(
-    hallazgos: list[dict], mediciones: list[str], no_ejecutados: list[str]
+    hallazgos: list[dict],
+    mediciones: list[str],
+    no_ejecutados: list[str],
+    revisiones: list[str] | None = None,
 ) -> int:
     """Imprime el resumen y devuelve el código de salida.
 
@@ -625,6 +650,10 @@ def _veredicto(
         print(f"  📏 {medicion}")
     for pendiente in no_ejecutados:
         print(f"  ⊘ NO EJECUTADO {pendiente}")
+    for numero, desc in REQUIEREN_OJO.items():
+        print(f"  👁 [{numero}] REQUIERE OJO HUMANO — {desc}")
+    for linea in revisiones or []:
+        print(f"      {linea}")
     if fallidos:
         print("Fallidos:")
         for h in fallidos:
@@ -656,6 +685,7 @@ def main() -> int:
         hallazgos: list[dict] = []
         no_ejecutados: list[str] = []
         mediciones: list[str] = []
+        revisiones: list[str] = []
 
         def sesion(nombre: str) -> str:
             sid = f"uat-{nombre}-{sufijo}"
@@ -791,21 +821,20 @@ def main() -> int:
             salida = _turno(
                 cliente, s,
                 "¿Qué significa el código ISO 14224 'QQQ1'? Usa explain_iso_code.")
-            ok29, evidencia29 = _evaluar_criterio_29(salida, "QQQ1")
+            ok29, evidencia29, revisar29 = _evaluar_criterio_29(salida, "QQQ1")
             hallazgos.append(_resultado(
-                29, "Dice que el código no está en el catálogo y no inventa significados",
+                29, "Declara ausente el código y no usa siglas fuera del catálogo",
                 ok29, evidencia29))
+            revisiones += [f"[29] {r}" for r in revisar29]
 
-            # 40 — siglas preguntadas a pelo, sin ejecutar herramientas.
+            # 40 — siglas preguntadas a pelo, sin ejecutar herramientas. No se
+            # puntúa: se transcribe para que lo lea una persona.
             s = sesion("siglas")
             salida = _turno(
                 cliente, s,
                 "En mi Excel veo la columna «Falla Evidente (ABCD)». ¿Qué significa "
                 "cada letra, y qué significan CC y ExEd?")
-            ok40, evidencia40 = _veredicto_criterio_40(salida.get("content") or "")
-            hallazgos.append(_resultado(
-                40, "Acierta las letras de ruta y las siglas de política",
-                ok40, evidencia40))
+            revisiones.append(f"[40] respuesta literal: {(salida.get('content') or '')[:400]}")
 
             # 36 — lo que el agente dice haber registrado está en la sesión.
             s = sesion("estado")
@@ -868,7 +897,7 @@ def main() -> int:
         # El veredicto se imprime SIEMPRE, también al truncarse: saltárselo
         # escondía los criterios ya medidos en rojo y el script llegaba a
         # afirmar que no había fallo del producto cuando ya había medido uno.
-        codigo = _veredicto(hallazgos, mediciones, no_ejecutados)
+        codigo = _veredicto(hallazgos, mediciones, no_ejecutados, revisiones)
         if fugadas:
             print("  ⚠ La corrida dejó sesiones en la base del cliente.")
         return _codigo_final(codigo, hallazgos, interrumpida, fugadas)

@@ -337,11 +337,10 @@ done
 Once criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26, 27,
 29, 36 y 40**. Se ejecutan solos:
 
-    set -a; source .env; set +a
-    uv run python scripts/verificar_en_produccion.py
+    uv run --env-file .env python scripts/verificar_en_produccion.py
 
-Última corrida: **9/9 en verde, salida 0**. Dos casos no cuentan como aprobado ni
-como fallo, y es deliberado:
+Última corrida completa: **9/9 en verde, salida 0**. Tres casos no cuentan como
+aprobado ni como fallo, y es deliberado:
 
 - **[8] mide, no aprueba.** Depende de ALTA-2, que está documentada y aceptada
   más abajo. Hacer fallar el script por una limitación conocida dejaba su código
@@ -350,13 +349,29 @@ como fallo, y es deliberado:
   Ahora reporta la proporción (última medición: **2/3**).
 - **[26] no se ejecuta**: provocar un fallo técnico real exige romper algo del
   entorno del cliente.
+- **[40] lo mira una persona.** Se pregunta a pelo, sin herramientas, así que no
+  hay nada contra lo que contrastar salvo el texto. Se intentó puntuar por
+  subcadena y por raíces: la primera rechazaba «exploración de LA edad», la
+  segunda aprobaba en verde una respuesta que negaba los cuatro conceptos. El
+  script transcribe la respuesta literal y no fabrica un veredicto.
+
+Y el **[29]** cambió de forma de medirse. Se decide lo que no necesita
+interpretar lenguaje —que declare ausente el código preguntado, que no use
+siglas fuera del catálogo que devolvió la herramienta, y que no le dé
+significado al código inexistente—; lo demás se imprime para revisión. Cuatro
+versiones seguidas del detector viejo dieron cuatro veredictos distintos sobre
+los mismos textos sin que el producto cambiara: la última ponía en rojo 129 de
+380 respuestas correctas según qué conector hubiera elegido el modelo.
 
 No hay que reconstruirlos a mano. Están escritos y se ejecutan solos:
 
 ```bash
-set -a; source .env; set +a
-uv run python scripts/verificar_en_produccion.py
+uv run --env-file .env python scripts/verificar_en_produccion.py
 ```
+
+`uv run --env-file`, nunca `set -a; source .env; set +a`: en la ronda 6 esa
+línea dejó la clave de acceso volcada en la salida del terminal. Tampoco
+`export`, `env` ni `set` a secas, por lo mismo.
 
 Comprueba primero `/health/modelo` y se para si el proveedor no atiende —correr
 criterios contra un sistema caído solo produce ruido—. Escribe en sesiones con

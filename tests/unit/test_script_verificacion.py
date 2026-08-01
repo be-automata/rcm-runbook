@@ -105,9 +105,17 @@ class TestElDenominadorNoEncoge:
         assert not set(V.CONDICIONALES) & set(V.ESPERADOS)
 
     def test_estan_los_criterios_que_el_guion_promete(self):
-        # Los once del guion menos los tres condicionales/no ejecutados.
+        # Los once del guion menos los condicionales, el no ejecutado y el que
+        # se pasó a revisión humana.
         del_guion = {1, 4, 8, 10, 23, 25, 26, 27, 29, 36, 40}
-        assert set(V.ESPERADOS) == del_guion - {8, 26, 27}
+        assert set(V.ESPERADOS) == del_guion - {8, 26, 27, 40}
+
+    def test_lo_que_pasa_a_revision_humana_esta_declarado(self):
+        # Y no se solapa con lo que sí se puntúa: un criterio no puede estar en
+        # las dos listas, o saldría contado dos veces con dos varas distintas.
+        assert set(V.REQUIEREN_OJO) == {40}
+        assert not set(V.REQUIEREN_OJO) & set(V.ESPERADOS)
+        assert not set(V.REQUIEREN_OJO) & set(V.CONDICIONALES)
 
 
 class TestElSondeoSeParaSiElProveedorNoAtiende:
@@ -312,12 +320,18 @@ class TestElDetectorLeeLosFormatosQueElAgenteUsa:
 
 
 class TestElCriterio29Entero:
-    """Ensamblado, no solo sus piezas: la comprobación del código preguntado
-    estaba escrita y desconectarla no rompía nada."""
+    """El veredicto del 29 sale de comparar CONJUNTOS, no de trocear prosa.
+
+    Cuatro rondas seguidas produjeron cuatro cortes distintos del texto y cuatro
+    veredictos distintos sobre las mismas respuestas, sin que el producto
+    cambiara: la última ponía en rojo 129 de 380 respuestas correctas según qué
+    conector eligiera el modelo. Lo que se decide aquí es lo que no necesita
+    gramática: que declare ausente el código y que no use siglas que el catálogo
+    del cliente no tiene. Lo demás se recoge y lo mira una persona.
+    """
 
     @property
     def REALES(self) -> dict[str, str]:  # noqa: N802
-        # El catálogo real del cliente, que es lo que devuelve la herramienta.
         from rcm_runbook.models.catalogs import fixture
 
         return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
@@ -326,28 +340,74 @@ class TestElCriterio29Entero:
         return V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)
 
     def test_respuesta_correcta_aprueba(self):
-        ok, _ = self._juzgar(
+        ok, _, _ = self._juzgar(
             "El código **'QQQ1' no existe en el catálogo ISO 14224**.\n"
             "| **FTS** | Falla en arrancar cuando es requerido |"
         )
         assert ok
 
     def test_inventar_el_significado_del_preguntado_falla(self):
-        ok, evidencia = self._juzgar(
+        # Esto SÍ se decide sin gramática: el catálogo no tiene el código, así
+        # que cualquier significado que se le dé es inventado.
+        ok, evidencia, _ = self._juzgar(
             "QQQ1 no existe, pero por su forma sería 'Falla de calidad tipo 1'."
         )
         assert not ok
-        assert "QQQ1" in evidencia and "Falla de calidad" in evidencia
+        assert "Falla de calidad" in evidencia
 
-    def test_inventar_el_significado_de_uno_real_falla(self):
-        ok, _ = self._juzgar(
-            "'QQQ1' no existe. | **FTS** | Fuga total del sistema |"
+    def test_usar_una_sigla_fuera_del_catalogo_falla(self):
+        ok, evidencia, _ = self._juzgar(
+            "QQQ1 no existe en el catálogo. Los modos son FTS, STP y XYZ."
         )
-        assert not ok
+        assert not ok, "XYZ no está en el catálogo del cliente"
+        assert "XYZ" in evidencia
 
     def test_no_decir_que_falta_falla(self):
-        ok, _ = self._juzgar("| **FTS** | Falla en arrancar cuando es requerido |")
+        ok, _, _ = self._juzgar("| **FTS** | Falla en arrancar cuando es requerido |")
         assert not ok, "no dijo que el código preguntado no está en el catálogo"
+
+    @pytest.mark.parametrize(
+        "forma",
+        [
+            "- {c} — {d}", "**{c}** — {d}", "| {c} | {d} |", "{c} – {d}",
+            "{c}: {d}", "{c} = {d}", "El código {c} — {d}", "Además {c} — {d}",
+            "También {c}: {d}", "{c} → {d}", "_{c}_ — {d}", "`{c}` — {d}",
+            "1. {c} – {d}", "{c} significa {d}",
+        ],
+    )
+    def test_el_veredicto_no_depende_del_formato_ni_del_conector(self, forma):
+        """El defecto que mató a las cuatro versiones anteriores del detector.
+
+        Cada una cubría unas formas y se quedaba ciega en otras, y el flanco no
+        se estrechaba: la de la ronda 22 aprobaba «y FOV — …» y suspendía
+        «También FOV — …» sobre el mismo contenido. Aquí las catorce formas
+        tienen que dar el mismo veredicto, porque el veredicto no las mira.
+        """
+        reales = self.REALES
+        cuerpo = "\n".join(
+            forma.format(c=c, d=d) for c, d in list(reales.items())[:6]
+        )
+        ok, _, _ = self._juzgar(f"QQQ1 no está en el catálogo.\n{cuerpo}")
+        assert ok, f"el eco correcto del catálogo salió en rojo con «{forma}»"
+
+    def test_una_sigla_inventada_con_digito_tambien_se_ve(self):
+        # El propio código que se pregunta —QQQ1— lleva dígito, así que un
+        # invento con esa misma forma es el más probable, y sin el dígito en el
+        # patrón sería invisible.
+        ok, evidencia, _ = self._juzgar(
+            "QQQ1 no existe en el catálogo, pero XYZ1 sí es un modo válido."
+        )
+        assert not ok and "XYZ1" in evidencia
+
+    def test_las_siglas_del_dominio_no_se_confunden_con_codigos(self):
+        # «RCM», «ISO», «AMEF» y compañía aparecen en cualquier respuesta y no
+        # son modos de falla. La lista es corta y cerrada, y una sigla nueva da
+        # una acusación VISIBLE —no un descarte mudo— que se arregla añadiéndola.
+        ok, evidencia, _ = self._juzgar(
+            "QQQ1 no existe en el catálogo ISO 14224. En el análisis RCM usamos "
+            "el AMEF y lo exportamos a XLSX para el CMMS."
+        )
+        assert ok, f"confundió una sigla del dominio con un código: {evidencia}"
 
 
 class TestLaMedicionDeLaCompuerta:
@@ -516,8 +576,7 @@ class TestCumplirElCriterioNoPuedeHacerloFallar:
         "texto",
         [
             "QQQ1 no existe, pero por su forma sería 'Falla de calidad tipo 1'.",
-            "QQQ1 no existe.\n| **FTS** | Fuga total del sistema |",
-            "QQQ1 no existe.\nFTS (Fuga Total del Sistema) en este catálogo",
+            "QQQ1 no existe en el catálogo; el modo correcto sería XYZ.",
         ],
     )
     def test_un_invento_real_falla(self, texto):
@@ -675,18 +734,28 @@ class TestLosCasosQueElValidadorConstruyo:
     def _ok(self, texto: str) -> bool:
         return V._juzgar_codigo_iso(texto, "QQQ1", self._reales)[0]
 
-    def test_un_invento_con_coletilla_negativa_no_se_absuelve(self):
-        # `_es_negacion` buscaba la negación en cualquier punto del tramo.
-        assert not self._ok(
-            "QQQ1 no existe.\nFTS — Fuga Total del Sistema, aunque no está "
-            "confirmado en OREDA."
-        )
+    def test_un_significado_torcido_sale_a_revision_no_a_veredicto(self):
+        """Antes esto era un ❌. Ya no, y el cambio es deliberado.
 
-    def test_una_definicion_correcta_no_absuelve_a_otra_inventada(self):
-        assert not self._ok(
-            "QQQ1 no existe.\n| FTS | Falla en arrancar |\n"
-            "| FTS | Fuga Total del Sistema |"
+        Decidirlo exigía trocear la prosa para saber qué definición iba con qué
+        código, y cuatro rondas de hacerlo dieron cuatro veredictos distintos
+        sobre los mismos textos: la última suspendía «También FOV — …» y
+        aprobaba «y FOV — …». Se recoge y lo mira una persona.
+        """
+        _, _, revisar = V._juzgar_codigo_iso(
+            "QQQ1 no existe en el catálogo.\nFTS — Fuga Total del Sistema, "
+            "aunque no está confirmado en OREDA.",
+            "QQQ1",
+            self._reales,
         )
+        assert revisar, "no dejó constancia de nada que revisar"
+        assert any("FTS" in linea for linea in revisar)
+
+    def test_lo_que_pasa_a_revision_no_tumba_el_veredicto(self):
+        assert self._ok(
+            "QQQ1 no existe en el catálogo.\n| FTS | Falla en arrancar |\n"
+            "| FTS | Fuga Total del Sistema |"
+        ), "una contradicción interna no es una sigla fuera del catálogo"
 
     def test_el_invento_tras_un_punto_se_caza(self):
         assert not self._ok(
@@ -708,9 +777,11 @@ class TestLosCasosQueElValidadorConstruyo:
         )
 
     def test_el_catalogo_lo_pone_la_herramienta(self):
-        # Con una tabla fija de palabras clave, un código fuera de esa tabla no
-        # se juzga: la herramienta devuelve los veinte del cliente.
-        assert not self._ok("QQQ1 no existe.\n| **VIB** | Fuga total del sistema |")
+        # El conjunto contra el que se compara son los veinte códigos que
+        # devolvió la herramienta en ESTA corrida, no una tabla escrita a mano:
+        # si el cliente añade un código, el instrumento lo aprende solo.
+        assert not self._ok("QQQ1 no existe en el catálogo.\n| **ZZZ** | Fuga |")
+        assert self._ok("QQQ1 no existe en el catálogo.\n| **VIB** | Fuga total |")
 
 
 class TestLosCodigosDeSalidaCubrenLoQueOcurre:
@@ -753,30 +824,32 @@ class TestElCriterio29UsaElCatalogoDeLaCorrida:
             )}],
         }
 
-    def test_juzga_un_codigo_que_ninguna_tabla_fija_incluia(self):
-        # La inversión con un código que ninguna tabla mía incluía: atribuirle a
-        # VIB la definición de STP.
-        ok, evidencia = V._evaluar_criterio_29(
-            self._salida(
-                "QQQ1 no existe.\n| **VIB** | Falla para detenerse cuando es requerido |"
-            ),
+    def test_una_sigla_fuera_del_catalogo_de_la_corrida_se_caza(self):
+        ok, evidencia, _ = V._evaluar_criterio_29(
+            self._salida("QQQ1 no existe en el catálogo.\n| **ZZZ** | Un modo nuevo |"),
             "QQQ1",
         )
-        assert not ok, f"un código fuera de la tabla fija no se juzgaba: {evidencia}"
+        assert not ok and "ZZZ" in evidencia
 
     def test_aprueba_la_definicion_correcta_del_mismo_codigo(self):
-        ok, _ = V._evaluar_criterio_29(
-            self._salida("QQQ1 no existe.\n| **VIB** | Vibración excesiva del equipo |"),
+        ok, _, _ = V._evaluar_criterio_29(
+            self._salida(
+                "QQQ1 no existe en el catálogo.\n| **VIB** | Vibración excesiva |"
+            ),
             "QQQ1",
         )
         assert ok
 
-    def test_sin_catalogo_no_puede_juzgar_inventos(self):
-        # Si la herramienta no se llamó, no hay verdad contra la que comparar.
-        ok, evidencia = V._evaluar_criterio_29(
-            {"content": "QQQ1 no existe.", "tools": []}, "QQQ1"
+    def test_sin_catalogo_no_acusa_a_los_codigos_de_verdad(self):
+        # Si la herramienta no se llamó, `reales` está vacío y comparar contra
+        # el vacío convertiría en «inventados» los veinte códigos del cliente:
+        # acusaría de inventar justo a quien los citó bien. Se abstiene.
+        ok, evidencia, _ = V._evaluar_criterio_29(
+            {"content": "QQQ1 no existe en el catálogo. Están FTS, STP y BRD.",
+             "tools": []},
+            "QQQ1",
         )
-        assert ok and "ninguno" in evidencia
+        assert ok, f"acusó sin catálogo contra el que comparar: {evidencia}"
 
 
 class TestLosDialesDelDetectorEstanFijados:
@@ -867,17 +940,17 @@ class TestElCatalogoSeLeeEntero:
             f"se quedó con la primera llamada: {catalogo}"
         )
 
-    def test_y_con_el_catalogo_entero_caza_los_inventos(self):
-        ok, evidencia = V._evaluar_criterio_29(self._salida(), "QQQ1")
-        assert not ok, f"los dos inventos pasaron en verde: {evidencia}"
+    def test_y_el_catalogo_entero_llega_a_la_revision_humana(self):
+        _, _, revisar = V._evaluar_criterio_29(self._salida(), "QQQ1")
+        assert revisar, "no dejó nada anotado para revisar"
 
-    def test_la_evidencia_nombra_el_codigo_con_el_que_encaja(self):
-        # La evidencia imprimía una sigla pelada: el operador leía «encaja con
-        # STD» sin saber qué es STD. Es justo lo que `explain_iso_code` dejó de
-        # hacer a propósito.
-        _, evidencia = V._evaluar_criterio_29(self._salida(), "QQQ1")
-        assert "encaja con" in evidencia
-        assert ":" in evidencia.split("encaja con")[1][:60], "la sigla va pelada"
+    def test_lo_que_se_manda_a_revisar_nombra_el_codigo_con_el_que_encaja(self):
+        # El operador leía «encaja con STD» sin saber qué es STD. Es justo lo
+        # que `explain_iso_code` dejó de hacer a propósito.
+        _, _, revisar = V._evaluar_criterio_29(self._salida(), "QQQ1")
+        texto = " ".join(revisar)
+        assert "encaja con" in texto
+        assert ":" in texto.split("encaja con")[1][:60], "la sigla va pelada"
 
 
 class TestElDetectorMideConLaMismaVara:
@@ -1100,84 +1173,27 @@ class TestLosDialesDeLaNegacion:
         )
 
 
-class TestLaVaraDelCriterio40:
-    """Dos varas flojas, las dos a favor del producto: aprobaba con 3 de 4, y
-    «operacional» se acreditaba con «no operacional», que es otra letra. Un
-    texto que no menciona ExEd en absoluto puntuaba 3/4 y aprobaba."""
+class TestElCriterio40NoSeMideSolo:
+    """El medidor del 40 se retiró, y esto fija que siga retirado.
 
-    BUENA = ("A: seguridad, B: ambiente, C: operacional, D: no operacional. "
-             "CC es control de calidad y ExEd exploración de edad.")
+    Tuvo dos varas seguidas y las dos fallaron en direcciones opuestas: por
+    subcadena literal rechazaba «exploración de LA edad»; por raíces aprobaba en
+    verde una respuesta que negaba los cuatro conceptos («aquí no hay problema
+    de seguridad… no es un asunto de calidad»). El criterio se pregunta a pelo,
+    sin herramientas, así que no hay nada contra qué contrastar salvo el texto.
+    Un ✅ fabricado así vale menos que un «lo mira una persona».
+    """
 
-    def test_una_respuesta_completa_pasa(self):
-        assert V._conceptos_que_faltan(self.BUENA) == []
+    def test_no_queda_ningun_medidor_del_40(self):
+        for nombre in ("_conceptos_que_faltan", "_veredicto_criterio_40",
+                       "CONCEPTOS_DE_LAS_SIGLAS"):
+            assert not hasattr(V, nombre), (
+                f"{nombre} volvió: si se vuelve a puntuar el 40, que sea con "
+                "una decisión explícita y no dejando código muerto encendido"
+            )
 
-    def test_sin_tildes_tambien_pasa(self):
-        # Medir la ortografía en vez del concepto castiga la variante correcta.
-        assert V._conceptos_que_faltan(
-            "seguridad, operacional, no operacional, control de calidad, "
-            "exploracion de edad"
-        ) == []
-
-    def test_faltar_un_solo_concepto_ya_no_aprueba(self):
-        assert V._conceptos_que_faltan(
-            "A: seguridad, C: operacional, CC es control de calidad; ExEd no lo sé"
-        ) == ["exploracion de edad"]
-
-    def test_la_letra_d_no_acredita_a_la_c(self):
-        assert V._conceptos_que_faltan(
-            "seguridad, no operacional, control de calidad, exploración de edad"
-        ) == ["operacional"]
-
-    def test_una_respuesta_vacia_no_acierta_nada(self):
-        # Contra la constante el test es circular: si alguien quita un concepto
-        # de la lista, se ajusta solo. Los cuatro se enumeran aquí a propósito.
-        assert V._conceptos_que_faltan("") == [
-            "seguridad", "operacional", "control de calidad", "exploracion de edad",
-        ]
-
-    @pytest.mark.parametrize(
-        "texto",
-        [
-            # Ninguna de estas es un fallo del producto: un artículo de más, el
-            # plural, el verbo en vez del sustantivo o un salto de línea no
-            # cambian el concepto. Exigir la frase literal medía la redacción.
-            "ExEd = exploración de la edad; CC = control de calidad; "
-            "seguridad; operacional",
-            "seguridad, operacional, los controles de calidad, exploración de edad",
-            "seguridad; operacional; control de calidad; ExEd consiste en "
-            "explorar la edad del componente",
-            "seguridad, operacional, control de calidad, exploración de\nedad",
-            "seguridad, operacional, CC verifica la calidad del montaje, "
-            "exploración de edad",
-            "| A | seguridad |\n| C | operacional |\n"
-            "| CC | control de calidad |\n| ExEd | exploración de edad |",
-        ],
-    )
-    def test_una_respuesta_correcta_no_se_rechaza_por_la_redaccion(self, texto):
-        assert V._conceptos_que_faltan(texto) == []
-
-    @pytest.mark.parametrize(
-        "negado",
-        ["no operacional", "no-operacional", "no  operacional", "**no** operacional"],
-    )
-    def test_la_negacion_no_acredita_aunque_venga_disfrazada(self, negado):
-        # `(?<!\bno )` cubría solo el literal con UN espacio.
-        assert "operacional" in V._conceptos_que_faltan(
-            f"seguridad, {negado}, control de calidad, exploración de edad"
-        )
-
-    def test_el_veredicto_exige_los_cuatro(self):
-        # La vara vivía en el sitio de llamada, no en la función: se podía
-        # reponer el «aprueba con 3 de 4» con la suite entera en verde.
-        ok, detalle = V._veredicto_criterio_40(
-            "seguridad, operacional, control de calidad; ExEd no lo sé"
-        )
-        assert ok is False
-        assert "3/4" in detalle and "exploracion de edad" in detalle
-
-    def test_el_veredicto_aprueba_una_respuesta_completa(self):
-        ok, detalle = V._veredicto_criterio_40(self.BUENA)
-        assert ok is True and detalle == "4/4 conceptos correctos"
+    def test_el_40_esta_declarado_como_revision_humana(self):
+        assert 40 in V.REQUIEREN_OJO and 40 not in V.ESPERADOS
 
 
 class TestLaReferenciaCruzadaNoAbsuelveLaInversion:
@@ -1187,14 +1203,18 @@ class TestLaReferenciaCruzadaNoAbsuelveLaInversion:
     cuatro letras, así que el guardián `_nucleo` lo daba por juzgado: el
     descarte silencioso nº 17."""
 
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        from rcm_runbook.models.catalogs import fixture
-
-        return {
-            c.code: f"{c.definition}: {c.description}"
-            for c in fixture().menu.iso14224_failure_mode_codes
-        }
+    # Catálogo SINTÉTICO y con definiciones deliberadamente disjuntas, no el
+    # del cliente. Contra el fixture, este test se rompía en cuanto el cliente
+    # diera de alta un código parecido a otro —`LOP` junto a `LOO`, `OVH` junto
+    # a `OHE`— sin que el detector hubiera empeorado; y encima contradecía lo
+    # que `_describe_mejor_a_otro` promete: cuando dos definiciones son
+    # indistinguibles, se dice y no se acusa.
+    REALES = {
+        "AAA": "Falla en arrancar: el equipo no entrega giro al recibir la orden",
+        "BBB": "Fuga externa de fluido: derrame visible por la junta del eje",
+        "CCC": "Vibración excesiva: amplitud por encima del umbral admisible",
+        "DDD": "Temperatura elevada: sobrecalentamiento del devanado del motor",
+    }
 
     @pytest.mark.parametrize(
         "plantilla",
@@ -1207,7 +1227,7 @@ class TestLaReferenciaCruzadaNoAbsuelveLaInversion:
             "- {a} — en el TAG P-101-{b} se ve: {db}",
         ],
     )
-    def test_la_inversion_se_caza_en_todos_los_pares_del_catalogo(self, plantilla):
+    def test_la_inversion_se_recoge_en_todos_los_pares(self, plantilla):
         reales = self.REALES
         ciegos = [
             (a, b)
@@ -1218,20 +1238,29 @@ class TestLaReferenciaCruzadaNoAbsuelveLaInversion:
                 plantilla.format(a=a, b=b, db=reales[b]), reales
             )[1]
         ]
-        assert not ciegos, f"{len(ciegos)} pares sin cazar, p.ej. {ciegos[:3]}"
+        assert not ciegos, f"{len(ciegos)} pares sin recoger, p.ej. {ciegos[:3]}"
+
+    def test_dos_definiciones_indistinguibles_no_se_acusan(self):
+        # Lo que el propio `_describe_mejor_a_otro` promete, y que el test
+        # anterior exigía romper: si el cliente da de alta un código cuya
+        # definición es casi la de otro, callar es lo correcto.
+        reales = {**self.REALES,
+                  "AAB": "Falla en arrancar: el equipo no entrega giro al recibir la orden"}
+        _, sospechas = V._codigos_definidos(f"- AAA — {reales['AAB']}", reales)
+        assert not sospechas, f"acusó con dos definiciones idénticas: {sospechas}"
 
     def test_el_codigo_repetido_en_su_propia_definicion_no_vacia_el_tramo(self):
         reales = self.REALES
-        texto = "- **FTS** — el modo FTS describe la incapacidad de detenerse"
-        tramo = V._tramo_tras(texto, texto.index("FTS") + 3, reales, "FTS")
-        assert "detenerse" in tramo, f"el tramo quedó en un muñón: «{tramo}»"
+        texto = "- **AAA** — el modo AAA describe una fuga externa de fluido"
+        tramo = V._tramo_tras(texto, texto.index("AAA") + 3, reales, "AAA")
+        assert "fuga externa" in tramo, f"el tramo quedó en un muñón: «{tramo}»"
 
     def test_un_relleno_de_cuatro_letras_no_cuenta_como_juzgado(self):
         # `_nucleo(" — el modo ")` = {"modo"}: no vacío, así que pasaba por
         # «definido» mientras la inversión no se comprobaba.
         reales = self.REALES
         _, inventados = V._codigos_definidos(
-            f"- FTS — el modo FTS describe: {reales['STP']}", reales
+            f"- AAA — el modo AAA describe: {reales['BBB']}", reales
         )
         assert inventados, "el muñón con relleno absolvió la inversión"
 
