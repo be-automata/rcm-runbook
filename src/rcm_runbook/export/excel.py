@@ -238,6 +238,18 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         Font(bold=True)
     )
     row += 1
+    # Leyenda de políticas en la hoja VISIBLE. Ponerla solo en LOOKUPS no servía
+    # de nada: esa hoja es `sheet_state="hidden"`, así que el comentario decía
+    # «quien abre el libro veía Rd y ExEd sin nada que los explicara» y seguía
+    # sin verlo. En LOOKUPS se queda igualmente, para quien la desoculte.
+    row += 1
+    ws.cell(row=row, column=1, value="Políticas de mantenimiento").font = Font(bold=True)
+    row += 1
+    for politica, nombre in POLICY_LABELS_ES.items():
+        ws.cell(row=row, column=1, value=politica.value)
+        ws.cell(row=row, column=2, value=nombre)
+        row += 1
+
     if session.ffi_por_modo:
         # Quien abre esta hoja es el ingeniero de mantenimiento, no el modelo:
         # `Mtive`/`Mted`/`Mmf` estaban definidos con esmero en el docstring de la
@@ -259,7 +271,22 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         # definirlas.
         ws.cell(row=row, column=4, value=METODOS_FFI_ES.get(ffi.metodo, ffi.metodo))
         ws.cell(row=row, column=5, value=ffi.formula)
-        ws.cell(row=row, column=6, value="; ".join(ffi.avisos)).alignment = WRAP
+        # Qué tarea dice ejecutar este intervalo, y cada cuánto. Quién marca esa
+        # fila es el modelo, y ninguna comprobación determinista puede saber si
+        # marcó la correcta: se vio marcar una limpieza diaria y dejar la prueba
+        # funcional real a «Parada de Planta». Lo que sí se puede es ponerlo
+        # delante de quien revisa, para que un disparate se vea.
+        marcadas = [
+            f"{t.description} ({t.frequency})"
+            for t in session.tasks.get(fmid, [])
+            if t.es_busqueda_de_fallas
+        ]
+        ws.cell(
+            row=row, column=6,
+            value="Ejecutado por: " + ("; ".join(marcadas) if marcadas
+                                       else "NINGUNA TAREA MARCADA"),
+        ).alignment = WRAP
+        ws.cell(row=row, column=7, value="; ".join(ffi.avisos)).alignment = WRAP
         row += 1
 
     row += 1

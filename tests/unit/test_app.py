@@ -1755,7 +1755,12 @@ class TestElFfiGobiernaLaFrecuenciaDelCmms:
         from tests.unit.test_compliance import full_session
 
         s = full_session()
-        fm = next(iter(s.failure_modes))
+        # El modo OCULTO: el FFI solo aplica a fallas ocultas de dispositivos de
+        # protección, y la compuerta salta los demás a propósito.
+        fm = next(
+            f for f in s.failure_modes
+            if s.effects[f].is_hidden and s.failure_modes[f].credible
+        )
         s.ffi_por_modo[fm] = FFIRegistro(
             horas=horas_ffi, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
         )
@@ -2360,3 +2365,226 @@ class TestElAvisoConservaLosDosNumeros:
             str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None
         )
         assert "Nomenclatura:" in texto, "la glosa quedó sin etiqueta que la anuncie"
+
+
+class TestMarcarLaTareaDeVerdadCambiaElEstado:
+    """El bloqueo mandaba llamar a `record_task(es_busqueda_de_fallas=True)`, la
+    herramienta contestaba ✔, el estado no cambiaba y el entregable quedaba
+    bloqueado para siempre: `campos` no incluía la marca, así que la llamada
+    caía en la rama idempotente y la tiraba. Un rechazo sin salida es peor que
+    no tener compuerta."""
+
+    def _con_tarea(self, **extra):
+        from rcm_runbook.models.domain import MaintenanceTask
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        base = {
+            "failure_mode_id": fm, "description": "Prueba funcional del disparo",
+            "frequency": "Bimestral", "duration_hours": 4.0,
+            "discipline": "Instrumentista",
+        }
+        s.tasks[fm] = [MaintenanceTask(**base)]
+        return s, fm, MaintenanceTask(**base, **extra)
+
+    def test_marcar_con_reemplazar_cambia_el_estado(self):
+        s, fm, marcada = self._con_tarea(es_busqueda_de_fallas=True)
+        s.add_task(marcada, reemplazar=True)
+        assert s.tasks[fm][0].es_busqueda_de_fallas is True, "la marca se tiró"
+        assert len(s.tasks[fm]) == 1
+
+    def test_marcar_sin_reemplazar_avisa_en_vez_de_mentir(self):
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+
+        s, _, marcada = self._con_tarea(es_busqueda_de_fallas=True)
+        with pytest.raises(ReglaDeNegocio, match="reemplazar=True"):
+            s.add_task(marcada)
+
+    def test_la_llamada_identica_sigue_siendo_idempotente(self):
+        s, fm, igual = self._con_tarea()
+        s.add_task(igual)
+        assert len(s.tasks[fm]) == 1
+
+    def test_el_bloqueo_se_puede_resolver(self):
+        # El lazo cerrado completo: bloquea, se hace lo que dice el mensaje, y
+        # deja de bloquear.
+        from rcm_runbook.engine import compliance
+        from rcm_runbook.models.session import FFIRegistro
+
+        s, fm, marcada = self._con_tarea(es_busqueda_de_fallas=True)
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="x"
+        )
+        assert [b for b in compliance.export_blockers(s) if "búsqueda de fallas" in b]
+        s.add_task(marcada, reemplazar=True)
+        assert not [
+            b for b in compliance.export_blockers(s) if "búsqueda de fallas" in b
+        ], "hizo lo que el mensaje pedía y el bloqueo siguió"
+
+
+class TestUnFfiQueYaNoAplicaNoBloqueaParaSiempre:
+    """`ffi_por_modo` es solo escritura: no hay herramienta que lo quite. Si el
+    modo deja de ser oculto, pasa a operar-hasta-la-falla o se descarta por no
+    creíble, el intervalo viejo bloqueaba el entregable sin salida — y
+    `_gate_p6` salta esos mismos modos a propósito, así que `export_blockers` se
+    contradecía consigo mismo."""
+
+    def _sesion(self):
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="x"
+        )
+        s.tasks[fm] = []
+        return s, fm
+
+    def _bloquea(self, s) -> bool:
+        from rcm_runbook.engine import compliance
+
+        return bool([b for b in compliance.export_blockers(s) if "búsqueda de fallas" in b])
+
+    def test_un_modo_oculto_vigente_sin_tarea_sigue_bloqueando(self):
+        s, _ = self._sesion()
+        assert self._bloquea(s), "el contrapeso: aquí SÍ hace falta la tarea"
+
+    def test_si_deja_de_ser_oculto_ya_no_bloquea(self):
+        s, fm = self._sesion()
+        s.effects[fm] = s.effects[fm].model_copy(
+            update={"is_hidden": False, "hidden_route": None}
+        )
+        assert not self._bloquea(s)
+
+    def test_si_la_politica_pasa_a_operar_hasta_la_falla_ya_no_bloquea(self):
+        from rcm_runbook.models.catalogs import MaintenancePolicy
+
+        s, fm = self._sesion()
+        s.decisions[fm] = s.decisions[fm].model_copy(
+            update={"policy": MaintenancePolicy.OHF}
+        )
+        assert not self._bloquea(s)
+
+    def test_si_el_modo_se_descarta_por_no_creible_ya_no_bloquea(self):
+        s, fm = self._sesion()
+        s.failure_modes[fm] = s.failure_modes[fm].model_copy(
+            update={"credible": False,
+                    "non_credible_discard": "No aplica en este contexto operacional"}
+        )
+        assert not self._bloquea(s)
+
+
+class TestElEntregableEnsenaQuienEjecutaElFfi:
+    """Quién marca la fila es el modelo, y ninguna comprobación determinista
+    puede saber si marcó la correcta: se vio marcar una limpieza diaria dejando
+    la prueba funcional real a «Parada de Planta». Lo que sí se puede es ponerlo
+    delante de quien revisa."""
+
+    def _auditoria(self, s) -> str:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hoja = load_workbook(export_xlsx(s, tmp))["AUDITORIA RCM"]
+        return " | ".join(
+            str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None
+        )
+
+    def test_dice_que_tarea_ejecuta_el_intervalo_y_cada_cuanto(self):
+        from rcm_runbook.models.domain import MaintenanceTask
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        s.ffi_por_modo[fm] = FFIRegistro(horas=1752.0, metodo="single_single", formula="x")
+        s.tasks[fm] = [MaintenanceTask(
+            failure_mode_id=fm, description="Prueba funcional del disparo",
+            frequency="Bimestral", duration_hours=4.0, discipline="Instrumentista",
+            es_busqueda_de_fallas=True,
+        )]
+        texto = self._auditoria(s)
+        assert "Ejecutado por: Prueba funcional del disparo (Bimestral)" in texto
+
+    def test_lo_dice_tambien_cuando_no_hay_ninguna_marcada(self):
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        s.ffi_por_modo[fm] = FFIRegistro(horas=1752.0, metodo="single_single", formula="x")
+        s.tasks[fm] = []
+        assert "NINGUNA TAREA MARCADA" in self._auditoria(s)
+
+
+class TestElMensajeDeBloqueoDiceQueArreglarYDonde:
+    """Tres mutantes sobrevivían: quitar el nombre del modo, quitar la lista de
+    tareas registradas, y forzar la marca a False al reemplazar. Un bloqueo que
+    no dice qué modo ni qué hay registrado deja al operador sin por dónde
+    empezar."""
+
+    def _bloqueo(self) -> str:
+        from rcm_runbook.engine import compliance
+        from rcm_runbook.models.domain import MaintenanceTask
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        s.ffi_por_modo[fm] = FFIRegistro(horas=1752.0, metodo="single_single", formula="x")
+        s.tasks[fm] = [MaintenanceTask(
+            failure_mode_id=fm, description="Limpieza del entorno", frequency="Mensual",
+            duration_hours=1.0, discipline="Mecánico",
+        )]
+        self.fm = fm
+        return next(b for b in compliance.export_blockers(s) if "búsqueda de fallas" in b)
+
+    def test_nombra_el_modo(self):
+        bloqueo = self._bloqueo()
+        assert self.fm in bloqueo, "el operador no sabe qué modo arreglar"
+
+    def test_lista_las_tareas_ya_registradas(self):
+        assert "Limpieza del entorno" in self._bloqueo()
+
+    def test_dice_como_arreglarlo(self):
+        assert "es_busqueda_de_fallas=True" in self._bloqueo()
+
+
+class TestLaLeyendaEstaDondeSeVe:
+    """La leyenda de políticas se puso en LOOKUPS, que es una hoja oculta: el
+    comentario decía «quien abre el libro veía Rd y ExEd sin nada que los
+    explicara en ninguna hoja» y seguía sin verlo. Un arreglo invisible no es un
+    arreglo, y su test pasaba igual."""
+
+    def _libro(self):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from tests.unit.test_compliance import full_session
+
+        with tempfile.TemporaryDirectory() as tmp:
+            return load_workbook(export_xlsx(full_session(), tmp))
+
+    def test_lookups_sigue_oculta(self):
+        assert self._libro()["LOOKUPS"].sheet_state == "hidden"
+
+    def test_las_politicas_se_explican_en_una_hoja_visible(self):
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+
+        wb = self._libro()
+        visibles = [n for n in wb.sheetnames if wb[n].sheet_state == "visible"]
+        texto = " | ".join(
+            str(c.value) for n in visibles for f in wb[n].iter_rows()
+            for c in f if c.value is not None
+        )
+        for politica, nombre in POLICY_LABELS_ES.items():
+            assert nombre in texto, f"{politica.value} sin explicar en hoja visible"

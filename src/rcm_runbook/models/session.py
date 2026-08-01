@@ -436,7 +436,16 @@ class RCMSession(BaseModel):
     def add_task(self, task: MaintenanceTask, reemplazar: bool = False) -> None:
         self._require("modo de falla", task.failure_mode_id, self.failure_modes)
         existing_tasks = self.tasks.setdefault(task.failure_mode_id, [])
-        campos = ("frequency", "duration_hours", "discipline", "requires_shutdown")
+        # `es_busqueda_de_fallas` incluido: sin él, marcar una tarea ya
+        # registrada caía en la rama idempotente, la marca se tiraba y la
+        # herramienta contestaba ✔. El mensaje de bloqueo mandaba llamar a
+        # record_task(es_busqueda_de_fallas=True), la llamada decía «✔ Tarea
+        # registrada», el estado no cambiaba y el entregable quedaba bloqueado
+        # para siempre. Un rechazo sin salida es peor que no tener compuerta.
+        campos = (
+            "frequency", "duration_hours", "discipline", "requires_shutdown",
+            "es_busqueda_de_fallas",
+        )
         for indice, existing in enumerate(existing_tasks):
             if self._same_text(existing.description, task.description):
                 if all(getattr(existing, c) == getattr(task, c) for c in campos):

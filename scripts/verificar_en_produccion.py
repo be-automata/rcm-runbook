@@ -30,6 +30,10 @@ BASE = os.environ.get("RCM_BASE_URL", "https://rcm-demo.beautomata.com")
 LLAVE = os.environ.get("OS_SECURITY_KEY") or os.environ.get("RCM_OS_SECURITY_KEY") or ""
 TIEMPO = 240.0
 
+# Los criterios que esta corrida DEBE cubrir. El 8 mide (ver abajo) y el 26 no se
+# ejecuta a propósito, así que ninguno de los dos entra aquí.
+ESPERADOS = (1, 4, 10, 23, 25, 27, 29, 36, 40)
+
 
 def _cabeceras() -> dict[str, str]:
     return {"Authorization": f"Bearer {LLAVE}"}
@@ -377,7 +381,14 @@ def main() -> int:
             print(f"\nLimpieza: {'quedan ' + str(fugadas) if fugadas else 'sin residuos'}")
 
         fallidos = [h for h in hallazgos if not h["ok"]]
-        print(f"\n{len(hallazgos) - len(fallidos)}/{len(hallazgos)} criterios en verde.")
+        # Denominador FIJO. Con `len(hallazgos)` como total, un criterio que
+        # dejara de ser evaluable bajaba el total y el script imprimía «8/8 en
+        # verde» con salida 0: una regresión se manifestaba como menos criterios
+        # comprobados, no como fallo.
+        no_evaluados = [n for n in ESPERADOS if n not in {h["criterio"] for h in hallazgos}]
+        print(f"\n{len(hallazgos) - len(fallidos)}/{len(ESPERADOS)} criterios en verde.")
+        if no_evaluados:
+            print(f"  ⚠ sin evaluar en esta corrida: {no_evaluados}")
         for medicion in mediciones:
             print(f"  📏 {medicion}")
         for pendiente in no_ejecutados:

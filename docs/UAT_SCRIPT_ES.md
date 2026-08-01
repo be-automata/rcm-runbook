@@ -402,7 +402,12 @@ preguntar qué significa en el catálogo del cliente.
 **Pregunta para el cliente**: ¿`Quinquenal` en su catálogo es cada 15 días o cada
 5 años? Si es lo primero, conviene renombrarla a `Quincenal`.
 
-## Limitación conocida — la compuerta del entregable definitivo
+## ALTA-2 — Limitación conocida: la compuerta del entregable definitivo
+
+*(Este es el defecto al que el código y los informes llaman **ALTA-2**. El nombre
+viene de la tercera ronda de validación y se citaba en siete sitios sin estar
+definido en ninguno — la misma familia de «siglas sin definir» que perseguimos en
+el producto, dentro de nuestra propia documentación.)*
 
 Si el interesado pide **por escrito** el Excel definitivo, el agente a veces
 rechaza por su cuenta en vez de llamar a `export_excel`, y entonces la lista de
