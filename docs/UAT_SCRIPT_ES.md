@@ -330,6 +330,27 @@ done
 | 48 | El intervalo de búsqueda de fallas calculado gobierna la frecuencia que va al CMMS (no salen dos números incompatibles) | ☐ |
 | 49 | Nada en inglés llega al cliente ni al modelo: avisos del motor, digest, siglas del entregable | ☐ |
 
+## Los criterios que necesitan al modelo
+
+Once criterios exigen un turno real del agente y no se pueden verificar con el
+proveedor caído: **1, 4, 8, 10, 23, 25, 26, 27, 29, 36 y 40**.
+
+No hay que reconstruirlos a mano. Están escritos y se ejecutan solos:
+
+```bash
+set -a; source .env; set +a
+uv run python scripts/verificar_en_produccion.py
+```
+
+Comprueba primero `/health/modelo` y se para si el proveedor no atiende —correr
+criterios contra un sistema caído solo produce ruido—. Escribe en sesiones con
+prefijo `uat-`, las borra al terminar y verifica que no quedan residuos. Las
+sesiones `demo-*` son del cliente y no las toca.
+
+El criterio 26 (ante un fallo técnico cita el error y no inventa la causa) queda
+marcado como NO EJECUTADO incluso con saldo: provocarlo exige romper algo del
+entorno a propósito.
+
 ## Vigilancia — qué mirar para enterarse de una caída
 
 `/health` dice si el proceso vive, y **es público y barato**. Respondió 200
