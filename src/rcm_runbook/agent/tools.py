@@ -102,8 +102,46 @@ def _load(run_context: Any) -> RCMSession:
     return RCMSession.model_validate(raw)
 
 
+def _avanzar_si_la_compuerta_esta_verde(session: RCMSession) -> list[str]:
+    """Avanza de fase mientras la compuerta lo permita, y dice hasta dónde llegó.
+
+    `advance_phase` existía y el modelo no la llamaba: 31 turnos en producción,
+    con el interesado pidiéndolo cuatro veces, y la sesión terminó en fase 1. El
+    agente narraba el cambio de fase y seguía, así que las compuertas P2–P5 no
+    llegaban a ejecutarse nunca y una sesión reanudada arrancaba leyendo fase 1.
+
+    No hay nada que decidir aquí: `check_gate` ya sabe si la fase está completa y
+    `advance_phase` habría aceptado exactamente estos avances. Dejar la decisión
+    en el modelo era darle una elección que no era suya.
+    """
+    avanzadas: list[str] = []
+    while session.phase != Phase.COMPLETADO and not compliance.check_gate(
+        session, session.phase
+    ):
+        session.phase = Phase(session.phase + 1)
+        avanzadas.append(f"{session.phase.value} ({PHASE_NAMES_ES[session.phase]})")
+    return avanzadas
+
+
 def _save(run_context: Any, session: RCMSession) -> None:
+    avanzadas = _avanzar_si_la_compuerta_esta_verde(session)
+    if avanzadas:
+        logger.info(json.dumps({"fase_avanzada_a": avanzadas[-1]}, ensure_ascii=False))
+        _ULTIMO_AVANCE[str(getattr(run_context, "session_id", "") or "")] = avanzadas
     run_context.session_state[SESSION_KEY] = session.model_dump(mode="json")
+
+
+# El aviso del avance viaja pegado a la salida de la herramienta que lo provocó:
+# el agente tiene que enterarse de que la fase cambió, o seguirá hablando de la
+# fase vieja y repreguntando lo que ya está cerrado.
+_ULTIMO_AVANCE: dict[str, list[str]] = {}
+
+
+def _nota_de_avance(run_context: Any) -> str:
+    avanzadas = _ULTIMO_AVANCE.pop(str(getattr(run_context, "session_id", "") or ""), None)
+    if not avanzadas:
+        return ""
+    return "\n➜ Fase completa. El análisis avanzó a la fase " + avanzadas[-1] + "."
 
 
 _RANGOS_EN_ESPANOL = (
@@ -165,6 +203,10 @@ def _ejecutar(fn: Callable[..., str], args: Any, kwargs: Any) -> str:
     name = fn.__name__
     try:
         result = fn(*args, **kwargs)
+        # La nota del avance se pega aquí y no en cada herramienta: si el agente
+        # no se entera de que la fase cambió, sigue hablando de la vieja y
+        # repregunta lo que ya está cerrado.
+        result += _nota_de_avance(args[0] if args else kwargs.get("run_context"))
         logger.info(
             json.dumps(
                 {

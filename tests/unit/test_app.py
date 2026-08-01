@@ -1547,3 +1547,116 @@ class TestElDocstringNoEnsenaValoresInvalidos:
         doc = tools_mod.record_task.entrypoint.__doc__ or ""
         assert "'Quinquenal' es ambiguo" in doc
         assert "pregunta al interesado" in doc
+
+
+class TestLaFaseAvanzaSola:
+    """`advance_phase` existía y el modelo no la llamaba: 31 turnos en
+    producción, con el interesado pidiéndolo cuatro veces, y la sesión terminó
+    en fase 1. Las compuertas P2–P5 no llegaban a ejecutarse nunca y una sesión
+    reanudada arrancaba leyendo fase 1.
+
+    No había nada que decidir: `check_gate` ya sabe si la fase está completa y
+    `advance_phase` habría aceptado exactamente estos avances."""
+
+    def _ctx(self):
+        class Ctx:
+            session_id = "s-fase"
+            session_state: dict = {}
+
+        return Ctx()
+
+    def _completar_fase_1(self, ctx):
+        from rcm_runbook.agent import tools as tools_mod
+
+        tools_mod.record_scope.entrypoint(
+            ctx, equipment_family="Bomba Centrífuga", equipment_description="Bomba P-101",
+            tag="P-101", location="Planta norte", boundaries="Brida a brida",
+            interfaces="Succión y descarga", normal_conditions="24/7",
+            objective="Disponibilidad 98%", operating_context="Crudo a 60 °C",
+        )
+        tools_mod.record_team_member.entrypoint(ctx, name="Ana", role="mantenimiento")
+        return tools_mod.record_team_member.entrypoint(ctx, name="Luis", role="operaciones")
+
+    def _fase(self, ctx):
+        from rcm_runbook.models.session import RCMSession
+
+        return RCMSession.model_validate(ctx.session_state["rcm"]).phase
+
+    def test_al_completarse_la_compuerta_la_fase_avanza(self):
+        from rcm_runbook.models.session import Phase
+
+        ctx = self._ctx()
+        self._completar_fase_1(ctx)
+        assert self._fase(ctx) == Phase.P2_FUNCIONES, "la fase se quedó congelada"
+
+    def test_la_herramienta_avisa_del_avance(self):
+        # Sin el aviso el agente sigue hablando de la fase vieja y repregunta lo
+        # que ya está cerrado.
+        salida = self._completar_fase_1(self._ctx())
+        assert "avanzó a la fase 2" in salida
+        assert "Funciones y fallas funcionales" in salida
+
+    def test_no_avanza_con_la_compuerta_en_rojo(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import Phase
+
+        ctx = self._ctx()
+        # Solo un integrante: la compuerta P1 exige mantenimiento + operaciones.
+        tools_mod.record_scope.entrypoint(
+            ctx, equipment_family="Bomba", equipment_description="P-101", tag="P-101",
+            location="Norte", boundaries="Brida a brida", interfaces="Succión",
+            normal_conditions="24/7", objective="98%", operating_context="Crudo",
+        )
+        salida = tools_mod.record_team_member.entrypoint(ctx, name="Ana", role="mantenimiento")
+        assert self._fase(ctx) == Phase.P1_ALCANCE
+        assert "avanzó a la fase" not in salida
+
+    def test_el_aviso_no_se_repite_en_la_llamada_siguiente(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        ctx = self._ctx()
+        self._completar_fase_1(ctx)
+        siguiente = tools_mod.get_progress.entrypoint(ctx)
+        assert "avanzó a la fase" not in siguiente
+
+
+class TestElAgenteVeElEstadoSinPedirlo:
+    """`add_session_state_to_context=False` dejaba al agente ciego salvo que
+    llamara a `get_progress`, y con una ventana de 10 turnos el dato que el
+    interesado dio y él no registró salía de la historia y desaparecía. Medido:
+    31 turnos, 0 modos de falla, repreguntando cosas que él mismo marcaba con
+    «✔ ya lo dijiste»."""
+
+    def test_el_digest_viaja_como_dependencia_del_agente(self):
+        import inspect
+
+        from rcm_runbook.agent import factory
+
+        fuente = inspect.getsource(factory.build_agent)
+        assert "add_dependencies_to_context=True" in fuente
+        assert "_digest_de_la_sesion" in fuente
+
+    def test_el_digest_resume_el_estado_real(self):
+        from rcm_runbook.agent.factory import _digest_de_la_sesion
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        texto = _digest_de_la_sesion({"rcm": sesion.model_dump(mode="json")})
+        assert "FASE ACTUAL" in texto
+        assert sesion.scope.tag in texto
+        assert next(iter(sesion.failure_modes)) in texto
+
+    def test_una_sesion_nueva_lo_dice_sin_reventar(self):
+        from rcm_runbook.agent.factory import _digest_de_la_sesion
+
+        assert "sin datos" in _digest_de_la_sesion({})
+        assert "sin datos" in _digest_de_la_sesion(None)
+
+    def test_un_estado_corrupto_degrada_el_resumen_no_el_turno(self):
+        # Perder el resumen empeora la conversación; perder el turno la corta.
+        from rcm_runbook.agent.factory import _digest_de_la_sesion
+
+        # Un payload que pydantic sí rechaza: con claves sueltas rellena por
+        # defecto y no falla, así que ese caso no probaba nada.
+        texto = _digest_de_la_sesion({"rcm": {"phase": "no-es-una-fase"}})
+        assert "get_progress" in texto

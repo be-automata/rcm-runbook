@@ -10,7 +10,10 @@ def test_scenario_scripted_complete(tmp_path):
     """The ground-truth scenario drives all six phases through the real tools:
     every gate goes green and the definitive export lands in the tmp dir."""
     session = run_scripted_eval(exports_dir=str(tmp_path))
-    assert session.phase == Phase.P6_PLAN
+    # COMPLETADO y no P6: con todas las compuertas en verde, la fase avanza sola.
+    # Antes esperaba P6 porque `advance_phase` dependía de que el modelo la
+    # llamara, y en producción no la llamaba nunca — 31 turnos, fase 1.
+    assert session.phase == Phase.COMPLETADO
     exported = list(tmp_path.rglob("*.xlsx"))  # exports scoped per session subdir
     assert exported, "el export definitivo no generó ningún .xlsx"
     assert exported[0].name == "AMEF_P-101.xlsx"

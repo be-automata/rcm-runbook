@@ -324,6 +324,8 @@ done
 | 42 | Acciones, KPIs, disparadores, validación y equipo llegan al `.xlsx` | ☐ |
 | 43 | Corregir un dato no borra lo que la corrección no menciona (TPEF, descarte documentado) | ☐ |
 | 44 | Un fallo del proveedor del modelo se explica en español y no enseña la facturación del operador | ☐ |
+| 45 | La fase avanza al completarse su compuerta, sin depender de que el agente lo pida, y el agente lo anuncia | ☐ |
+| 46 | El agente no repregunta datos que el interesado ya dio (ve el estado sin tener que consultarlo) | ☐ |
 
 ## Pendiente de confirmar con el cliente — «Quinquenal»
 

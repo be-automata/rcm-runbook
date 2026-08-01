@@ -8,6 +8,7 @@ Anthropic auth resolves in this order:
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -72,6 +73,27 @@ def build_db(cfg: Settings) -> Any:
     return SqliteDb(db_file=cfg.db_path)
 
 
+logger = logging.getLogger("rcm_runbook.factory")
+
+
+def _digest_de_la_sesion(session_state: dict[str, Any] | None = None) -> str:
+    """Resumen compacto del análisis, inyectado en el contexto de cada turno.
+
+    Es lo que `get_progress` devuelve, sin depender de que el modelo se acuerde
+    de pedirlo. Si algo falla al leer el estado se devuelve un aviso en vez de
+    reventar el turno: perder el resumen degrada la conversación, pero perder el
+    turno la corta.
+    """
+    try:
+        crudo = (session_state or {}).get("rcm")
+        if not crudo:
+            return "Análisis nuevo, sin datos registrados todavía."
+        return RCMSession.model_validate(crudo).digest_es()
+    except Exception:  # noqa: BLE001 — el turno vale más que el resumen
+        logger.warning("no se pudo construir el digest de la sesión", exc_info=True)
+        return "(No se pudo leer el estado; use get_progress.)"
+
+
 def build_agent(cfg: Settings, db: Any | None = None) -> Agent:
     return Agent(
         name="Facilitador RCM",
@@ -80,7 +102,16 @@ def build_agent(cfg: Settings, db: Any | None = None) -> Agent:
         tools=list(ALL_TOOLS),
         instructions=INSTRUCTIONS_ES,
         session_state={"rcm": RCMSession().model_dump(mode="json")},
-        add_session_state_to_context=False,  # digest via get_progress; full state too big
+        # El estado completo es demasiado grande para el contexto, pero dejarlo
+        # FUERA del todo tenía un coste peor: el agente solo lo veía si llamaba a
+        # get_progress, y con una ventana de 10 turnos el dato que el interesado
+        # dio y él no registró salía de la historia y desaparecía para siempre.
+        # Medido: 31 turnos, 0 modos de falla registrados, el agente repreguntando
+        # cosas que él mismo marcaba con «✔ ya lo dijiste». El digest son unas
+        # pocas líneas y va en cada turno.
+        add_session_state_to_context=False,
+        dependencies={"estado_del_analisis": _digest_de_la_sesion},
+        add_dependencies_to_context=True,
         add_history_to_context=True,
         num_history_runs=cfg.num_history_runs,
         add_datetime_to_context=True,
