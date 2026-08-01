@@ -422,6 +422,16 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
             r"^[\s\-*|>#]*\**([A-Z]{3,4})\**\s*[—–:|-]\s*\**([^\n|]{4,120})",
             crudo, re.M,
         )
+        # Un catálogo de UNA sola entrada solo vale si la herramienta lo dice.
+        # `bool(reales)` es hoy todo el veredicto del criterio 29, y cualquier
+        # línea «SIGLA: texto» lo llenaba: «NOTA: no hay catálogo disponible» o
+        # «HTTP - 500 Internal Server Error» aprobaban el criterio entero. Que
+        # «AVISO» y «ERROR» tengan cinco letras era el único motivo de que no
+        # pasaran más: un dial, no una defensa.
+        if len(pares) == 1 and not re.search(
+            r"^\s*[-*|>]\s*\**[A-Z]{3,4}|[A-Z]{3,4}\**\s*[—–]", crudo, re.M
+        ):
+            continue
         # TODAS las llamadas, no la primera: si la primera era la rama de éxito
         # —un solo código—, el catálogo quedaba con un elemento y el detector no
         # podía acusar nada por construcción, mientras la evidencia decía

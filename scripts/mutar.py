@@ -45,17 +45,37 @@ def _limpiar_cache() -> None:
             shutil.rmtree(directorio, ignore_errors=True)
 
 
-def _correr(suite: str) -> bool:
-    """True si la suite pasa. Sin caché de pytest ni de bytecode."""
+def _correr(suite: str) -> int:
+    """El código de salida de pytest. Sin caché de pytest ni de bytecode.
+
+    Por `returncode`, no buscando «failed» en la salida. Buscar subcadenas se
+    equivoca en las dos direcciones: una suite que no existe devuelve 4 con el
+    texto «no tests ran», sin «failed» ni «error» en minúscula, así que el
+    mutante se apuntaba como SUPERVIVIENTE —o sea, se fabricaba un hueco de test
+    que no existe—; y cualquier test futuro cuyo nombre lleve esas letras
+    declararía MUERTO a todo.
+
+    0 = pasa · 1 = falla (el mutante muere) · lo demás = la corrida no ocurrió.
+    """
     entorno = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-    salida = subprocess.run(
+    return subprocess.run(
         ["uv", "run", "pytest", "-q", "-p", "no:cacheprovider", suite],
         capture_output=True, text=True, cwd=RAIZ, env=entorno,
-    )
-    return "failed" not in salida.stdout and "error" not in salida.stdout
+    ).returncode
 
 
 def mutar(mutaciones: list[dict]) -> int:
+    # La línea base tiene que estar VERDE antes de tocar nada. Sin esto, con la
+    # suite ya roja por cualquier motivo ajeno, todo mutante «muere» y el arnés
+    # firma 0 con confianza total y cero medición. Se comprobó metiendo un
+    # control que solo cambiaba una letra DENTRO DE UN COMENTARIO: salió
+    # MUERTO. Un comentario no puede matar a nadie.
+    for suite in sorted({m.get("suite", "tests") for m in mutaciones}):
+        codigo = _correr(suite)
+        if codigo != 0:
+            print(f"  LÍNEA BASE ROJA en «{suite}» (pytest devolvió {codigo}).")
+            print("  Nada de lo que midiera aquí significaría algo.")
+            return 2
     invalidas, vivos = [], []
     for m in mutaciones:
         ruta = RAIZ / m["fichero"]
@@ -75,12 +95,15 @@ def mutar(mutaciones: list[dict]) -> int:
         try:
             _limpiar_cache()
             ruta.write_text(mutado)
-            sobrevive = _correr(m.get("suite", "tests"))
+            codigo = _correr(m.get("suite", "tests"))
         finally:
             _limpiar_cache()
             ruta.write_text(original)
-        print(f"  {'VIVO  ' if sobrevive else 'MUERTO'}  {m['nombre']}")
-        if sobrevive:
+        if codigo not in (0, 1):
+            invalidas.append(f"{m['nombre']}: pytest devolvió {codigo}, no llegó a correr")
+            continue
+        print(f"  {'VIVO  ' if codigo == 0 else 'MUERTO'}  {m['nombre']}")
+        if codigo == 0:
             vivos.append(m["nombre"])
 
     for aviso in invalidas:

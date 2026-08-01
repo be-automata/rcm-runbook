@@ -334,8 +334,12 @@ done
 
 ## Los criterios que necesitan al modelo
 
-Once criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26, 27,
-29, 36 y 40**. Se ejecutan solos:
+**Doce** criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26,
+27, 29, 36, 40 y 46**. Eran once hasta que la validación encontró que el 46
+—«el agente no repregunta datos que el interesado ya dio»— tiene probado su
+mecanismo (el resumen de estado existe, se calcula y viaja como dependencia)
+pero no su enunciado: que el agente no repregunte es conducta del modelo, y eso
+no se observa sin turno. Los otros once se ejecutan solos:
 
     uv run --env-file .env python scripts/verificar_en_produccion.py
 
@@ -355,6 +359,14 @@ Tres casos no cuentan como aprobado ni como fallo, y es deliberado:
   Ahora reporta la proporción (última medición: **2/3**).
 - **[26] no se ejecuta**: provocar un fallo técnico real exige romper algo del
   entorno del cliente.
+- **[46] no lo cubre el script**: su mitad automatizable ya está en la suite; lo
+  que falta es leer una conversación real y ver que no repregunta.
+
+Y una brecha conocida entre el guion y el producto, que no es un fallo del
+código sino una regla que nunca se escribió: el **[5]** dice «solo con nombre y
+cargo del aprobador», y `approver` es texto libre. Que sin aprobador no haya
+decisión sí está comprobado; que el aprobador traiga nombre Y cargo no lo exige
+nada, y los propios tests firman con «HSE». Media casilla, no una entera.
 - **[40] lo mira una persona.** Se pregunta a pelo, sin herramientas, así que no
   hay nada contra lo que contrastar salvo el texto. Se intentó puntuar por
   subcadena y por raíces: la primera rechazaba «exploración de LA edad», la

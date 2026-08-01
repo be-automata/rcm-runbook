@@ -59,10 +59,18 @@ class TestLasFasesInventadasSeDetectanTambienEnPlural:
     singular, así que el criterio se aprobaba con una lista íntegramente
     inventada."""
 
-    def test_negar_no_es_atribuir(self):
-        assert V._es_negacion("no está en el catálogo ISO 14224")
-        assert V._es_negacion("No existe en el catálogo")
-        assert not V._es_negacion("Falla en arrancar cuando es requerido")
+    @pytest.mark.parametrize(
+        ("texto", "esperado"),
+        [
+            ("la Fase 2 sigue pendiente", {"2"}),
+            ("las fases 2 y 3 siguen pendientes", {"2", "3"}),
+            ("fases 2, 3 y 4 pendientes", {"2", "3", "4"}),
+            ("Fase 3 — AMEF sin modos", {"3"}),
+            ("no menciona ninguna", set()),
+        ],
+    )
+    def test_cuenta_las_fases(self, texto, esperado):
+        assert V._fases_mencionadas(texto) == esperado
 
 
 class TestLosCodigosDeSalidaNoSeContradicen:
@@ -399,8 +407,12 @@ class TestElCatalogoSeLeeEntero:
         return {
             "content": "QQQ1 no existe. FTS — Fuga Total del Sistema. HIO — Baja salida.",
             "tools": [
+                # La PRIMERA trae un código que la segunda NO trae. Antes era
+                # subconjunto de la segunda, así que «quedarse solo con la
+                # última llamada» daba el mismo resultado y el test no probaba
+                # lo que su nombre dice: pasaba con la fusión rota.
                 {"tool_name": "explain_iso_code",
-                 "result": "FTS — Falla en arrancar: Incapaz de activar la bomba"},
+                 "result": "VIB — Vibración excesiva: Amplitud sobre el umbral"},
                 {"tool_name": "explain_iso_code", "result":
                  "El código 'QQQ1' no está en el catálogo. Códigos disponibles:\n"
                  "- FTS — Falla en arrancar cuando es requerido: Incapaz de arrancar\n"
@@ -411,8 +423,8 @@ class TestElCatalogoSeLeeEntero:
 
     def test_junta_todas_las_llamadas(self):
         catalogo = V._definiciones_de_la_herramienta(self._salida())
-        assert set(catalogo) == {"FTS", "HIO", "ELU"}, (
-            f"se quedó con la primera llamada: {catalogo}"
+        assert set(catalogo) == {"VIB", "FTS", "HIO", "ELU"}, (
+            f"perdió una de las llamadas: {catalogo}"
         )
 
     def test_y_el_catalogo_entero_llega_a_la_revision_humana(self):
@@ -1021,3 +1033,145 @@ class TestElCriterio29SoloDecideLoQueSePuedeContar:
         assert 29 in V.REQUIEREN_OJO and 29 in V.ESPERADOS, (
             "el 29 conserva su mitad medible y declara la otra"
         )
+
+
+class TestElConteoDeLlamadas:
+    """El bucle vivía en main() y no había forma de probarlo: el criterio 8
+    podía reportar siempre 0/3 sin que nada lo notara."""
+
+    def _run(self, *herramientas):
+        return {"tools": [{"tool_name": h} for h in herramientas]}
+
+    def test_cuenta_los_turnos_donde_se_llamo(self):
+        salidas = [
+            self._run("export_excel"),
+            self._run("get_progress"),
+            self._run("get_progress", "export_excel"),
+        ]
+        assert V._veces_que_llamo(salidas, "export_excel") == 2
+
+    def test_cero_cuando_nunca_se_llamo(self):
+        assert V._veces_que_llamo([self._run("get_progress")], "export_excel") == 0
+
+    def test_un_turno_sin_herramientas_no_cuenta(self):
+        assert V._veces_que_llamo([{"tools": []}, {}], "export_excel") == 0
+
+
+class TestLaMedicionDeLaCompuerta:
+    """El conteo vivía dentro de main y desconectarlo no rompía nada: el
+    criterio 8 podía reportar siempre 0/3 sin que nadie se enterara."""
+
+    def test_dice_la_proporcion_real(self):
+        assert "2/3" in V._medicion_compuerta(2, 3)
+        assert "0/3" in V._medicion_compuerta(0, 3)
+
+    def test_dice_que_mide_y_por_que(self):
+        linea = V._medicion_compuerta(2, 3)
+        assert "ALTA-2" in linea
+        assert "botón" in linea, "no dice cuál es el camino garantizado"
+
+
+class TestLosFaltantesSalenDeLaHerramienta:
+    """El endpoint del botón devuelve un BORRADOR válido, no una lista de
+    bloqueadores: preguntarle por los faltantes daba siempre la lista vacía."""
+
+    def test_lee_el_resultado_de_export_excel(self):
+        salida = {"tools": [
+            {"tool_name": "get_progress", "result": "- esto no cuenta"},
+            {"tool_name": "export_excel", "result": (
+                "❌ El análisis está incompleto:\n"
+                "- [Fase 1] Falta el TAG o código técnico del activo.\n"
+                "- [Fase 1] Faltan los límites físicos del análisis."
+            )},
+        ]}
+        faltantes = V._faltantes_de_la_herramienta(salida)
+        assert len(faltantes) == 2
+        assert all(f.startswith("[Fase 1]") for f in faltantes)
+
+    def test_sin_llamada_a_export_excel_no_inventa_faltantes(self):
+        assert V._faltantes_de_la_herramienta({"tools": [{"tool_name": "get_progress"}]}) == []
+
+
+class TestLoQueLlenaElCatalogoTieneQueParecerUnCatalogo:
+    """`bool(reales)` es hoy TODO el veredicto del criterio 29, así que lo que
+    lo llene decide. Cualquier línea «SIGLA: texto» lo llenaba: «NOTA: no hay
+    catálogo disponible» y «HTTP - 500 Internal Server Error» aprobaban el
+    criterio entero. Que «AVISO» y «ERROR» tengan cinco letras era el único
+    motivo de que no pasaran más — un dial, no una defensa."""
+
+    def _leer(self, crudo: str) -> dict:
+        return V._definiciones_de_la_herramienta(
+            {"tools": [{"tool_name": "explain_iso_code", "result": crudo}]}
+        )
+
+    @pytest.mark.parametrize(
+        "basura",
+        [
+            "NOTA: no hay catálogo disponible para este cliente.",
+            "HTTP - 500 Internal Server Error, el catalogo no cargo",
+            "AVISO: la base de datos del catálogo no responde",
+            "TODO: revisar el catálogo con el cliente antes de cerrar",
+        ],
+    )
+    def test_un_mensaje_suelto_no_es_un_catalogo(self, basura):
+        assert self._leer(basura) == {}, f"«{basura[:40]}» pasó por catálogo"
+
+    def test_y_el_criterio_29_sale_en_rojo_con_esa_basura(self):
+        ok, evidencia, _ = V._evaluar_criterio_29(
+            {"content": "QQQ1 no existe.",
+             "tools": [{"tool_name": "explain_iso_code",
+                        "result": "NOTA: no hay catálogo disponible."}]},
+            "QQQ1",
+        )
+        assert not ok and "CATÁLOGO VACÍO" in evidencia
+
+    @pytest.mark.parametrize(
+        "legitima",
+        [
+            "- FTS — Falla en arrancar cuando es requerido",
+            "FTS — Falla en arrancar cuando es requerido",
+            "- FTS – Falla en arrancar cuando es requerido",
+            "- FTS - Falla en arrancar cuando es requerido",
+            "- FTS: Falla en arrancar cuando es requerido",
+            "| FTS | Falla en arrancar cuando es requerido |",
+            "- **FTS** — Falla en arrancar cuando es requerido",
+            "* FTS — Falla en arrancar cuando es requerido",
+            "> FTS — Falla en arrancar cuando es requerido",
+        ],
+    )
+    def test_pero_una_entrada_de_verdad_se_sigue_leyendo(self, legitima):
+        # El riesgo simétrico: apretar esto tumba la rama de éxito de la
+        # herramienta, que devuelve UN solo código.
+        assert "FTS" in self._leer(legitima)
+
+    def test_las_dos_ramas_reales_de_la_herramienta(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-cat"
+            session_state: dict = {}
+
+        assert len(self._leer(
+            str(tools_mod.explain_iso_code.entrypoint(Ctx(), code="QQQ1")))) == 20
+        assert len(self._leer(
+            str(tools_mod.explain_iso_code.entrypoint(Ctx(), code="FTS")))) == 1
+
+    def test_un_catalogo_de_varias_entradas_no_necesita_marca_de_lista(self):
+        # El guardia es solo para la entrada ÚNICA: varias entradas ya son
+        # prueba de que la herramienta respondió, y exigirles marca de lista
+        # tumbaría un formato legítimo sin ganar nada.
+        catalogo = self._leer(
+            "FTS: Falla en arrancar cuando es requerido\n"
+            "STP: Falla para detenerse cuando es requerido"
+        )
+        assert set(catalogo) == {"FTS", "STP"}
+
+    def test_la_definicion_llega_sin_espacios_de_sobra(self):
+        # Se comparan definiciones entre sí; un espacio final las hace
+        # distintas de la misma definición sin él.
+        catalogo = self._leer("- FTS — Falla en arrancar cuando es requerido   ")
+        assert catalogo["FTS"] == "Falla en arrancar cuando es requerido"
+
+    def test_el_ancla_de_linea_no_es_decorativa(self):
+        # Sin `^`, un código citado a mitad de frase se leería como entrada.
+        assert self._leer("El informe menciona que la bomba STD — algo raro") == {}
