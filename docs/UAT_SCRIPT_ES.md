@@ -361,13 +361,25 @@ Tres casos no cuentan como aprobado ni como fallo, y es deliberado:
   segunda aprobaba en verde una respuesta que negaba los cuatro conceptos. El
   script transcribe la respuesta literal y no fabrica un veredicto.
 
-Y el **[29]** cambió de forma de medirse. Se decide lo que no necesita
-interpretar lenguaje —que declare ausente el código preguntado, que no use
-siglas fuera del catálogo que devolvió la herramienta, y que no le dé
-significado al código inexistente—; lo demás se imprime para revisión. Cuatro
-versiones seguidas del detector viejo dieron cuatro veredictos distintos sobre
-los mismos textos sin que el producto cambiara: la última ponía en rojo 129 de
-380 respuestas correctas según qué conector hubiera elegido el modelo.
+Y el **[29] pasó a revisión humana casi entero.** Conserva veredicto solo en
+lo que se cuenta en vez de leerse: que el agente llame a `explain_iso_code` y
+que su catálogo se lea. Si declara ausente el código y si le atribuye un
+significado se imprimen para que los mire una persona, y **no puntúan**.
+
+La razón, para que no se deshaga sin conocerla: ocho rondas de validación
+adversaria sobre ese detector, con el producto intacto en todas. La última
+arregló tres hallazgos y abrió cinco, con `pytest`, `ruff`, `mypy` y la suite
+sin entorno en verde sin ver ninguno. Siete listas escritas a mano fallaron por
+el mismo mecanismo —se enumeran las variantes que uno recuerda, se prueban esas
+mismas, y el barrido siguiente encuentra las que faltan—, y dos decisiones
+llevaban tres rondas oscilando entre sus dos valores. Un ✅ que se equivoca en
+las dos direcciones vale menos que un «no lo sé».
+
+**Para volver a automatizarlo hace falta un corpus etiquetado de respuestas
+reales** —60-80 turnos de producción marcados a mano una vez como cumple /
+inventa / se abstiene—, contra el que medir falsos positivos y negativos sobre
+texto que no escribió quien cambia el detector. Sin eso, la ronda siguiente
+vuelve a empezar. Y ese corpus no existe hoy porque el proveedor no responde.
 
 No hay que reconstruirlos a mano. Están escritos y se ejecutan solos:
 

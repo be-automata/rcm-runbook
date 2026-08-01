@@ -40,14 +40,35 @@ TIEMPO = 240.0
 #
 # Meter el 27 aquí producía «8/9 en verde» con salida 0 en un sistema sano: un
 # titular que parece un fallo.
-ESPERADOS = (1, 4, 10, 23, 25, 29, 36)
+ESPERADOS = (1, 4, 10, 23, 25, 29, 36)  # el 29, solo en su mitad medible
 # Criterios cuyo veredicto NO se fabrica: se recoge la evidencia y la mira una
 # persona. El 40 pregunta las siglas a pelo, sin herramientas, así que no hay
 # nada contra lo que contrastar salvo el texto; y decidir sobre texto con
 # expresiones regulares produjo, ronda tras ronda, veredictos que se
 # contradecían entre sí sin que el producto cambiara. Un ✅ que depende del
 # adverbio que eligió el modelo no es una medición.
-REQUIEREN_OJO = {40: "las siglas de ruta y política, preguntadas sin herramientas"}
+REQUIEREN_OJO = {
+    40: "las siglas de ruta y política, preguntadas sin herramientas",
+    # El 29 conserva veredicto SOLO en lo que se decide sin leer prosa: que
+    # llamara a `explain_iso_code` y que su catálogo se lea. Lo demás —si
+    # declara ausente el código, si le atribuye un significado— se imprime y lo
+    # mira una persona.
+    #
+    # Ocho rondas puliendo ese detector, con el producto intacto en todas, y la
+    # tasa de defectos nuevos sin bajar: la última ronda arregló tres hallazgos
+    # y abrió cinco, con `pytest`, `ruff`, `mypy` y la suite sin entorno en
+    # verde sin ver ninguno. Siete listas escritas a mano han fallado por el
+    # mismo mecanismo —se enumeran las variantes que uno recuerda, se prueban
+    # esas mismas, y el barrido siguiente encuentra las que faltan—, y dos
+    # decisiones llevan tres rondas oscilando entre sus dos valores. Oscilar es
+    # lo que hace un sistema cuando la medida no distingue las alternativas, y
+    # aquí no las distingue porque cada ronda se juzga contra los ejemplos que
+    # esa ronda se inventó.
+    #
+    # Para volver a automatizarlo hace falta un corpus etiquetado de respuestas
+    # REALES —que hoy no existe porque el proveedor no responde—, no otra lista.
+    29: "si declara ausente el código y si le atribuye un significado",
+}
 CONDICIONALES = {8: "la compuerta la decide la herramienta (ALTA-2)",
                  27: "los faltantes salen de la herramienta (solo si llamó)"}
 
@@ -664,18 +685,19 @@ def _significados_para_revisar(texto: str, reales: dict[str, str]) -> list[str]:
 def _juzgar_codigo_iso(
     texto: str, preguntado: str, reales: dict[str, str]
 ) -> tuple[bool, str, list[str]]:
-    """Criterio 29: la parte que se puede decidir sin interpretar lenguaje.
+    """Criterio 29: lo único que se decide sin leer prosa.
 
-    Dos comprobaciones, las dos de conjuntos y ninguna de gramática:
+    El veredicto es que la herramienta se llamara y su catálogo se lea. Eso es
+    comparar conjuntos y contar: si de la salida de `explain_iso_code` no sale
+    ni un código, o no la llamó o el instrumento dejó de saber leerla, y las dos
+    cosas hay que verlas.
 
-    - Que diga que el código preguntado no está en el catálogo.
-    - Que no use ninguna sigla como código fuera del catálogo del cliente.
-
-    La tercera —«no inventa el SIGNIFICADO de los códigos que sí existen»— no
-    se decide aquí. Se devuelve como evidencia para revisión humana. Cuatro
-    rondas seguidas produjeron cuatro veredictos distintos sobre los mismos
-    textos sin que el producto cambiara: un instrumento así no mide, opina, y
-    un ✅ suyo vale menos que un «no lo sé» honesto.
+    Todo lo demás —si declara ausente el código, si le atribuye un significado,
+    si usa siglas de fuera— se calcula igual, se imprime igual, y NO decide.
+    Ocho rondas midiéndolo con expresiones regulares dieron ocho detectores
+    distintos sobre los mismos textos sin que el producto cambiara ni una vez, y
+    la última abrió cinco defectos mientras las cuatro puertas seguían verdes.
+    Un ✅ que se equivoca en las dos direcciones vale menos que un «no lo sé».
     """
     # Sin la decoración: «**NO** existe» partía la frase en dos y la negación
     # dejaba de reconocerse, así que enfatizar la respuesta la suspendía.
@@ -703,12 +725,10 @@ def _juzgar_codigo_iso(
     # nada. Y falla por defecto —se le escapa un invento antes que acusar a una
     # negación—, que es la dirección correcta para un instrumento de medida.
     invento = _significado_atribuido(texto, preguntado, tuple(reales))
-    evidencia = (
-        f"lo declara ausente: {dice_que_no_existe} | "
-        f"catálogo leído: {len(reales)} códigos"
-    )
-    if invento:
-        evidencia += f" | le atribuye un significado: «{invento}»"
+    # La evidencia del veredicto solo dice lo que el veredicto juzga. Llevaba
+    # también «lo declara ausente» y «le atribuye un significado», y un ✅ con
+    # eso al lado se lee como si los aprobara.
+    evidencia = f"catálogo leído: {len(reales)} códigos"
     if not reales:
         # Se cuenta como fallo, no como «nada que comprobar». El criterio dice
         # «usa explain_iso_code»: si de su salida no sale ni un código, o no la
@@ -721,11 +741,10 @@ def _juzgar_codigo_iso(
     revisar = _significados_para_revisar(texto, reales)
     if ajenos:
         revisar.append(f"siglas que el catálogo no tiene: {', '.join(ajenos)}")
-    return (
-        dice_que_no_existe and not invento and bool(reales),
-        evidencia,
-        revisar,
-    )
+    revisar.append(f"declara ausente el código: {dice_que_no_existe}")
+    if invento:
+        revisar.append(f"parece atribuirle un significado: «{invento}»")
+    return bool(reales), evidencia, revisar
 
 
 def _veces_que_llamo(salidas: list[dict], herramienta: str) -> int:
@@ -994,7 +1013,7 @@ def main() -> int:
                 "¿Qué significa el código ISO 14224 'QQQ1'? Usa explain_iso_code.")
             ok29, evidencia29, revisar29 = _evaluar_criterio_29(salida, "QQQ1")
             hallazgos.append(_resultado(
-                29, "Declara ausente el código y no usa siglas fuera del catálogo",
+                29, "Consulta explain_iso_code y su catálogo se lee entero",
                 ok29, evidencia29))
             revisiones += [f"[29] {r}" for r in revisar29]
 

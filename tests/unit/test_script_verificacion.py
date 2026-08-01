@@ -59,616 +59,6 @@ class TestLasFasesInventadasSeDetectanTambienEnPlural:
     singular, así que el criterio se aprobaba con una lista íntegramente
     inventada."""
 
-    @pytest.mark.parametrize(
-        ("texto", "esperado"),
-        [
-            ("la Fase 2 sigue pendiente", {"2"}),
-            ("las fases 2 y 3 siguen pendientes", {"2", "3"}),
-            ("fases 2, 3 y 4 pendientes", {"2", "3", "4"}),
-            ("Fase 3 — AMEF sin modos", {"3"}),
-            ("no menciona ninguna", set()),
-        ],
-    )
-    def test_cuenta_las_fases(self, texto, esperado):
-        assert V._fases_mencionadas(texto) == esperado
-
-
-class TestLosFaltantesSalenDeLaHerramienta:
-    """El endpoint del botón devuelve un BORRADOR válido, no una lista de
-    bloqueadores: preguntarle por los faltantes daba siempre la lista vacía."""
-
-    def test_lee_el_resultado_de_export_excel(self):
-        salida = {"tools": [
-            {"tool_name": "get_progress", "result": "- esto no cuenta"},
-            {"tool_name": "export_excel", "result": (
-                "❌ El análisis está incompleto:\n"
-                "- [Fase 1] Falta el TAG o código técnico del activo.\n"
-                "- [Fase 1] Faltan los límites físicos del análisis."
-            )},
-        ]}
-        faltantes = V._faltantes_de_la_herramienta(salida)
-        assert len(faltantes) == 2
-        assert all(f.startswith("[Fase 1]") for f in faltantes)
-
-    def test_sin_llamada_a_export_excel_no_inventa_faltantes(self):
-        assert V._faltantes_de_la_herramienta({"tools": [{"tool_name": "get_progress"}]}) == []
-
-
-class TestElDenominadorNoEncoge:
-    """Con el total dinámico, un criterio que dejaba de ser evaluable bajaba el
-    denominador y el script imprimía «8/8 en verde» con salida 0: una regresión
-    se manifestaba como menos criterios comprobados. Luego, al fijarlo, meter el
-    27 —que depende de ALTA-2— producía «8/9» en un sistema sano."""
-
-    def test_los_condicionales_estan_declarados_y_no_se_solapan(self):
-        assert set(V.CONDICIONALES) == {8, 27}
-        assert not set(V.CONDICIONALES) & set(V.ESPERADOS)
-
-    def test_estan_los_criterios_que_el_guion_promete(self):
-        # Los once del guion menos los condicionales, el no ejecutado y el que
-        # se pasó a revisión humana.
-        del_guion = {1, 4, 8, 10, 23, 25, 26, 27, 29, 36, 40}
-        assert set(V.ESPERADOS) == del_guion - {8, 26, 27, 40}
-
-    def test_lo_que_pasa_a_revision_humana_esta_declarado(self):
-        # Y no se solapa con lo que sí se puntúa: un criterio no puede estar en
-        # las dos listas, o saldría contado dos veces con dos varas distintas.
-        assert set(V.REQUIEREN_OJO) == {40}
-        assert not set(V.REQUIEREN_OJO) & set(V.ESPERADOS)
-        assert not set(V.REQUIEREN_OJO) & set(V.CONDICIONALES)
-
-
-class TestElSondeoSeParaSiElProveedorNoAtiende:
-    """Correr los criterios contra un sistema caído solo produce ruido. Y un 502
-    del borde llega como HTML: reventar con JSONDecodeError contradice justo lo
-    que la función promete."""
-
-    class _Respuesta:
-        def __init__(self, status, cuerpo=None, json_valido=True):
-            self.status_code = status
-            self._cuerpo = cuerpo or {}
-            self._valido = json_valido
-
-        def json(self):
-            if not self._valido:
-                raise ValueError("no es JSON")
-            return self._cuerpo
-
-    class _Cliente:
-        def __init__(self, respuesta):
-            self._r = respuesta
-
-        def get(self, *a, **k):
-            return self._r
-
-    def test_un_503_para_la_corrida(self):
-        r = self._Respuesta(503, {"detalle": "La cuenta del proveedor no tiene saldo."})
-        atiende, detalle = V._proveedor_atiende(self._Cliente(r))
-        assert atiende is False
-        assert "saldo" in detalle
-
-    def test_un_html_del_borde_no_revienta(self):
-        r = self._Respuesta(502, json_valido=False)
-        atiende, detalle = V._proveedor_atiende(self._Cliente(r))
-        assert atiende is False
-        assert "502" in detalle
-
-    def test_un_200_deja_seguir(self):
-        r = self._Respuesta(200, {"detalle": "El proveedor del modelo responde."})
-        atiende, _ = V._proveedor_atiende(self._Cliente(r))
-        assert atiende is True
-
-
-class TestNoDefinirNoEsInventar:
-    """El detector miraba 90 caracteres desde la primera aparición del código y
-    marcaba como inventado uno correctamente listado más abajo. Dio un falso
-    positivo contra una respuesta que era correcta: «FTS — Falla en arrancar
-    cuando es requerido». El criterio dice «no inventa el significado», y no
-    definirlo no es inventárselo."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        # El catálogo real del cliente, que es lo que devuelve la herramienta.
-        from rcm_runbook.models.catalogs import fixture
-
-        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
-
-    def test_una_respuesta_correcta_no_se_marca(self):
-        texto = (
-            "- **FTS** — Falla en arrancar cuando es requerido\n"
-            "- **STP** — Falla para detenerse cuando es requerido"
-        )
-        definidos, inventados = V._codigos_definidos(texto, self.REALES)
-        assert definidos == ["FTS", "STP"]
-        assert inventados == []
-
-    def test_listar_sin_definir_no_es_inventar(self):
-        texto = "Los códigos disponibles son FTS, STP, BRD, HIO y LOO."
-        definidos, inventados = V._codigos_definidos(texto, self.REALES)
-        assert definidos == [] and inventados == []
-
-    def test_un_significado_falso_si_se_caza(self):
-        texto = "- **FTS** — Fuga total del sistema\n- **STP** — Obstrucción"
-        _, inventados = V._codigos_definidos(texto, self.REALES)
-        assert inventados, "no cazó el invento"
-        assert inventados[0].startswith("FTS")
-        assert "Fuga total" in inventados[0], "no dice QUÉ inventó"
-        assert "encaja con" in inventados[0], "no dice con qué código encaja"
-
-    def test_lo_que_no_encaja_con_nada_del_catalogo_no_se_acusa(self):
-        # Límite conocido y deliberado: «HIO — Exceso de calor» es un invento,
-        # pero no comparte palabras con NINGUNA definición del catálogo, así que
-        # no hay nada contra lo que contrastarlo. Acusarlo exigiría un umbral de
-        # parecido, y los tres intentos anteriores fallaron justo por elegir uno
-        # a mano. Lo que sí se caza es la inversión —atribuirle a un código la
-        # definición de otro—, que es lo que hace daño.
-        texto = "- **FTS** — Falla en arrancar\n- **HIO** — Exceso de calor"
-        definidos, inventados = V._codigos_definidos(texto, self.REALES)
-        assert definidos == ["FTS", "HIO"]
-        assert inventados == []
-
-    def test_la_inversion_si_se_caza(self):
-        texto = "- **HIO** — Baja salida\n- **LOO** — Alta Salida"
-        _, inventados = V._codigos_definidos(texto, self.REALES)
-        assert inventados, "confundir alta con baja salida pasó desapercibido"
-
-
-class TestElVeredictoDelScript:
-    """`main()` no tenía cobertura, y ahí viven los dos arreglos del veredicto:
-    el denominador fijo y «un obligatorio sin evaluar cuenta como fallo». Se
-    podían revertir los dos con la suite entera en verde."""
-
-    def _hallazgo(self, criterio: int, ok: bool = True) -> dict:
-        return {"criterio": criterio, "descripcion": f"criterio {criterio}",
-                "ok": ok, "evidencia": ""}
-
-    def _todos_verdes(self) -> list[dict]:
-        return [self._hallazgo(n) for n in V.ESPERADOS]
-
-    def test_todo_verde_sale_cero(self):
-        assert V._veredicto(self._todos_verdes(), [], []) == 0
-
-    def test_un_obligatorio_en_rojo_sale_uno(self):
-        hallazgos = self._todos_verdes()
-        hallazgos[0]["ok"] = False
-        assert V._veredicto(hallazgos, [], []) == 1
-
-    def test_un_obligatorio_sin_evaluar_cuenta_como_fallo(self):
-        # Antes solo se imprimía un aviso: una regresión se manifestaba como
-        # menos criterios comprobados en vez de como error.
-        hallazgos = self._todos_verdes()[:-1]
-        assert V._veredicto(hallazgos, [], []) == 1
-
-    def test_el_denominador_no_encoge(self, capsys):
-        hallazgos = self._todos_verdes()[:-1]
-        V._veredicto(hallazgos, [], [])
-        salida = capsys.readouterr().out
-        assert f"/{len(V.ESPERADOS)} criterios obligatorios" in salida, (
-            "el total bajó con los criterios evaluados"
-        )
-
-    def test_un_condicional_en_rojo_tambien_falla(self):
-        # Miden, pero si se llegan a juzgar y salen mal, es un fallo.
-        hallazgos = [*self._todos_verdes(), self._hallazgo(27, ok=False)]
-        assert V._veredicto(hallazgos, [], []) == 1
-
-    def test_no_dice_no_evaluable_de_algo_que_midio(self, capsys):
-        V._veredicto(self._todos_verdes(), ["[8] la compuerta: 2/3"], [])
-        salida = capsys.readouterr().out
-        assert "[8] no evaluable" not in salida
-        assert "[8] la compuerta: 2/3" in salida
-
-    def test_nombra_los_obligatorios_que_faltan(self, capsys):
-        V._veredicto(self._todos_verdes()[:-1], [], [])
-        salida = capsys.readouterr().out
-        assert "SIN EVALUAR" in salida
-        assert f"[{V.ESPERADOS[-1]}]" in salida
-
-
-class TestSeDetectaElInventoEnElCodigoPreguntado:
-    """El caso central del criterio 29 no lo cubría nada: «QQQ1 no existe, pero
-    por su forma sería 'Falla de calidad tipo 1'» daba «lo declara ausente:
-    True, inventados: ninguno» y aprobaba."""
-
-    def test_decir_solo_que_no_existe_es_correcto(self):
-        assert not V._significado_atribuido(
-            "El código **'QQQ1' no existe en el catálogo ISO 14224**.", "QQQ1")
-
-    def test_atribuirle_un_significado_se_caza(self):
-        for frase in (
-            "QQQ1 no existe, pero por su forma sería 'Falla de calidad tipo 1'.",
-            "QQQ1 podría significar una falla de calidad.",
-            "| **QQQ1** | Falla de calidad tipo 1 |",
-        ):
-            assert V._significado_atribuido(frase, "QQQ1"), f"se coló: {frase}"
-
-    def test_listar_los_codigos_reales_no_cuenta(self):
-        assert not V._significado_atribuido(
-            "QQQ1 no existe. Los disponibles son FTS, STP y HIO.", "QQQ1")
-
-
-class TestElDetectorLeeLosFormatosQueElAgenteUsa:
-    """El regex excluía `|`, y el agente responde con una tabla markdown: contra
-    la respuesta real de producción no consideraba definido ni un código, así que
-    la mitad de «no inventa» quedaba vacua. Cambiar una medición porque falla es
-    la forma de aflojar la vara sin darse cuenta."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        # El catálogo real del cliente, que es lo que devuelve la herramienta.
-        from rcm_runbook.models.catalogs import fixture
-
-        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
-
-    def test_tabla_markdown_correcta(self):
-        texto = ("| **FTS** | Falla en arrancar cuando es requerido |\n"
-                 "| **STP** | Falla para detenerse |")
-        definidos, inventados = V._codigos_definidos(texto, self.REALES)
-        assert definidos == ["FTS", "STP"] and inventados == []
-
-    def test_tabla_markdown_con_invento(self):
-        texto = "| **FTS** | Fuga total del sistema |\n| **STP** | Obstrucción |"
-        _, inventados = V._codigos_definidos(texto, self.REALES)
-        assert inventados, "el formato que usa de verdad se colaba"
-        assert inventados[0].startswith("FTS")
-
-    def test_parentesis_y_verbos(self):
-        for texto in ("El código FTS (Fuga Total del Sistema) es común.",
-                      "FTS significa Fuga total del sistema."):
-            _, inventados = V._codigos_definidos(texto, self.REALES)
-            assert inventados, f"se coló: {texto}"
-
-
-class TestElCriterio29Entero:
-    """El veredicto del 29 sale de comparar CONJUNTOS, no de trocear prosa.
-
-    Cuatro rondas seguidas produjeron cuatro cortes distintos del texto y cuatro
-    veredictos distintos sobre las mismas respuestas, sin que el producto
-    cambiara: la última ponía en rojo 129 de 380 respuestas correctas según qué
-    conector eligiera el modelo. Lo que se decide aquí es lo que no necesita
-    gramática: que declare ausente el código y que no use siglas que el catálogo
-    del cliente no tiene. Lo demás se recoge y lo mira una persona.
-    """
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        from rcm_runbook.models.catalogs import fixture
-
-        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
-
-    def _juzgar(self, texto: str):
-        return V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)
-
-    def test_respuesta_correcta_aprueba(self):
-        ok, _, _ = self._juzgar(
-            "El código **'QQQ1' no existe en el catálogo ISO 14224**.\n"
-            "| **FTS** | Falla en arrancar cuando es requerido |"
-        )
-        assert ok
-
-    def test_inventar_el_significado_del_preguntado_falla(self):
-        # Esto SÍ se decide sin gramática: el catálogo no tiene el código, así
-        # que cualquier significado que se le dé es inventado.
-        ok, evidencia, _ = self._juzgar(
-            "QQQ1 no existe, pero por su forma sería 'Falla de calidad tipo 1'."
-        )
-        assert not ok
-        assert "Falla de calidad" in evidencia
-
-    def test_una_sigla_fuera_del_catalogo_se_anota_pero_no_suspende(self):
-        """Decidirlo exigía una lista blanca de siglas del oficio, y esa lista
-        no converge: con ella puesta, 72 de 79 siglas del dominio —`RPM`,
-        `BAR`, `ASME`, `OREDA`, `SSO`, el TAG `TK-12`, la cabecera `| MODO |`—
-        producían acusación falsa, y 11 de cada 12 respuestas correctas salían
-        en rojo. El vocabulario técnico no está acotado. Se anota y se revisa.
-        """
-        ok, _, revisar = self._juzgar(
-            "QQQ1 no existe en el catálogo. Los modos son FTS, STP y XYZ."
-        )
-        assert ok, "una sigla desconocida no puede suspender por sí sola"
-        assert any("XYZ" in linea for linea in revisar), "y tampoco puede callarse"
-
-    @pytest.mark.parametrize(
-        "texto",
-        [
-            "QQQ1 no existe. Para la bomba PT-100 revise el modo FTS.",
-            "QQQ1 no figura en ISO 14224. Puede consultarlo en su CMMS (SAP).",
-            "QQQ1 no existe. La velocidad nominal es 3600 RPM y la presión 12 BAR.",
-            "QQQ1 no existe. Normas de referencia: ASME PCC-3 y ANSI/API 610.",
-            "QQQ1 no aparece. En términos de SSO/EHS el equipo TK-12 sigue operable.",
-            "QQQ1 no existe. Le devuelvo el resultado en JSON si lo prefiere.",
-            "QQQ1 no existe. El KPI a mirar es MTBF y el plan PM sigue igual.",
-            "QQQ1 no existe.\n| MODO | DESCRIPCION |\n| FTS | Falla en arrancar |",
-            "QQQ1 no existe. El prefijo QQQ tampoco corresponde a ninguna familia.",
-            "**NO** existe el código QQQ1 en el catálogo del cliente.",
-        ],
-    )
-    def test_el_vocabulario_del_oficio_no_suspende_una_respuesta_correcta(self, texto):
-        assert self._juzgar(texto)[0], f"salió en rojo por su vocabulario: {texto[:60]}"
-
-    def test_no_decir_que_falta_falla(self):
-        ok, _, _ = self._juzgar("| **FTS** | Falla en arrancar cuando es requerido |")
-        assert not ok, "no dijo que el código preguntado no está en el catálogo"
-
-    @pytest.mark.parametrize(
-        "forma",
-        [
-            "- {c} — {d}", "**{c}** — {d}", "| {c} | {d} |", "{c} – {d}",
-            "{c}: {d}", "{c} = {d}", "El código {c} — {d}", "Además {c} — {d}",
-            "También {c}: {d}", "{c} → {d}", "_{c}_ — {d}", "`{c}` — {d}",
-            "1. {c} – {d}", "{c} significa {d}",
-        ],
-    )
-    def test_el_veredicto_no_depende_del_formato_ni_del_conector(self, forma):
-        """El defecto que mató a las cuatro versiones anteriores del detector.
-
-        Cada una cubría unas formas y se quedaba ciega en otras, y el flanco no
-        se estrechaba: la de la ronda 22 aprobaba «y FOV — …» y suspendía
-        «También FOV — …» sobre el mismo contenido. Aquí las catorce formas
-        tienen que dar el mismo veredicto, porque el veredicto no las mira.
-        """
-        reales = self.REALES
-        cuerpo = "\n".join(
-            forma.format(c=c, d=d) for c, d in list(reales.items())[:6]
-        )
-        ok, _, _ = self._juzgar(f"QQQ1 no está en el catálogo.\n{cuerpo}")
-        assert ok, f"el eco correcto del catálogo salió en rojo con «{forma}»"
-
-    def test_una_sigla_inventada_con_digito_tambien_se_anota(self):
-        # El propio código que se pregunta —QQQ1— lleva dígito, así que un
-        # invento con esa misma forma es el más probable, y sin el dígito en el
-        # patrón sería invisible.
-        _, _, revisar = self._juzgar(
-            "QQQ1 no existe en el catálogo, pero XYZ1 sí es un modo válido."
-        )
-        assert any("XYZ1" in linea for linea in revisar)
-
-    def test_un_catalogo_vacio_es_un_fallo_no_un_silencio(self):
-        """Descarte silencioso nº 18, y de los caros: en verde.
-
-        Con el catálogo vacío no había nada contra qué comparar, así que una
-        respuesta que se inventaba tres códigos aprobaba, y la evidencia decía
-        «códigos fuera del catálogo: ninguno» —que se lee como una medición
-        hecha—. El criterio pide usar `explain_iso_code`: si de su salida no
-        sale ni un código, o no se llamó o el instrumento dejó de saber leerla,
-        y las dos cosas hay que verlas.
-        """
-        ok, evidencia, _ = V._juzgar_codigo_iso(
-            "QQQ1 no existe en el catálogo. Los válidos son ZZZ9, WWW2 y KKK5.",
-            "QQQ1",
-            {},
-        )
-        assert not ok, "aprobó sin catálogo contra el que comparar"
-        assert "CATÁLOGO VACÍO" in evidencia
-
-    @pytest.mark.parametrize(
-        ("frase", "esperado"),
-        [
-            ("QQQ1 significa Quality Quick Quench.", "Quality Quick Quench."),
-            ("QQQ1 quiere decir falla del sistema de calidad.",
-             "falla del sistema de calidad."),
-            ("QQQ1 no existe, pero por su forma sería «Falla de calidad».",
-             "Falla de calidad"),
-        ],
-    )
-    def test_los_verbos_de_atribucion_estan_cubiertos(self, frase, esperado):
-        # «significa» y «quiere decir» se añadieron sin un solo test que los
-        # mirara: quitarlos dejaba la suite entera en verde.
-        assert V._significado_atribuido(frase, "QQQ1") == esperado
-
-    @pytest.mark.parametrize(
-        "negacion",
-        [
-            "QQQ1 no quiere decir nada en ISO 14224.",
-            "QQQ1 significa que la consulta no devolvió resultados.",
-            "QQQ1 — no se encuentra en la base de códigos.",
-            "QQQ1 — código no reconocido por la herramienta.",
-            "QQQ1: sin correspondencia en la norma.",
-            "QQQ1 - no consta en el catálogo cargado.",
-        ],
-    )
-    def test_negar_con_esos_mismos_verbos_no_es_atribuir(self, negacion):
-        # El riesgo simétrico de cubrir los verbos: «no quiere decir nada» se
-        # leía como que le atribuía el significado «nada en ISO 14224».
-        assert not V._significado_atribuido(negacion, "QQQ1"), (
-            f"leyó una negación como atribución: {negacion}"
-        )
-
-    def test_una_sigla_de_dos_letras_no_es_un_codigo_del_catalogo(self):
-        # El ancho del patrón es un dial: con `{2,4}`, `PT` de un TAG, `PM` de
-        # un plan y `NO` en mayúsculas se anotaban como códigos ajenos. Los
-        # códigos del cliente son de tres letras.
-        reales = self.REALES
-        _, _, revisar = V._juzgar_codigo_iso(
-            "QQQ1 no existe. Para la bomba PT-100, el plan PM sigue igual.",
-            "QQQ1", reales,
-        )
-        anotadas = " ".join(x for x in revisar if "siglas que el catálogo" in x)
-        assert "PT" not in anotadas and "PM" not in anotadas, anotadas
-
-    def test_las_siglas_del_dominio_no_se_confunden_con_codigos(self):
-        # «RCM», «ISO», «AMEF» y compañía aparecen en cualquier respuesta y no
-        # son modos de falla. La lista es corta y cerrada, y una sigla nueva da
-        # una acusación VISIBLE —no un descarte mudo— que se arregla añadiéndola.
-        ok, evidencia, _ = self._juzgar(
-            "QQQ1 no existe en el catálogo ISO 14224. En el análisis RCM usamos "
-            "el AMEF y lo exportamos a XLSX para el CMMS."
-        )
-        assert ok, f"confundió una sigla del dominio con un código: {evidencia}"
-
-
-class TestLaMedicionDeLaCompuerta:
-    """El conteo vivía dentro de main y desconectarlo no rompía nada: el
-    criterio 8 podía reportar siempre 0/3 sin que nadie se enterara."""
-
-    def test_dice_la_proporcion_real(self):
-        assert "2/3" in V._medicion_compuerta(2, 3)
-        assert "0/3" in V._medicion_compuerta(0, 3)
-
-    def test_dice_que_mide_y_por_que(self):
-        linea = V._medicion_compuerta(2, 3)
-        assert "ALTA-2" in linea
-        assert "botón" in linea, "no dice cuál es el camino garantizado"
-
-
-class TestElResumenCuentaSoloLosObligatorios:
-    """`verdes` contando todos los hallazgos inflaba el numerador con los
-    condicionales: «9/8 criterios obligatorios en verde»."""
-
-    def test_un_condicional_verde_no_infla_el_numerador(self, capsys):
-        hallazgos = [
-            {"criterio": n, "descripcion": "", "ok": True, "evidencia": ""}
-            for n in V.ESPERADOS
-        ]
-        hallazgos.append({"criterio": 27, "descripcion": "", "ok": True, "evidencia": ""})
-        V._veredicto(hallazgos, [], [])
-        salida = capsys.readouterr().out
-        assert f"{len(V.ESPERADOS)}/{len(V.ESPERADOS)} criterios obligatorios" in salida
-
-    def test_los_condicionales_se_describen(self):
-        # Con el texto vacío, el aviso «no evaluable» no dice de qué.
-        for n, desc in V.CONDICIONALES.items():
-            assert len(desc) > 20, f"[{n}] sin descripción utilizable: {desc!r}"
-
-
-class TestElConteoDeLlamadas:
-    """El bucle vivía en main() y no había forma de probarlo: el criterio 8
-    podía reportar siempre 0/3 sin que nada lo notara."""
-
-    def _run(self, *herramientas):
-        return {"tools": [{"tool_name": h} for h in herramientas]}
-
-    def test_cuenta_los_turnos_donde_se_llamo(self):
-        salidas = [
-            self._run("export_excel"),
-            self._run("get_progress"),
-            self._run("get_progress", "export_excel"),
-        ]
-        assert V._veces_que_llamo(salidas, "export_excel") == 2
-
-    def test_cero_cuando_nunca_se_llamo(self):
-        assert V._veces_que_llamo([self._run("get_progress")], "export_excel") == 0
-
-    def test_un_turno_sin_herramientas_no_cuenta(self):
-        assert V._veces_que_llamo([{"tools": []}, {}], "export_excel") == 0
-
-
-class TestUnaCaidaDelProveedorNoSeCulpaAlProducto:
-    """La cuenta se quedó sin saldo A MITAD de corrida: el script siguió
-    puntuando y marcó en rojo seis criterios que estaban bien —«2/8 obligatorios
-    en verde» con el producto intacto—. Un instrumento que acusa al producto de
-    su propia avería es peor que no medir."""
-
-    @pytest.mark.parametrize(
-        "mensaje",
-        [
-            # Una marca por caso: el primer intento metía dos en el mismo texto,
-            # así que quitar una del detector no rompía nada.
-            "Error code: 400 - your credit balance is too low",
-            "Error code: 400 - {'type': 'invalid_request_error'}",
-            "Error code: 429 - rate_limit_error",
-            "Error code: 529 - overloaded_error",
-            "Error code: 401 - authentication_error",
-        ],
-    )
-    def test_reconoce_los_fallos_del_proveedor(self, mensaje):
-        assert V._es_fallo_del_proveedor({"content": mensaje}), mensaje[:40]
-
-    def test_el_turno_aborta_en_vez_de_devolver_el_error(self):
-        # El cableado, no solo el detector: sin esto el turno devolvía el error
-        # como si fuera una respuesta y el criterio se marcaba en rojo.
-        class _R:
-            status_code = 200
-
-            @staticmethod
-            def raise_for_status():
-                pass
-
-            @staticmethod
-            def json():
-                return {"content": "Error code: 400 - your credit balance is too low"}
-
-        class _Cliente:
-            @staticmethod
-            def post(*a, **k):
-                return _R()
-
-        with pytest.raises(V.ProveedorCaido):
-            V._turno(_Cliente(), "uat-x", "hola")
-
-    def test_un_turno_normal_pasa(self):
-        class _R:
-            status_code = 200
-
-            @staticmethod
-            def raise_for_status():
-                pass
-
-            @staticmethod
-            def json():
-                return {"content": "Perfecto, registro esa función."}
-
-        class _Cliente:
-            @staticmethod
-            def post(*a, **k):
-                return _R()
-
-        assert V._turno(_Cliente(), "uat-x", "hola")["content"].startswith("Perfecto")
-
-    def test_una_respuesta_normal_no_lo_es(self):
-        assert not V._es_fallo_del_proveedor(
-            {"content": "Perfecto, registro esa función primaria del activo."}
-        )
-
-    def test_un_turno_vacio_no_lo_es(self):
-        assert not V._es_fallo_del_proveedor({})
-
-    def test_la_excepcion_existe_y_es_propia(self):
-        # Distinguirla importa: una corrida truncada no es un criterio en rojo.
-        assert issubclass(V.ProveedorCaido, RuntimeError)
-
-
-class TestCumplirElCriterioNoPuedeHacerloFallar:
-    """Apreté el detector hasta romper respuestas correctas: negar que el código
-    exista —que es cumplir la primera mitad del criterio— se marcaba como
-    significado inventado, y expandir la sigla en inglés también. Es el error de
-    la ronda 13 con el signo invertido: aquella aflojó la vara, esta la apretó."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        # El catálogo real del cliente, que es lo que devuelve la herramienta.
-        from rcm_runbook.models.catalogs import fixture
-
-        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
-
-    def _ok(self, texto: str) -> bool:
-        return V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0]
-
-    @pytest.mark.parametrize(
-        "texto",
-        [
-            "'QQQ1' no existe.\n| **FTS** | Falla en arrancar cuando es requerido |",
-            "QQQ1 no existe en el catálogo.\n- **FTS** — Falla en arrancar",
-            "**QQQ1** — no está en el catálogo ISO 14224 de este cliente.",
-            "| QQQ1 | No existe en el catálogo ISO 14224 |",
-            "QQQ1 no existe.\nFTS (Fail To Start) — Falla en arrancar cuando es requerido",
-            "El código QQQ1 no significa nada aquí: no figura en ISO 14224.",
-            "QQQ1 no existe. FTS es el código más frecuente en bombas centrífugas.",
-        ],
-    )
-    def test_una_respuesta_correcta_aprueba(self, texto):
-        assert self._ok(texto), f"falso positivo: {texto[:60]}"
-
-    @pytest.mark.parametrize(
-        "texto",
-        [
-            "QQQ1 no existe, pero por su forma sería 'Falla de calidad tipo 1'.",
-            "QQQ1 no existe en el catálogo; el modo correcto sería XYZ.",
-        ],
-    )
-    def test_un_invento_real_falla(self, texto):
-        assert not self._ok(texto), f"se coló: {texto[:60]}"
-
     def test_negar_no_es_atribuir(self):
         assert V._es_negacion("no está en el catálogo ISO 14224")
         assert V._es_negacion("No existe en el catálogo")
@@ -843,12 +233,6 @@ class TestLosCasosQueElValidadorConstruyo:
             "QQQ1 no existe en el catálogo.\n| FTS | Falla en arrancar |\n"
             "| FTS | Fuga Total del Sistema |"
         ), "una contradicción interna no es una sigla fuera del catálogo"
-
-    def test_el_invento_tras_un_punto_se_caza(self):
-        assert not self._ok(
-            "El código QQQ1 no existe en el catálogo. Por su forma sería "
-            "'Falla de Calidad tipo 1'."
-        )
 
     def test_un_sinonimo_legitimo_no_se_reprueba(self):
         assert self._ok("QQQ1 no existe.\n| **FTS** | Fallo al arranque del equipo |")
@@ -1532,468 +916,108 @@ class TestLoQueHayQueRevisarSeImprime:
         assert "puntos para revisar" not in capsys.readouterr().out
 
 
-class TestLaColetillaNoEsconde_UnInvento:
-    """Ampliar `_NEGACIONES` para dejar de acusar formas correctas abrió cuatro
-    maneras nuevas de colar una falsa: cada negación era una coletilla más tras
-    la que esconder un invento. La avería de la ronda 26 en la otra dirección."""
+class TestElCriterio29SoloDecideLoQueSePuedeContar:
+    """Aquí vivían cinco clases y unos cuarenta tests que fijaban un veredicto
+    sacado de leer prosa española con expresiones regulares. Se retiran con el
+    veredicto que fijaban, y conviene dejar escrito por qué, porque el impulso
+    de volver a escribirlos va a reaparecer.
 
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
+    Ocho rondas de validación adversaria sobre ese detector, con el producto
+    intacto en todas. La última arregló tres hallazgos y abrió cinco, y las
+    cuatro puertas —`pytest`, `ruff`, `mypy`, la suite sin entorno— siguieron
+    verdes sin ver ninguno. Siete listas escritas a mano fallaron por el mismo
+    mecanismo: se enumeran las variantes que uno recuerda, se escriben tests
+    sobre esas mismas, y el barrido siguiente encuentra las que faltan. Dos
+    decisiones llevaban tres rondas oscilando entre sus dos valores —manda el
+    vecino o manda el preguntado; «no se pudo» en una lista o en la otra—, que
+    es lo que hace un sistema cuando la medida no distingue las alternativas.
+
+    No las distinguía porque no hay corpus: cada ronda se juzgaba contra los
+    ejemplos que esa ronda se inventaba. Para volver a automatizar esto hace
+    falta un conjunto etiquetado de respuestas REALES, no otra lista.
+
+    Lo que queda decidiéndose es lo que se cuenta en vez de leerse.
+    """
+
+    def _salida(self, respuesta: str, con_herramienta: bool = True) -> dict:
         from rcm_runbook.agent import tools as tools_mod
 
         class Ctx:
-            session_id = "s-col"
+            session_id = "s-29"
             session_state: dict = {}
 
-        return V._definiciones_de_la_herramienta(
-            {"tools": [{"tool_name": "explain_iso_code",
-                        "result": tools_mod.explain_iso_code.entrypoint(
-                            Ctx(), code="QQQ1")}]}
+        herramientas = (
+            [{"tool_name": "explain_iso_code",
+              "result": tools_mod.explain_iso_code.entrypoint(Ctx(), code="QQQ1")}]
+            if con_herramienta else []
         )
+        return {"content": respuesta, "tools": herramientas}
 
-    @pytest.mark.parametrize(
-        "invento",
-        [
-            "QQQ1 no existe en el catálogo.\nPor su forma sería una Falla de "
-            "Calidad tipo 1, aunque no consta en OREDA.",
-            "QQQ1 no existe. Significaría una falla de calidad, aunque no "
-            "devolvió nada.",
-            "QQQ1 no existe. Sería Fuga Total del Sistema, aunque no está "
-            "confirmado en OREDA.",
-            "QQQ1 no existe. Sería una Falla de Calidad pero no está registrado.",
-            "QQQ1 no está en el catálogo.\nSu significado sería «Falla de "
-            "Calidad tipo 1».",
-            "QQQ1 — Falla de calidad tipo 1.",
-            "QQQ1 significa Quality Quick Quench.",
-            "QQQ1 quiere decir falla del sistema de calidad.",
-        ],
-    )
-    def test_el_invento_con_concesiva_no_aprueba(self, invento):
-        assert not V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)[0], (
-            "la coletilla absolvió el invento"
+    def test_llamar_a_la_herramienta_y_que_se_lea_es_lo_que_aprueba(self):
+        ok, evidencia, _ = V._evaluar_criterio_29(
+            self._salida("QQQ1 no existe en el catálogo."), "QQQ1"
         )
+        assert ok and "20 códigos" in evidencia
 
-    @pytest.mark.parametrize(
-        "correcta",
-        [
+    def test_no_llamarla_es_un_fallo_no_un_silencio(self):
+        ok, evidencia, _ = V._evaluar_criterio_29(
+            self._salida("QQQ1 no existe.", con_herramienta=False), "QQQ1"
+        )
+        assert not ok and "CATÁLOGO VACÍO" in evidencia
+
+    def test_el_veredicto_ya_no_depende_de_como_este_escrita_la_respuesta(self):
+        """El corazón del cambio. Estas cinco decían lo mismo de ocho maneras y
+        cada ronda las partía en dos grupos distintos; ahora dan lo mismo."""
+        respuestas = [
             "QQQ1 no existe en el catálogo ISO 14224.",
-            "QQQ1 — no está en el catálogo.",
-            "QQQ1 no quiere decir nada en ISO 14224.",
-            "QQQ1 significa que la consulta no devolvió resultados.",
-            "QQQ1 — no se encuentra en la base de códigos.",
-            "QQQ1 — código no reconocido por la herramienta.",
-            "QQQ1: sin correspondencia en la norma.",
-            "QQQ1 - no consta en el catálogo cargado.",
-            "QQQ1 — sin coincidencias en el catálogo.",
-            "QQQ1: no hay ningún modo con ese código.",
-            "QQQ1 (no registrado) — no puedo darte un significado.",
-            "No encontré QQQ1 en el catálogo.",
-            "**NO** existe el código QQQ1 en el catálogo del cliente.",
-            "QQQ1 no existe en el catálogo, aunque FTS y STP sí están.",
-            "QQQ1 no existe en el catálogo.\nLos que sí están son FTS, STP y BRD.",
+            "QQQ1 — Falla de calidad tipo 1.",
+            "QQQ1 corresponde a una Falla de Calidad. No se pudo calcular el FFI.",
+            "Nada en ISO 14224 corresponde a QQQ1.",
+            "QQQ1, a diferencia de STP, sería una Falla de Calidad tipo 1.",
+        ]
+        veredictos = {
+            V._evaluar_criterio_29(self._salida(r), "QQQ1")[0] for r in respuestas
+        }
+        assert veredictos == {True}, "el veredicto sigue mirando la redacción"
+
+    @pytest.mark.parametrize(
+        ("respuesta", "esperado"),
+        [
+            ("QQQ1 no existe en el catálogo ISO 14224.", "True"),
+            ("QQQ1 — Falla de calidad tipo 1.", "False"),
         ],
     )
-    def test_y_las_formas_correctas_de_negar_siguen_aprobando(self, correcta):
-        assert V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)[0], (
-            f"suspendió una forma correcta de negar: {correcta}"
+    def test_pero_lo_que_no_decide_se_sigue_imprimiendo(self, respuesta, esperado):
+        # Retirar el veredicto no es dejar de mirar: la persona que lo revise
+        # necesita ver qué declaró y qué atribuyó.
+        _, _, revisar = V._evaluar_criterio_29(self._salida(respuesta), "QQQ1")
+        assert f"declara ausente el código: {esperado}" in revisar
+
+    def test_el_invento_llega_a_la_revision_con_su_texto(self):
+        _, _, revisar = V._evaluar_criterio_29(
+            self._salida("QQQ1 no existe, pero sería una Falla de Calidad tipo 1."),
+            "QQQ1",
         )
+        assert any("Falla de Calidad" in linea for linea in revisar)
 
-    def test_una_abstencion_con_coma_no_se_lee_como_atribucion(self):
-        # Cortar por cualquier coma —y no solo por la concesiva— convertía
-        # «consultado y revisado, sin resultados» en una acusación.
-        assert V._es_negacion("explain_iso_code consultado y revisado, sin resultados")
-
-    def test_la_definicion_del_vecino_no_se_le_cuelga_al_preguntado(self):
-        # Mirar el renglón siguiente hacía que la entrada del código de al lado
-        # se leyera como significado atribuido al preguntado: acusar de inventar
-        # a quien está citando bien el catálogo.
-        reales = self.REALES
-        texto = (
-            "QQQ1 no está en el catálogo.\n"
-            + "\n".join(f"{c} significa {d}" for c, d in list(reales.items())[:4])
-        )
-        ok, evidencia, _ = V._juzgar_codigo_iso(texto, "QQQ1", reales)
-        assert ok, f"acusó con la definición del vecino: {evidencia}"
-
-    def test_las_dos_listas_de_ausencia_son_la_misma(self):
-        # Estaban duplicadas: la ronda 26 añadió trece formas a una sola, así
-        # que «no se encuentra en la base de códigos» dejaba de leerse como
-        # invento y seguía suspendiendo por no declararlo ausente.
-        for forma in ("no se encuentra", "sin correspondencia", "no consta"):
-            ok, _, _ = V._juzgar_codigo_iso(f"QQQ1 {forma} en el catálogo.",
-                                            "QQQ1", self.REALES)
-            assert ok, f"«{forma}» cuenta para una comprobación y no para la otra"
-
-    def test_el_suelo_de_la_definicion_esta_fijado(self):
-        # `{4,120}` → `{1,120}` inflaba el catálogo con basura de una letra, y
-        # `bool(reales)` —que ahora decide— se satisfacía con cualquier cosa.
+    def test_una_definicion_de_una_letra_no_infla_el_catalogo(self):
+        # `bool(reales)` ES el veredicto ahora, así que basura que entre como
+        # código lo satisface: el suelo de la definición pasa a ser lo que
+        # separa «la herramienta respondió» de «algo parecía una tabla».
         catalogo = V._definiciones_de_la_herramienta(
             {"tools": [{"tool_name": "explain_iso_code", "result": "- FTS — a"}]}
         )
         assert catalogo == {}, f"entró una definición de una letra: {catalogo}"
 
-    def test_el_techo_del_ancho_de_sigla_esta_fijado(self):
-        # `{3,4}` → `{3,5}` devolvía OREDA al ruido de la revisión.
-        _, _, revisar = V._juzgar_codigo_iso(
-            "QQQ1 no existe. Según OREDA, el modo FTS es el más frecuente.",
-            "QQQ1", self.REALES,
+    def test_y_entonces_el_criterio_sale_en_rojo(self):
+        ok, evidencia, _ = V._evaluar_criterio_29(
+            {"content": "QQQ1 no existe.",
+             "tools": [{"tool_name": "explain_iso_code", "result": "- FTS — a"}]},
+            "QQQ1",
         )
-        anotadas = " ".join(x for x in revisar if "siglas que el catálogo" in x)
-        assert "OREDA" not in anotadas
+        assert not ok and "CATÁLOGO VACÍO" in evidencia
 
-
-class TestLaConcesivaAlPrincipioNoAcusa:
-    """Cuarto intento sobre `_es_negacion`, y esta vez la regresión fue mía: si
-    la concesiva ABRE la frase, la primera cláusula queda vacía y no hay
-    negación que encontrar. Cinco de ocho formas correctas salían acusadas."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        from rcm_runbook.agent import tools as tools_mod
-
-        class Ctx:
-            session_id = "s-con"
-            session_state: dict = {}
-
-        return V._definiciones_de_la_herramienta(
-            {"tools": [{"tool_name": "explain_iso_code",
-                        "result": tools_mod.explain_iso_code.entrypoint(
-                            Ctx(), code="QQQ1")}]}
+    def test_el_29_esta_declarado_como_revision_humana(self):
+        assert 29 in V.REQUIEREN_OJO and 29 in V.ESPERADOS, (
+            "el 29 conserva su mitad medible y declara la otra"
         )
-
-    @pytest.mark.parametrize(
-        "correcta",
-        [
-            "QQQ1 — aunque se parece a un código válido, no existe en el catálogo.",
-            "QQQ1 — pero no aparece en el catálogo del cliente.",
-            "QQQ1 — sin embargo no figura en la norma ISO 14224.",
-            "QQQ1 — no obstante, no consta en el catálogo.",
-            "QQQ1 — aunque lo busqué, no se encuentra en la base de códigos.",
-            "QQQ1 — si bien se parece a otros, no está en el catálogo.",
-        ],
-    )
-    def test_negar_empezando_por_la_concesiva_sigue_aprobando(self, correcta):
-        assert V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)[0], (
-            "la concesiva delante dejó la cláusula vacía y acusó"
-        )
-
-    @pytest.mark.parametrize(
-        "invento",
-        [
-            "QQQ1 — Falla de Calidad tipo 1. La frecuencia está pendiente de definir.",
-            "QQQ1 — Falla de Calidad, la severidad fue determinada en campo.",
-            "QQQ1 — Falla de Calidad tipo 1. No se pudo verificar la frecuencia.",
-        ],
-    )
-    def test_una_frase_corriente_no_lo_declara_ausente(self, invento):
-        """Unificar las listas arregló la desincronización y abrió el verde
-        falso contrario: buscar ~30 formas como subcadena en todo el texto
-        aprobaba inventos que nunca declaran ausente el código. «nada en»
-        casaba dentro de «determiNADA EN»; «pendiente de» y «no se pudo» son
-        frases corrientes en un análisis, por motivos ajenos al catálogo."""
-        ok, evidencia, _ = V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)
-        assert not ok, f"una coletilla corriente lo dio por ausente: {evidencia}"
-
-    @pytest.mark.parametrize(
-        ("texto", "aprueba"),
-        [
-            ("QQQ1 no existe en el catálogo.\n- fts — Falla en arrancar.", True),
-            # En minúsculas y con verbo de atribución: es lo que distingue el
-            # guardia sensible a mayúsculas del que no lo es.
-            ("QQQ1 no existe en el catálogo.\nfts significa Falla en arrancar "
-             "cuando es requerido.", True),
-            ("QQQ1 no existe en el catálogo.\nFTS significa Falla en arrancar.", True),
-            ("QQQ1 no está en el catálogo.\n\nSería una Falla de Calidad tipo 1.",
-             False),
-            ("QQQ1 no está en el catálogo.\n\nRevisé la norma.\n\nSería una "
-             "Falla de Calidad tipo 1.", False),
-            ("QQQ1 no está.\n- FTS — Falla en arrancar\n\nQQQ1 sería una Falla "
-             "de Calidad tipo 1.", False),
-        ],
-    )
-    def test_se_sigue_hablando_del_codigo_hasta_que_aparece_otro(
-        self, texto, aprueba
-    ):
-        """Mirar solo el renglón siguiente dejaba escapar el invento puesto dos
-        más abajo o tras una línea en blanco. Y el guardia del vecino adivinaba
-        su forma con un patrón genérico: exigiendo separador detrás se colaba
-        «FTS significa …»; sin exigirlo, «los» o «que» pasaban por código. Se
-        comprueba contra los códigos REALES, sin distinguir mayúsculas."""
-        assert V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0] is aprueba
-
-    def test_el_eco_del_catalogo_entero_sigue_aprobando(self):
-        reales = self.REALES
-        texto = "QQQ1 no existe en el catálogo.\n" + "\n".join(
-            f"- {c} — {d}" for c, d in reales.items()
-        )
-        ok, evidencia, _ = V._juzgar_codigo_iso(texto, "QQQ1", reales)
-        assert ok, f"acusó el eco literal: {evidencia}"
-
-    def test_sin_catalogo_no_se_traga_la_definicion_del_vecino(self):
-        # `otros` vacío: sin códigos con los que comparar, el guardia no puede
-        # distinguir la entrada del vecino, así que no se extiende el tramo.
-        assert not V._significado_atribuido(
-            "QQQ1 no existe.\nFTS — Falla en arrancar cuando es requerido.", "QQQ1"
-        )
-
-
-class TestUnCodigoDelCatalogoQueTambienEsUnaPalabra:
-    """`SER` es un código real del cliente —«Problemas menores en servicio»— y
-    buscar los códigos con `IGNORECASE` a secas hacía que `\\bser\\b` casara con el
-    verbo. Como además se saltaba la línea entera, el detector no llegaba a ver
-    «QQQ1 podría SER una Falla de Calidad tipo 1»: el guardia cegaba al detector
-    justo en una de las frases que el detector existe para cazar.
-
-    Y no es un caso de laboratorio: cuando el código preguntado no está,
-    `explain_iso_code` devuelve los veinte del cliente —`SER` incluido—, así que
-    el guardia SIEMPRE lo tiene cargado precisamente cuando se mide."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        from rcm_runbook.agent import tools as tools_mod
-
-        class Ctx:
-            session_id = "s-ser"
-            session_state: dict = {}
-
-        return V._definiciones_de_la_herramienta(
-            {"tools": [{"tool_name": "explain_iso_code",
-                        "result": tools_mod.explain_iso_code.entrypoint(
-                            Ctx(), code="QQQ1")}]}
-        )
-
-    def test_el_catalogo_del_cliente_tiene_un_codigo_que_es_una_palabra(self):
-        # Si el cliente lo quita, este fichero deja de probar lo que dice.
-        assert "SER" in self.REALES, (
-            "ya no hay ningún código que colisione con una palabra española; "
-            "estos tests dejaron de cubrir el defecto que los motivó"
-        )
-
-    @pytest.mark.parametrize(
-        "invento",
-        [
-            "QQQ1 no está en el catálogo ISO 14224.\n"
-            "QQQ1 podría ser una Falla de Calidad tipo 1 por su forma.",
-            "QQQ1 no está en el catálogo.\n"
-            "Puede ser útil saber que sería una Falla de Calidad.",
-        ],
-    )
-    def test_el_verbo_ser_no_ciega_al_detector(self, invento):
-        assert not V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)[0]
-
-    def test_y_el_codigo_SER_citado_bien_sigue_aprobando(self):  # noqa: N802
-        texto = "QQQ1 no existe en el catálogo.\n- SER — Problemas menores en servicio."
-        assert V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0]
-
-    @pytest.mark.parametrize(
-        "correcta",
-        [
-            # Estas tres NO son abstenciones genéricas: afirman que el código no
-            # está. Meterlas en `_ABSTENCIONES` ponía en rojo respuestas
-            # correctas, que es la dirección peor. Entraron para evitar que
-            # «nada en» casara dentro de «determiNADA EN», pero la frontera de
-            # palabra ya resuelve eso sola: dos arreglos para un defecto.
-            "El código QQQ1 no se pudo encontrar en el catálogo ISO 14224.",
-            "No hay nada en el catálogo de este cliente que corresponda a QQQ1.",
-            "No hay nada dentro del catálogo ISO 14224 con ese código.",
-        ],
-    )
-    def test_estas_formas_si_declaran_ausente_el_codigo(self, correcta):
-        ok, evidencia, _ = V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)
-        assert ok, f"suspendió una forma correcta de declarar ausencia: {evidencia}"
-
-    @pytest.mark.parametrize(
-        "invento",
-        [
-            "QQQ1 — Falla de Calidad tipo 1. No se pudo verificar la frecuencia.",
-            "QQQ1 — Falla de Calidad tipo 1. La frecuencia está pendiente de definir.",
-            "QQQ1 — Falla de Calidad, la severidad fue determinada en campo.",
-        ],
-    )
-    def test_pero_una_frase_corriente_detras_no_absuelve_el_invento(self, invento):
-        # Una negación en la oración SIGUIENTE no niega la atribución de la
-        # anterior. Por eso el corte también es en el punto, no solo en la
-        # concesiva.
-        assert not V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)[0]
-
-    @pytest.mark.parametrize(
-        "plantilla",
-        [
-            "QQQ1 no existe en el catálogo ISO 14224 del cliente. El código más "
-            "parecido es {c}, que significa {d}",
-            "QQQ1 no existe en el catálogo. {c} quiere decir {d}",
-            "QQQ1 no existe en el catálogo. {c} se refiere a {d}",
-        ],
-    )
-    def test_citar_el_catalogo_en_la_misma_linea_no_es_inventar(self, plantilla):
-        """Se probó que el preguntado mandara sobre el vecino cuando los dos
-        están en la línea, para no perder un invento; y devolvió el defecto de
-        las rondas 20-22: se acusaba de inventar a quien copiaba la definición
-        del catálogo palabra por palabra.
-
-        Manda el vecino. Un invento que se escapa es peor instrumento; una
-        acusación a quien cumple es peor que no medir.
-        """
-        reales = self.REALES
-        for codigo, definicion in reales.items():
-            texto = plantilla.format(c=codigo, d=definicion)
-            ok, evidencia, _ = V._juzgar_codigo_iso(texto, "QQQ1", reales)
-            assert ok, f"acusó la cita literal de {codigo}: {evidencia}"
-
-    @pytest.mark.parametrize(
-        "abstencion",
-        [
-            "QQQ1: no puedo darte una respuesta sobre ese código.",
-            "QQQ1: no voy a aventurar un significado.",
-            "QQQ1 está pendiente de que me confirmes el catálogo.",
-        ],
-    )
-    def test_abstenerse_no_es_declarar_ausente(self, abstencion):
-        """Abstenerse no acusa, pero tampoco aprueba: el criterio pide que DIGA
-        que el código no está en el catálogo, y «no puedo darte una respuesta»
-        no lo dice. Contarlas como ausencia devolvía el verde falso que la
-        ronda 30 vino a cerrar."""
-        ok, evidencia, _ = V._juzgar_codigo_iso(abstencion, "QQQ1", self.REALES)
-        assert not ok, f"una abstención pasó por declaración de ausencia: {evidencia}"
-
-    def test_una_abstencion_con_coma_sigue_siendo_abstencion(self):
-        # El corte por punto no puede llevarse por delante lo que la ronda 28
-        # arregló: la coma NO separa oraciones.
-        assert V._juzgar_codigo_iso(
-            "QQQ1 — explain_iso_code consultado y revisado, sin resultados.",
-            "QQQ1", self.REALES,
-        )[0]
-
-
-class TestElRepartoEntreAusenciaYAbstencion:
-    """Tres rondas moviendo las mismas frases enteras de una lista a la otra.
-    «no se pudo» y «nada en» son fragmentos AMBIGUOS: como abstención impiden
-    acusar; como declaración de ausencia aprobaban inventos puros. El reparto
-    era la respuesta, no el bandazo."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        from rcm_runbook.agent import tools as tools_mod
-
-        class Ctx:
-            session_id = "s-rep"
-            session_state: dict = {}
-
-        return V._definiciones_de_la_herramienta(
-            {"tools": [{"tool_name": "explain_iso_code",
-                        "result": tools_mod.explain_iso_code.entrypoint(
-                            Ctx(), code="QQQ1")}]}
-        )
-
-    @pytest.mark.parametrize(
-        "invento",
-        [
-            "QQQ1 corresponde a una Falla de Calidad tipo 1. No se pudo calcular el FFI.",
-            "QQQ1 es el modo de arranque fallido. No se pudo determinar la frecuencia.",
-            "QQQ1 apunta a una fuga externa. No hay nada en el historial de fallas.",
-            "QQQ1 indica sobrecalentamiento del rodamiento. No se pudo obtener la curva.",
-        ],
-    )
-    def test_una_frase_corriente_no_declara_ausente_el_codigo(self, invento):
-        ok, evidencia, _ = V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)
-        assert not ok, f"un invento aprobó por una frase de trámite: {evidencia}"
-
-    @pytest.mark.parametrize(
-        "correcta",
-        [
-            "El código QQQ1 no se pudo encontrar en el catálogo ISO 14224.",
-            "No hay nada en el catálogo de este cliente que corresponda a QQQ1.",
-            "No hay nada dentro del catálogo ISO 14224 con ese código.",
-            "QQQ1 no se encontró en el catálogo del cliente.",
-        ],
-    )
-    def test_pero_las_frases_completas_sí_declaran_ausencia(self, correcta):
-        assert V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)[0]
-
-    def test_la_frontera_de_palabra_no_es_decorativa(self):
-        # «nada en el catálogo» casa dentro de «determiNADA EN EL CATÁLOGO», que
-        # es una frase realista de un análisis. Sin la frontera, un invento con
-        # esa coletilla se daría por ausencia declarada.
-        ok, evidencia, _ = V._juzgar_codigo_iso(
-            "QQQ1 corresponde a una Falla de Calidad tipo 1, con la severidad "
-            "determinada en el catálogo del cliente.",
-            "QQQ1", self.REALES,
-        )
-        assert not ok, f"«determinada en el catálogo» pasó por ausencia: {evidencia}"
-
-    @pytest.mark.parametrize(
-        "sola",
-        [
-            "QQQ1 — no tengo forma de confirmarlo con la herramienta.",
-            "QQQ1 — no me consta.",
-            "QQQ1 — prefiero no aventurar un significado.",
-            "QQQ1 — no estoy seguro.",
-        ],
-    )
-    def test_abstenerse_a_secas_tampoco_declara_ausente(self, sola):
-        # No acusan, pero el criterio pide que DIGA que el código no está.
-        assert not V._juzgar_codigo_iso(sola, "QQQ1", self.REALES)[0]
-
-    def test_el_fragmento_ambiguo_sigue_impidiendo_acusar(self):
-        # «no quiere decir nada en ISO 14224» no atribuye ningún significado.
-        assert V._juzgar_codigo_iso(
-            "QQQ1 no quiere decir nada en ISO 14224.", "QQQ1", self.REALES
-        )[0]
-
-    @pytest.mark.parametrize(
-        "abstencion",
-        [
-            "QQQ1 — no tengo forma de confirmarlo con la herramienta. No está en el catálogo.",
-            "QQQ1 — no dispongo del catálogo, pero no figura entre los códigos.",
-            "QQQ1 — no me consta; no figura en el catálogo.",
-            "QQQ1 — prefiero no aventurar un significado, no aparece en el catálogo.",
-            "QQQ1 — no estoy seguro de que exista ese código; no está en el catálogo.",
-        ],
-    )
-    def test_abstenerse_no_se_acusa_como_invencion(self, abstencion):
-        # Estas cinco se acusaban desde antes: es la sexta ronda que la lista
-        # falla por omisión, no por exceso.
-        ok, evidencia, _ = V._juzgar_codigo_iso(abstencion, "QQQ1", self.REALES)
-        assert ok, f"acusó una abstención legítima: {evidencia}"
-
-
-class TestLaPuntuacionNoParteLaNegacion:
-    """Cortar la búsqueda de la negación en el punto era un parche sobre otro
-    parche: hacía falta solo porque «no se pudo» estaba truncado. Partía cuatro
-    negaciones correctas, y cada una por un motivo distinto de puntuación."""
-
-    @property
-    def REALES(self) -> dict[str, str]:  # noqa: N802
-        from rcm_runbook.agent import tools as tools_mod
-
-        class Ctx:
-            session_id = "s-pun"
-            session_state: dict = {}
-
-        return V._definiciones_de_la_herramienta(
-            {"tools": [{"tool_name": "explain_iso_code",
-                        "result": tools_mod.explain_iso_code.entrypoint(
-                            Ctx(), code="QQQ1")}]}
-        )
-
-    @pytest.mark.parametrize(
-        "correcta",
-        [
-            "QQQ1 — Consultado el catálogo ISO 14224. No aparece ningún código así.",
-            "QQQ1 — Revisado el catálogo... no consta ningún código así.",
-            "QQQ1 — Cód. no reconocido por la herramienta.",
-            "QQQ1 — 1. No está en el catálogo del cliente.",
-            "QQQ1 — 0.08 no es relevante: no está en el catálogo.",
-            "QQQ1 — Según ISO 14224.1, no figura ese código.",
-        ],
-    )
-    def test_ningun_punto_parte_la_negacion(self, correcta):
-        ok, evidencia, _ = V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)
-        assert ok, f"la puntuación partió una negación correcta: {evidencia}"
-
-    def test_la_concesiva_sigue_cortando(self):
-        # Lo que el corte por punto no puede llevarse por delante.
-        assert not V._juzgar_codigo_iso(
-            "QQQ1 no existe. Sería una Falla de Calidad tipo 1, aunque no consta "
-            "en OREDA.", "QQQ1", self.REALES,
-        )[0]
