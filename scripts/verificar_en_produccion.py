@@ -294,37 +294,56 @@ def _nucleo(texto: str) -> set[str]:
     return palabras
 
 
-CONCEPTOS_DE_LAS_SIGLAS = ("seguridad", "operacional", "control de calidad",
-                           "exploracion de edad")
+# Cada concepto del criterio 40, por RAÍCES y no por la frase literal.
+#
+# Exigir la cadena exacta medía la redacción, no el concepto: «exploración de
+# LA edad», «los CONTROLES de calidad», «consiste en EXPLORAR la EDAD» y un
+# salto de línea en medio salían todos en rojo, y ninguno es un fallo del
+# producto. Es el error de la ronda 13 con el signo invertido: aquella aflojó
+# la vara hasta aprobar lo malo, esta la apretó hasta rechazar lo bueno.
+CONCEPTOS_DE_LAS_SIGLAS: tuple[tuple[str, str], ...] = (
+    ("seguridad", r"segurid\w*"),
+    # «no operacional» es OTRA letra de la ruta: la D no puede acreditar a la C.
+    # La negación se busca con `\W*` para que no cuelen «no-operacional»,
+    # «no  operacional» ni «**no** operacional».
+    ("operacional", r"(?<!\bno)(?<!\bno\W)(?<!\bno\W\W)(?<!\bno\W\W\W)\boperacion\w*"),
+    ("control de calidad", r"\bcalidad\b"),
+    ("exploracion de edad", r"explor\w*[^.\n]{0,24}\bedad\b"),
+)
 
 
 def _conceptos_que_faltan(texto: str) -> list[str]:
     """Los conceptos del criterio 40 que la respuesta NO trae.
 
-    Dos varas flojas, las dos a favor del producto:
+    Dos varas flojas al empezar, las dos a favor del producto: aprobaba con 3
+    de 4 —un texto que no mencionaba ExEd en absoluto pasaba— y «operacional»
+    se acreditaba con «no operacional». Al corregirlas se abrió la falta
+    contraria, rechazar respuestas correctas; de ahí las raíces.
 
-    - `4 aciertos, aprueba con 3`: un texto que no menciona ExEd en absoluto
-      puntuaba 3/4 y aprobaba. La vara la fija el criterio, que dice «acierta
-      las letras», no «acierta casi todas».
-    - `"operacional" in texto`: es subcadena de «no operacional», que es OTRA
-      letra de la ruta. La D acreditaba a la C sola. Se exige una aparición
-      que no venga precedida de «no».
-
-    Y se compara sin tildes: «exploración» bien escrita y «exploracion» dicen
-    lo mismo, y penalizar la variante correcta es medir la ortografía, no el
-    concepto.
+    Se compara sin tildes y sin saltos de línea: «exploración» bien escrita y
+    «exploracion» dicen lo mismo, y penalizar la variante correcta es medir la
+    ortografía. Los saltos pasan a espacio para que la frase partida por el
+    ancho de la terminal siga siendo la misma frase.
     """
     plano = unicodedata.normalize("NFKD", texto.lower())
     plano = "".join(c for c in plano if not unicodedata.combining(c))
-    faltan = []
-    for concepto in CONCEPTOS_DE_LAS_SIGLAS:
-        if concepto == "operacional":
-            presente = bool(re.search(r"(?<!\bno )\boperacional", plano))
-        else:
-            presente = concepto in plano
-        if not presente:
-            faltan.append(concepto)
-    return faltan
+    plano = re.sub(r"\s+", " ", plano)
+    return [nombre for nombre, patron in CONCEPTOS_DE_LAS_SIGLAS
+            if not re.search(patron, plano)]
+
+
+def _veredicto_criterio_40(texto: str) -> tuple[bool, str]:
+    """El veredicto tal como lo usa `main()`, no solo el conteo.
+
+    Vive aquí porque la vara estaba escrita en el sitio de llamada: se podía
+    reponer el «aprueba con 3 de 4» con los 592 tests en verde, ya que ninguno
+    miraba dónde el conteo se convierte en ✅ o ❌.
+    """
+    faltan = _conceptos_que_faltan(texto)
+    detalle = f"{len(CONCEPTOS_DE_LAS_SIGLAS) - len(faltan)}/4 conceptos correctos"
+    if faltan:
+        detalle += f" — falta: {', '.join(faltan)}"
+    return not faltan, detalle
 
 
 def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], list[str]]:
@@ -349,7 +368,7 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
         atribuidos = [
             t
             for t in (
-                _tramo_tras(texto, m.end(), reales)
+                _tramo_tras(texto, m.end(), reales, codigo)
                 for m in re.finditer(rf"{codigo}\**", texto)
             )
             # Con núcleo: si el tramo queda en «—» porque la definición se
@@ -371,30 +390,75 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     return definidos, inventados
 
 
-def _tramo_tras(texto: str, desde: int, reales: dict[str, str]) -> str:
-    """Lo que el agente atribuye a un código: hasta que aparece el SIGUIENTE.
+def _abre_otra_atribucion(resto: str, m: re.Match[str]) -> bool:
+    """¿Ese código empieza una entrada nueva, o solo lo están MENCIONANDO?
 
-    Tercer criterio de corte, y los dos anteriores fallaron por elegir una
-    unidad que no era la buena:
+    Es la pregunta que los tres cortes anteriores no se hacían, y por eso los
+    tres fallaron por un flanco distinto. Cortar en toda aparición del código
+    siguiente absuelve la referencia cruzada: «FTS — igual que STP: falla para
+    detenerse» dejaba el tramo en «— igual que » y una inversión de verdad
+    —arrancar por detenerse— salía en verde.
 
-    - Por 90 caracteres: se tragaba el comienzo de la entrada siguiente, y como
-      las palabras coladas eran las del vecino, el vecino ganaba siempre.
-    - Por fin de línea: arreglaba la lista y rompía todo lo demás. Con dos
-      códigos en la misma línea —una fila de tabla, un párrafo corrido— el
-      vecino volvía a colarse; y con la definición envuelta al renglón
-      siguiente, el tramo quedaba en «—» y la inversión dejaba de comprobarse
-      mientras la evidencia decía que el código se había juzgado.
+    Una entrada nueva se reconoce por las dos cosas a la vez:
 
-    La unidad no es el carácter ni la línea: es «hasta el siguiente código del
-    catálogo». Cortar por `|` tampoco vale — es uno de los separadores válidos
-    que abre una atribución.
+    - Antes: principio de línea o puntuación. Las decoraciones (`*`, `_`, `-`,
+      `#`) no cuentan. Si delante hay una palabra —«igual que STP», «a
+      diferencia de STP», «ver STP», y también el TAG `P-101-STP`— es una
+      mención dentro de la frase, no un renglón nuevo.
+    - Después: un separador que abra definición. Sin él no hay nada que
+      atribuir.
+    """
+    antes = resto[: m.start()].rstrip(" \t*_-#>")
+    # Las conjunciones UNEN dos atribuciones, no mencionan un código: «NOI
+    # significa Ruido y OHE significa Sobrecalentamiento» son dos entradas.
+    # La lista es cerrada y de cuatro elementos; «que», «de», «ver» o «modo»
+    # no están, y son justo las que introducen una referencia cruzada.
+    if antes and antes[-1].isalnum() and not re.search(r"\b[yeou]$", antes):
+        return False
+    # La decoración se ignora por los DOS lados: en `**STP** — …` el asterisco
+    # de cierre tapaba el separador y la entrada nueva no se reconocía.
+    return bool(re.match(r"[*_]*\s*(?:[—:|-]|\(|significa)", resto[m.end():]))
+
+
+def _tramo_tras(texto: str, desde: int, reales: dict[str, str], codigo: str = "") -> str:
+    """Lo que el agente atribuye a un código: hasta que empieza OTRA atribución.
+
+    Cuarto criterio de corte, y los tres anteriores fallaron por lo mismo:
+    elegir una unidad de texto en vez de preguntar qué significa el texto.
+
+    - Por 90 caracteres (r17): se tragaba el comienzo de la entrada siguiente,
+      y como las palabras coladas eran las del vecino, el vecino ganaba.
+    - Por fin de línea (r19): arreglaba la lista y rompía la tabla y el párrafo
+      corrido, donde caben varios códigos en una misma línea.
+    - Por la siguiente aparición de cualquier código (r20): arreglaba los dos y
+      absolvía la referencia cruzada, que es donde vive la inversión que hace
+      daño de verdad. Y el muñón que dejaba —«— el modo »— traía una palabra
+      de relleno de cuatro letras, así que pasaba por «juzgado».
+
+    Se excluye el propio `codigo`: un código no puede abrir una atribución de
+    sí mismo, y repetirlo dentro de su definición vaciaba el tramo.
+
+    Sigue siendo reconocimiento de patrones sobre lenguaje natural, y por tanto
+    sigue teniendo flancos conocidos: una fila de tabla con una columna «código
+    relacionado» se lee como entrada nueva, porque tras un `|` es exactamente
+    lo que parece.
     """
     resto = texto[desde:]
     fin = len(resto)
     for otro in reales:
-        m = re.search(rf"\b{otro}\b", resto)
-        if m and m.start() < fin:
-            fin = m.start()
+        if otro == codigo:
+            continue
+        for m in re.finditer(rf"\b{otro}\b", resto):
+            if m.start() >= fin:
+                break
+            if _abre_otra_atribucion(resto, m):
+                fin = m.start()
+                # Este `break` es un atajo, no una condición: `finditer` va en
+                # orden creciente, así que la siguiente aparición ya cumple
+                # `m.start() >= fin` y sale por el guardia de arriba. Quitarlo
+                # no cambia el resultado —mutante equivalente demostrado por
+                # construcción, no por inspección—; se queda por claridad.
+                break
     return resto[:fin][:120]
 
 
@@ -738,12 +802,10 @@ def main() -> int:
                 cliente, s,
                 "En mi Excel veo la columna «Falla Evidente (ABCD)». ¿Qué significa "
                 "cada letra, y qué significan CC y ExEd?")
-            faltan = _conceptos_que_faltan(salida.get("content") or "")
+            ok40, evidencia40 = _veredicto_criterio_40(salida.get("content") or "")
             hallazgos.append(_resultado(
                 40, "Acierta las letras de ruta y las siglas de política",
-                not faltan,
-                f"{4 - len(faltan)}/4 conceptos correctos"
-                + (f" — falta: {', '.join(faltan)}" if faltan else "")))
+                ok40, evidencia40))
 
             # 36 — lo que el agente dice haber registrado está en la sesión.
             s = sesion("estado")

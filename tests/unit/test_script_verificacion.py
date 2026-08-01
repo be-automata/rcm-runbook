@@ -1134,3 +1134,204 @@ class TestLaVaraDelCriterio40:
         assert V._conceptos_que_faltan("") == [
             "seguridad", "operacional", "control de calidad", "exploracion de edad",
         ]
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            # Ninguna de estas es un fallo del producto: un artículo de más, el
+            # plural, el verbo en vez del sustantivo o un salto de línea no
+            # cambian el concepto. Exigir la frase literal medía la redacción.
+            "ExEd = exploración de la edad; CC = control de calidad; "
+            "seguridad; operacional",
+            "seguridad, operacional, los controles de calidad, exploración de edad",
+            "seguridad; operacional; control de calidad; ExEd consiste en "
+            "explorar la edad del componente",
+            "seguridad, operacional, control de calidad, exploración de\nedad",
+            "seguridad, operacional, CC verifica la calidad del montaje, "
+            "exploración de edad",
+            "| A | seguridad |\n| C | operacional |\n"
+            "| CC | control de calidad |\n| ExEd | exploración de edad |",
+        ],
+    )
+    def test_una_respuesta_correcta_no_se_rechaza_por_la_redaccion(self, texto):
+        assert V._conceptos_que_faltan(texto) == []
+
+    @pytest.mark.parametrize(
+        "negado",
+        ["no operacional", "no-operacional", "no  operacional", "**no** operacional"],
+    )
+    def test_la_negacion_no_acredita_aunque_venga_disfrazada(self, negado):
+        # `(?<!\bno )` cubría solo el literal con UN espacio.
+        assert "operacional" in V._conceptos_que_faltan(
+            f"seguridad, {negado}, control de calidad, exploración de edad"
+        )
+
+    def test_el_veredicto_exige_los_cuatro(self):
+        # La vara vivía en el sitio de llamada, no en la función: se podía
+        # reponer el «aprueba con 3 de 4» con la suite entera en verde.
+        ok, detalle = V._veredicto_criterio_40(
+            "seguridad, operacional, control de calidad; ExEd no lo sé"
+        )
+        assert ok is False
+        assert "3/4" in detalle and "exploracion de edad" in detalle
+
+    def test_el_veredicto_aprueba_una_respuesta_completa(self):
+        ok, detalle = V._veredicto_criterio_40(self.BUENA)
+        assert ok is True and detalle == "4/4 conceptos correctos"
+
+
+class TestLaReferenciaCruzadaNoAbsuelveLaInversion:
+    """El corte de la ronda 20 paraba en toda aparición de cualquier código,
+    así que mencionar otro código dentro de la explicación dejaba el tramo en un
+    muñón y la inversión salía en verde. Y el muñón traía palabras de relleno de
+    cuatro letras, así que el guardián `_nucleo` lo daba por juzgado: el
+    descarte silencioso nº 17."""
+
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        from rcm_runbook.models.catalogs import fixture
+
+        return {
+            c.code: f"{c.definition}: {c.description}"
+            for c in fixture().menu.iso14224_failure_mode_codes
+        }
+
+    @pytest.mark.parametrize(
+        "plantilla",
+        [
+            "- {a} — {db}",
+            "- {a} — {a}: {db}",
+            "- {a} — igual que {b}: {db}",
+            "- {a} — a diferencia de {b}, {db}",
+            "- {a} — (ver {b}) {db}",
+            "- {a} — en el TAG P-101-{b} se ve: {db}",
+        ],
+    )
+    def test_la_inversion_se_caza_en_todos_los_pares_del_catalogo(self, plantilla):
+        reales = self.REALES
+        ciegos = [
+            (a, b)
+            for a in reales
+            for b in reales
+            if a != b
+            and not V._codigos_definidos(
+                plantilla.format(a=a, b=b, db=reales[b]), reales
+            )[1]
+        ]
+        assert not ciegos, f"{len(ciegos)} pares sin cazar, p.ej. {ciegos[:3]}"
+
+    def test_el_codigo_repetido_en_su_propia_definicion_no_vacia_el_tramo(self):
+        reales = self.REALES
+        texto = "- **FTS** — el modo FTS describe la incapacidad de detenerse"
+        tramo = V._tramo_tras(texto, texto.index("FTS") + 3, reales, "FTS")
+        assert "detenerse" in tramo, f"el tramo quedó en un muñón: «{tramo}»"
+
+    def test_un_relleno_de_cuatro_letras_no_cuenta_como_juzgado(self):
+        # `_nucleo(" — el modo ")` = {"modo"}: no vacío, así que pasaba por
+        # «definido» mientras la inversión no se comprobaba.
+        reales = self.REALES
+        _, inventados = V._codigos_definidos(
+            f"- FTS — el modo FTS describe: {reales['STP']}", reales
+        )
+        assert inventados, "el muñón con relleno absolvió la inversión"
+
+    def test_el_eco_literal_sigue_sin_acusarse_en_los_cinco_formatos(self):
+        reales = self.REALES
+        for formato in (
+            "\n".join(f"- {c} — {d}" for c, d in reales.items()),
+            " ".join(f"**{c}** — {d}." for c, d in reales.items()),
+            " ".join(f"| {c} | {d} |" for c, d in reales.items()),
+            " ".join(f"{c} — {d}." for c, d in reales.items()),
+            ", ".join(f"{c} — {d}" for c, d in reales.items()),
+        ):
+            _, inventados = V._codigos_definidos(formato, reales)
+            assert not inventados, f"acusó el eco literal: {inventados}"
+
+
+class TestLosBordesDelCorteEstanFijados:
+    """Tres mutantes sobrevivieron la ronda 21 entera: el borde del corte, la
+    exclusión del propio código y el requisito de separador. Un mutante vivo no
+    es un éxito, es un sitio donde el instrumento puede romperse sin que nadie
+    se entere."""
+
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        from rcm_runbook.models.catalogs import fixture
+
+        return {
+            c.code: f"{c.definition}: {c.description}"
+            for c in fixture().menu.iso14224_failure_mode_codes
+        }
+
+    def test_el_corte_no_se_lleva_las_letras_del_codigo_siguiente(self):
+        # `fin = m.end()` en vez de `m.start()` mete la sigla del vecino en el
+        # tramo. Con códigos de tres letras `_nucleo` las descarta por cortas y
+        # no se nota; el regex del catálogo acepta CUATRO, así que el catálogo
+        # del cliente puede traerlas y entonces sí pesan en la comparación.
+        reales = dict(self.REALES)
+        reales["FTSX"] = "Fuga total del sistema: derrame externo continuo"
+        texto = f"- STP — {reales['STP']}. FTSX — Fuga total del sistema"
+        tramo = V._tramo_tras(texto, texto.index("STP") + 3, reales, "STP")
+        assert "FTSX" not in tramo, f"el tramo se llevó la sigla vecina: «{tramo}»"
+
+    def test_un_codigo_repetido_dentro_de_su_definicion_no_vacia_el_tramo(self):
+        # Sin excluir el propio código, «FTS — FTS: <definición de STP>» dejaba
+        # el tramo en «— » y la inversión salía en verde.
+        reales = self.REALES
+        texto = f"- FTS — FTS: {reales['STP']}"
+        assert V._codigos_definidos(texto, reales)[1], "la inversión salió absuelta"
+
+    def test_la_exclusion_del_propio_codigo_cambia_el_tramo_no_el_fallo(self):
+        """Por qué la exclusión se queda aunque el veredicto no la necesite.
+
+        Quitarla deja el primer tramo en un muñón, pero `_codigos_definidos`
+        recorre TODAS las apariciones del código y la segunda trae la
+        atribución entera: la acusación sale igual por el otro camino. O sea
+        que el veredicto no distingue las dos ramas —por eso el mutante
+        sobrevivía— pero el TRAMO sí, y de él sale la evidencia que se imprime.
+        Este test fija esa diferencia; si un día deja de haberla, el caso ya no
+        demuestra nada y hay que buscar otro.
+        """
+        reales = self.REALES
+
+        def sin_exclusion(texto: str, desde: int) -> str:
+            resto = texto[desde:]
+            fin = len(resto)
+            for otro in reales:
+                for m in re.finditer(rf"\b{otro}\b", resto):
+                    if m.start() >= fin:
+                        break
+                    if V._abre_otra_atribucion(resto, m):
+                        fin = m.start()
+                        break
+            return resto[:fin][:120]
+
+        # «- FTS — <def>, ver FTS» NO sirve: «ver» no abre atribución en
+        # ninguna de las dos ramas, así que el tramo sale idéntico y el caso no
+        # demuestra nada.
+        for plantilla in ("- {a} — {a}: {db}", "- {a} — {a} significa {db}"):
+            texto = plantilla.format(a="FTS", db=reales["STP"])
+            i = texto.index("FTS") + 3
+            distinto = V._tramo_tras(texto, i, reales, "FTS") != sin_exclusion(texto, i)
+            acusa = bool(V._codigos_definidos(texto, reales)[1])
+            assert distinto and acusa, (
+                f"«{plantilla}» ya no demuestra la equivalencia: el tramo no "
+                "cambia, o el veredicto dejó de acusar"
+            )
+
+    def test_una_preposicion_de_una_letra_no_abre_atribucion(self):
+        # La excepción de conjunción es `[yeou]`, no «cualquier palabra de una
+        # letra»: «similar A STP: …» es una referencia cruzada, igual que «que»
+        # o «de», y ensancharla a `[a-z]` deja de cazar la inversión.
+        reales = self.REALES
+        texto = f"- FTS — similar a STP: {reales['STP']}"
+        assert V._codigos_definidos(texto, reales)[1], "la referencia cruzada absolvió"
+
+    def test_una_mencion_sin_separador_no_corta_la_definicion(self):
+        # Sin exigir separador detrás, un paréntesis aclaratorio justo tras el
+        # guion cortaba el tramo en seco y el código dejaba de juzgarse.
+        reales = self.REALES
+        texto = f"- FTS — (STP no aplica aquí) {reales['FTS']}"
+        definidos, inventados = V._codigos_definidos(texto, reales)
+        assert "FTS" in definidos, "el paréntesis se llevó la definición entera"
+        assert not inventados, f"y encima acusó: {inventados}"
