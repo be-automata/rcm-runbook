@@ -204,8 +204,16 @@ _NEGACIONES = (
     *(_ABSTENCIONES := (
         # Abstenerse es cumplir el criterio tanto como negar, PERO no declara
         # ausente el código: sirven para no acusar, no para aprobar.
+        #
+        # Aquí NO van «no se pudo», «nada en» ni «nada dentro»: son maneras
+        # normales de afirmar que el código no está —«no se pudo encontrar en el
+        # catálogo», «no hay nada en el catálogo que corresponda»— y meterlas
+        # ponía en rojo respuestas correctas. Entraron para evitar que «nada en»
+        # casara dentro de «determiNADA EN», pero la frontera de palabra que se
+        # añadió en la misma ronda ya resuelve eso sola: dos arreglos para un
+        # defecto, y el segundo se pasó de largo.
         "no puedo", "no podría", "no podria", "no voy a", "no me lo voy",
-        "pendiente de", "no se pudo", "nada en", "nada dentro",
+        "pendiente de",
     )),
     # «desconocido» NO entra: es la definición literal del código UNK del
     # catálogo, y listarla aquí hacía que atribuirle cualquier cosa a UNK se
@@ -248,8 +256,11 @@ def _es_negacion(texto: str) -> bool:
     # negación que encontrar: «aunque se parece a un código válido, no existe en
     # el catálogo» salía acusado. Cuando el corte no deja nada, no hay coletilla
     # que separar y vale el texto entero.
+    # También se corta en el punto: una negación en la oración SIGUIENTE no
+    # niega la atribución de la anterior. «Falla de Calidad tipo 1. No se pudo
+    # verificar la frecuencia» es un invento con una frase corriente detrás.
     trozos_por_concesiva = re.split(
-        r"\b(?:aunque|pero|sin embargo|no obstante|si bien)\b",
+        r"\b(?:aunque|pero|sin embargo|no obstante|si bien)\b|\.\s",
         texto.lower(), maxsplit=1,
     )
     primera_cruda = trozos_por_concesiva[0].strip() or texto.lower()
@@ -294,13 +305,25 @@ def _significado_atribuido(texto: str, codigo: str, otros: tuple[str, ...] = ())
         # dos lados: exigiendo separador detrás se colaba «FTS significa …», y
         # sin exigirlo cualquier palabra de tres letras —«los», «que»— pasaba
         # por código.
-        if otros and re.search(
-            rf"\b(?:{'|'.join(otros)})\b", trozo, re.IGNORECASE
-        ):
-            sigue_hablando_de_el = False
-            continue
+        # El vecino se reconoce en MAYÚSCULAS, o en minúsculas solo si lleva
+        # separador detrás. Buscar los códigos con `IGNORECASE` a secas es lo
+        # que rompió esta ronda: el catálogo del cliente tiene `SER` —«Problemas
+        # menores en servicio»—, así que `\bser\b` casaba con el verbo, y como
+        # además se saltaba la línea entera, el detector no llegaba a ver
+        # «QQQ1 podría SER una Falla de Calidad tipo 1»: una de las frases que
+        # el detector existe para cazar, cegada por el guardia.
+        otro_codigo = otros and re.search(
+            rf"\b(?:{'|'.join(otros)})\b"
+            rf"|\b(?i:{'|'.join(otros)})\b\s*(?:[—–:|-]|significa|quiere decir)",
+            trozo,
+        )
+        # El preguntado manda sobre el vecino: si los dos están en la línea, lo
+        # que se juzga es lo que se le atribuye a él.
         if codigo in trozo:
             sigue_hablando_de_el = True
+        elif otro_codigo:
+            sigue_hablando_de_el = False
+            continue
         elif not sigue_hablando_de_el:
             continue
         for patron in (

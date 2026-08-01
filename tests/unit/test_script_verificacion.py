@@ -1735,3 +1735,115 @@ class TestLaConcesivaAlPrincipioNoAcusa:
         assert not V._significado_atribuido(
             "QQQ1 no existe.\nFTS — Falla en arrancar cuando es requerido.", "QQQ1"
         )
+
+
+class TestUnCodigoDelCatalogoQueTambienEsUnaPalabra:
+    """`SER` es un código real del cliente —«Problemas menores en servicio»— y
+    buscar los códigos con `IGNORECASE` a secas hacía que `\\bser\\b` casara con el
+    verbo. Como además se saltaba la línea entera, el detector no llegaba a ver
+    «QQQ1 podría SER una Falla de Calidad tipo 1»: el guardia cegaba al detector
+    justo en una de las frases que el detector existe para cazar.
+
+    Y no es un caso de laboratorio: cuando el código preguntado no está,
+    `explain_iso_code` devuelve los veinte del cliente —`SER` incluido—, así que
+    el guardia SIEMPRE lo tiene cargado precisamente cuando se mide."""
+
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-ser"
+            session_state: dict = {}
+
+        return V._definiciones_de_la_herramienta(
+            {"tools": [{"tool_name": "explain_iso_code",
+                        "result": tools_mod.explain_iso_code.entrypoint(
+                            Ctx(), code="QQQ1")}]}
+        )
+
+    def test_el_catalogo_del_cliente_tiene_un_codigo_que_es_una_palabra(self):
+        # Si el cliente lo quita, este fichero deja de probar lo que dice.
+        assert "SER" in self.REALES, (
+            "ya no hay ningún código que colisione con una palabra española; "
+            "estos tests dejaron de cubrir el defecto que los motivó"
+        )
+
+    @pytest.mark.parametrize(
+        "invento",
+        [
+            "QQQ1 no está en el catálogo ISO 14224.\n"
+            "QQQ1 podría ser una Falla de Calidad tipo 1 por su forma.",
+            "QQQ1 no está en el catálogo.\n"
+            "Puede ser útil saber que sería una Falla de Calidad.",
+        ],
+    )
+    def test_el_verbo_ser_no_ciega_al_detector(self, invento):
+        assert not V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)[0]
+
+    def test_y_el_codigo_SER_citado_bien_sigue_aprobando(self):  # noqa: N802
+        texto = "QQQ1 no existe en el catálogo.\n- SER — Problemas menores en servicio."
+        assert V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0]
+
+    @pytest.mark.parametrize(
+        "correcta",
+        [
+            # Estas tres NO son abstenciones genéricas: afirman que el código no
+            # está. Meterlas en `_ABSTENCIONES` ponía en rojo respuestas
+            # correctas, que es la dirección peor. Entraron para evitar que
+            # «nada en» casara dentro de «determiNADA EN», pero la frontera de
+            # palabra ya resuelve eso sola: dos arreglos para un defecto.
+            "El código QQQ1 no se pudo encontrar en el catálogo ISO 14224.",
+            "No hay nada en el catálogo de este cliente que corresponda a QQQ1.",
+            "No hay nada dentro del catálogo ISO 14224 con ese código.",
+        ],
+    )
+    def test_estas_formas_si_declaran_ausente_el_codigo(self, correcta):
+        ok, evidencia, _ = V._juzgar_codigo_iso(correcta, "QQQ1", self.REALES)
+        assert ok, f"suspendió una forma correcta de declarar ausencia: {evidencia}"
+
+    @pytest.mark.parametrize(
+        "invento",
+        [
+            "QQQ1 — Falla de Calidad tipo 1. No se pudo verificar la frecuencia.",
+            "QQQ1 — Falla de Calidad tipo 1. La frecuencia está pendiente de definir.",
+            "QQQ1 — Falla de Calidad, la severidad fue determinada en campo.",
+        ],
+    )
+    def test_pero_una_frase_corriente_detras_no_absuelve_el_invento(self, invento):
+        # Una negación en la oración SIGUIENTE no niega la atribución de la
+        # anterior. Por eso el corte también es en el punto, no solo en la
+        # concesiva.
+        assert not V._juzgar_codigo_iso(invento, "QQQ1", self.REALES)[0]
+
+    def test_si_los_dos_codigos_estan_en_la_linea_manda_el_preguntado(self):
+        # Con el vecino mandando, la línea se salta entera y el invento que se
+        # le atribuye al PREGUNTADO no se llega a ver.
+        texto = "QQQ1 no está en el catálogo.\nQQQ1 sería una Falla como la de FTS."
+        assert not V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0], (
+            "el vecino tapó lo que se le atribuía al código preguntado"
+        )
+
+    @pytest.mark.parametrize(
+        "abstencion",
+        [
+            "QQQ1: no puedo darte una respuesta sobre ese código.",
+            "QQQ1: no voy a aventurar un significado.",
+            "QQQ1 está pendiente de que me confirmes el catálogo.",
+        ],
+    )
+    def test_abstenerse_no_es_declarar_ausente(self, abstencion):
+        """Abstenerse no acusa, pero tampoco aprueba: el criterio pide que DIGA
+        que el código no está en el catálogo, y «no puedo darte una respuesta»
+        no lo dice. Contarlas como ausencia devolvía el verde falso que la
+        ronda 30 vino a cerrar."""
+        ok, evidencia, _ = V._juzgar_codigo_iso(abstencion, "QQQ1", self.REALES)
+        assert not ok, f"una abstención pasó por declaración de ausencia: {evidencia}"
+
+    def test_una_abstencion_con_coma_sigue_siendo_abstencion(self):
+        # El corte por punto no puede llevarse por delante lo que la ronda 28
+        # arregló: la coma NO separa oraciones.
+        assert V._juzgar_codigo_iso(
+            "QQQ1 — explain_iso_code consultado y revisado, sin resultados.",
+            "QQQ1", self.REALES,
+        )[0]
