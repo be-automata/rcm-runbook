@@ -27,12 +27,23 @@ def _correr(mutaciones: list[dict], tmp_path: Path) -> subprocess.CompletedProce
 
 
 def _proyecto(tmp_path: Path, cuerpo: str, prueba: str) -> tuple[Path, Path]:
-    """Un módulo y su test, dentro del repo para que `uv run pytest` los vea."""
-    destino = RAIZ / "tests" / "unit" / "_arnes_tmp"
+    """Un módulo y su test, dentro del repo para que `uv run pytest` los vea.
+
+    Con nombre propio por test: los cinco compartían `_arnes_tmp/`, así que dos
+    corridas a la vez —la suite y el arnés, que es la situación normal cuando se
+    mide— se pisaban y producían fallos que no eran de nadie. Costó un rato
+    entender que el rojo era mío y no del código.
+    """
+    destino = RAIZ / "tests" / "unit" / f"_arnes_tmp_{tmp_path.name}"
     destino.mkdir(exist_ok=True)
     (destino / "__init__.py").write_text("")
     (destino / "modulo.py").write_text(cuerpo)
-    (destino / "test_modulo.py").write_text(prueba)
+    # El import se escribe con el nombre real del directorio: con la ruta fija,
+    # el módulo de juguete no se podía importar y la línea base salía roja por
+    # una causa que nada tenía que ver con lo que se medía.
+    (destino / "test_modulo.py").write_text(
+        prueba.replace("_ARNES_", f"tests.unit.{destino.name}")
+    )
     return destino / "modulo.py", destino / "test_modulo.py"
 
 
@@ -42,14 +53,17 @@ class TestElArnesNoFirmaLoQueNoMidio:
         "def doble() -> int:\n    return VALOR * 2\n"
     )
     PRUEBA = (
-        "from tests.unit._arnes_tmp.modulo import doble\n\n\n"
+        "from _ARNES_.modulo import doble\n\n\n"
         "def test_doble():\n    assert doble() == 8\n"
     )
 
-    def _limpiar(self) -> None:
+    def _limpiar(self, destino: Path) -> None:
         import shutil
 
-        shutil.rmtree(RAIZ / "tests" / "unit" / "_arnes_tmp", ignore_errors=True)
+        shutil.rmtree(destino.parent, ignore_errors=True)
+
+    def _suite(self, destino: Path) -> str:
+        return str((destino.parent / "test_modulo.py").relative_to(RAIZ))
 
     def test_con_la_linea_base_roja_no_mide_nada_y_lo_dice(self, tmp_path):
         # Suite roja por un motivo ajeno a la mutación.
@@ -60,10 +74,10 @@ class TestElArnesNoFirmaLoQueNoMidio:
                 "nombre": "control inerte: cambia una letra de un COMENTARIO",
                 "fichero": str(modulo.relative_to(RAIZ)),
                 "antes": "un comentario cualquiera", "despues": "un comentario cualquierx",
-                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
+                "suite": self._suite(modulo),
             }], tmp_path)
         finally:
-            self._limpiar()
+            self._limpiar(modulo)
         assert r.returncode == 2, f"firmó una medición imposible:\n{r.stdout}"
         assert "LÍNEA BASE ROJA" in r.stdout
         assert "MUERTO" not in r.stdout, "declaró muerto a un comentario"
@@ -84,10 +98,10 @@ class TestElArnesNoFirmaLoQueNoMidio:
                 "fichero": str(modulo.relative_to(RAIZ)),
                 "antes": "VALOR = 4",
                 "despues": "import modulo_que_no_existe\n\nVALOR = 4",
-                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
+                "suite": self._suite(modulo),
             }], tmp_path)
         finally:
-            self._limpiar()
+            self._limpiar(modulo)
         assert "LÍNEA BASE ROJA" not in r.stdout, "abortó antes de medir"
         assert r.returncode == 2, f"contó como medición lo que no corrió:\n{r.stdout}"
         assert "VIVO" not in r.stdout and "MUERTO" not in r.stdout
@@ -98,13 +112,13 @@ class TestElArnesNoFirmaLoQueNoMidio:
             r = _correr([
                 {"nombre": "rompe el cálculo", "fichero": str(modulo.relative_to(RAIZ)),
                  "antes": "VALOR * 2", "despues": "VALOR * 3",
-                 "suite": "tests/unit/_arnes_tmp/test_modulo.py"},
+                 "suite": self._suite(modulo)},
                 {"nombre": "toca un comentario", "fichero": str(modulo.relative_to(RAIZ)),
                  "antes": "un comentario cualquiera", "despues": "otro comentario distinto",
-                 "suite": "tests/unit/_arnes_tmp/test_modulo.py"},
+                 "suite": self._suite(modulo)},
             ], tmp_path)
         finally:
-            self._limpiar()
+            self._limpiar(modulo)
         assert "MUERTO  rompe el cálculo" in r.stdout
         assert "VIVO    toca un comentario" in r.stdout
         # Y el que se APUNTA como hueco tiene que ser el que sobrevivió: con la
@@ -114,6 +128,28 @@ class TestElArnesNoFirmaLoQueNoMidio:
         assert "toca un comentario" in cola and "rompe el cálculo" not in cola
         assert r.returncode == 1, "un superviviente es un hueco, no un éxito"
 
+    def test_un_tope_de_tiempo_agotado_no_pasa_por_medicion(self, tmp_path):
+        """Un mutante puede colgar la suite, y hay dos maneras de mentir con eso.
+
+        Sin tope, el arnés espera para siempre con el fichero mutado dentro del
+        árbol. Y si al agotarse se devolviera 0, un tope agotado EN LA LÍNEA
+        BASE se leería como verde y se firmaría una medición sobre una suite
+        que nunca terminó. Las dos líneas se estrenaron sin un test.
+        """
+        import scripts.mutar as arnes
+
+        lento = (
+            "import time\n\n\ndef test_lento():\n    time.sleep(30)\n"
+        )
+        modulo, _ = _proyecto(tmp_path, self.MODULO, lento)
+        try:
+            codigo = arnes._correr(self._suite(modulo), tope=2)
+        finally:
+            self._limpiar(modulo)
+        assert codigo not in (0, 1), (
+            f"un tope agotado se contó como corrida válida: {codigo}"
+        )
+
     def test_deja_el_fichero_como_estaba(self, tmp_path):
         modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)
         antes = modulo.read_text()
@@ -121,11 +157,11 @@ class TestElArnesNoFirmaLoQueNoMidio:
             _correr([{
                 "nombre": "cualquiera", "fichero": str(modulo.relative_to(RAIZ)),
                 "antes": "VALOR * 2", "despues": "VALOR * 3",
-                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
+                "suite": self._suite(modulo),
             }], tmp_path)
             assert modulo.read_text() == antes
         finally:
-            self._limpiar()
+            self._limpiar(modulo)
 
     def test_una_mutacion_que_aplica_dos_veces_tampoco(self, tmp_path):
         # El tercer motivo del docstring de `mutar.py` —«el reemplazo que aplica
@@ -137,10 +173,10 @@ class TestElArnesNoFirmaLoQueNoMidio:
                 "nombre": "dos coincidencias",
                 "fichero": str(modulo.relative_to(RAIZ)),
                 "antes": "VALOR", "despues": "OTRO",
-                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
+                "suite": self._suite(modulo),
             }], tmp_path)
         finally:
-            self._limpiar()
+            self._limpiar(modulo)
         assert r.returncode == 2, f"midió con el reemplazo repetido:\n{r.stdout}"
         assert "2 coincidencias" in r.stdout
 
@@ -151,8 +187,8 @@ class TestElArnesNoFirmaLoQueNoMidio:
                 "nombre": "no aparece en el fichero",
                 "fichero": str(modulo.relative_to(RAIZ)),
                 "antes": "esto no está", "despues": "da igual",
-                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
+                "suite": self._suite(modulo),
             }], tmp_path)
         finally:
-            self._limpiar()
+            self._limpiar(modulo)
         assert r.returncode == 2 and "INVÁLIDA" in r.stdout

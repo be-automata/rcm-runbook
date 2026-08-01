@@ -76,6 +76,7 @@ node_modules/
 .wrangler/
 .env.deploy
 
-# El arnés de mutación escribe aquí un proyecto de juguete y lo borra;
-# si una corrida muere a lo bruto, el residuo no puede colarse en la suite.
+# El arnés de mutación escribe aquí un proyecto de juguete y lo borra. Esto solo
+# impide commitear el residuo; que no se RECOLECTE lo hace `norecursedirs` en
+# pyproject.toml, que es lo que de verdad hacía falta.
 tests/unit/_arnes_tmp/

@@ -45,7 +45,7 @@ def _limpiar_cache() -> None:
             shutil.rmtree(directorio, ignore_errors=True)
 
 
-def _correr(suite: str) -> int:
+def _correr(suite: str, tope: int = 600) -> int:
     """El código de salida de pytest. Sin caché de pytest ni de bytecode.
 
     Por `returncode`, no buscando «failed» en la salida. Buscar subcadenas se
@@ -65,9 +65,13 @@ def _correr(suite: str) -> int:
             # Con tope: un mutante puede colgar la suite —un bucle que no
             # termina—, y sin esto el arnés se queda esperando para siempre con
             # el fichero mutado en el árbol.
-            timeout=600,
+            timeout=tope,
         ).returncode
     except subprocess.TimeoutExpired:
+        # -1 nunca es 0 ni 1, así que sube como INVÁLIDA. Devolver 0 haría que
+        # un tope agotado EN LA LÍNEA BASE se leyera como verde, y el arnés
+        # firmaría una medición sobre una suite que jamás terminó de correr:
+        # justo la avería que este fichero existe para impedir.
         return -1
 
 

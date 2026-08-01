@@ -429,11 +429,20 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
         # markdown pasaron a rojo con el agente respondiendo bien. Reinstalaba
         # justo la avería que el comentario de arriba describe.
         #
-        # Y defendía contra algo que no puede entrar: `crudo` es el valor que
-        # devolvió NUESTRA herramienta, no texto libre del modelo. «NOTA: no hay
-        # catálogo» solo aparece ahí si alguien lo inyecta en un test. Pagar
-        # cinco regresiones reales por un ataque imposible es mal negocio, y la
-        # basura que sí colaba —con una viñeta delante— seguía colando.
+        # Y no cerraba nada: la basura que lo motivaba entraba igual con una
+        # viñeta delante, porque lo único que la separaba era que «AVISO» tiene
+        # cinco letras.
+        #
+        # Aquí decía además que «crudo es el retorno de nuestra herramienta, no
+        # texto libre del modelo, así que esa basura no puede entrar». Era
+        # FALSO: `explain_iso_code` interpola el `code` que pide el modelo
+        # literalmente en su respuesta, así que un salto de línea metía una
+        # línea entera bajo su control. Se tapó en la herramienta, aplanando el
+        # código; el guardia nunca lo habría visto, porque solo actuaba con UNA
+        # entrada y esa inyección llega por la rama que trae las veinte.
+        #
+        # Un comentario que miente sobrevive a quien lo escribió, y este iba
+        # camino de justificar la decisión siguiente.
         # TODAS las llamadas, no la primera: si la primera era la rama de éxito
         # —un solo código—, el catálogo quedaba con un elemento y el detector no
         # podía acusar nada por construcción, mientras la evidencia decía

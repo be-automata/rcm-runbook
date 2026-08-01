@@ -64,6 +64,10 @@ ignore_missing_imports = true
 mypy_path = "src"
 
 [tool.pytest.ini_options]
+# El arnés de mutación escribe aquí un proyecto de juguete. `.gitignore` impide
+# commitearlo, NO recolectarlo: con un residuo dentro, la suite pasaba de 648 a
+# 649 tests sin que nadie lo dijera. La protección es esta, no aquella.
+norecursedirs = ["_arnes_tmp*"]
 testpaths = ["tests"]
 markers = ["eval: LLM-driven conversation evals (need API key; run with -m eval)"]
 addopts = "-m 'not eval'"

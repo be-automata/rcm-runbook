@@ -1006,6 +1006,14 @@ def explain_iso_code(run_context: Any, code: str) -> str:
     """Explica un código ISO 14224 del catálogo del cliente (definición y descripción)."""
     from rcm_runbook.models.catalogs import fixture
 
+    # El código se aplana a una línea antes de tocarlo. Se interpola literal en
+    # el mensaje de respuesta, así que un salto de línea dentro de `code` mete
+    # una línea entera bajo control de quien escribe el turno: quien la lea
+    # después —el propio agente, o el arnés que verifica el criterio 29— la ve
+    # como una entrada más del catálogo del cliente. Se comprobó que
+    # «xxx\nNOTA: no hay catálogo» añadía «NOTA» al catálogo leído.
+    code = " ".join(code.split())[:40]
+
     try:
         definition, description = iso_code_info(code.upper())
     except KeyError:
