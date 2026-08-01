@@ -206,6 +206,10 @@ def _es_negacion(texto: str) -> bool:
     # una negación no encaja mejor con ningún código—; el único llamador que
     # queda es `_significado_atribuido`, sobre el código PREGUNTADO, que no está
     # en el catálogo y por tanto no se puede juzgar por parecido.
+    #
+    # Sin recortar: el llamador ya capa su captura a 60 caracteres, así que
+    # cualquier ventana aquí sería inerte. (Comprobado: reponerla no cambia
+    # ninguna respuesta, es un mutante equivalente.)
     limpio = re.sub(r"[^\w\s]", " ", texto.lower()).replace("ó", "o").strip()
     return any(p.replace("ó", "o") in limpio for p in _NEGACIONES)
 
@@ -310,9 +314,8 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     inventados: list[str] = []
     for codigo in reales:
         atribuidos = [
-            texto[m.end():m.end() + 90]
-            for m in re.finditer(rf"{codigo}\**", texto)
-            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", texto[m.end():m.end() + 90])
+            t for t in (_tramo_tras(texto, m.end()) for m in re.finditer(rf"{codigo}\**", texto))
+            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", t)
         ]
         if not atribuidos:
             continue
@@ -326,6 +329,19 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
                 )
                 break
     return definidos, inventados
+
+
+def _tramo_tras(texto: str, desde: int) -> str:
+    """Lo que el agente atribuye a un código: hasta el fin de LÍNEA, no 90 letras.
+
+    Cortar por caracteres se tragaba el comienzo de la entrada siguiente del
+    catálogo, y como las palabras coladas eran exactamente las del código
+    vecino, el vecino ganaba la comparación siempre. Se acusaba a UST de
+    describir a BRD citando literalmente lo que la herramienta acababa de
+    devolver. En una lista, la unidad es la línea.
+    """
+    linea = texto[desde:].split("\n", 1)[0]
+    return linea[:120]
 
 
 def _describe_mejor_a_otro(tramo: str, codigo: str, reales: dict[str, str]) -> str:

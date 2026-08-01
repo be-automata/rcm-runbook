@@ -932,3 +932,91 @@ class TestElDetectorMideConLaMismaVara:
         assert "- FTS — Falla en arrancar cuando es requerido:" in salida, (
             "la lista de códigos no lleva la descripción"
         )
+
+
+class TestElCaminoRealDeLaHerramientaAlDetector:
+    """`TestElDetectorMideConLaMismaVara` construía el catálogo A MANO desde el
+    fixture, saltándose el regex: el camino real herramienta → `reales` →
+    detector no lo probaba nadie. Bajar el tope de lectura a 40 caracteres
+    dejaba la suite entera en verde y devolvía el falso positivo de la ronda 17."""
+
+    def _salida_de_la_herramienta(self) -> dict:
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-cam"
+            session_state: dict = {}
+
+        # La salida REAL de la herramienta, no una reconstrucción.
+        return {
+            "content": "",
+            "tools": [{"tool_name": "explain_iso_code",
+                       "result": tools_mod.explain_iso_code.entrypoint(Ctx(), code="QQQ1")}],
+        }
+
+    def test_la_descripcion_llega_entera_hasta_el_detector(self):
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        from rcm_runbook.models.catalogs import fixture
+
+        for c in fixture().menu.iso14224_failure_mode_codes:
+            leido = catalogo.get(c.code, "")
+            assert c.definition in leido, f"{c.code}: falta la definición"
+            assert c.description[:20] in leido, (
+                f"{c.code}: la descripción llegó truncada — «{leido}»"
+            )
+
+    def test_el_eco_literal_de_la_herramienta_no_se_acusa(self):
+        # Lo más correcto que puede hacer el agente: repetir la lista que le
+        # acaban de dar. Se acusaba a UST de describir a BRD.
+        salida = self._salida_de_la_herramienta()
+        texto = str(salida["tools"][0]["result"])
+        catalogo = V._definiciones_de_la_herramienta(salida)
+        _, inventados = V._codigos_definidos(texto, catalogo)
+        assert not inventados, f"acusó la cita literal de la herramienta: {inventados}"
+
+    def test_y_aun_asi_caza_una_inversion_en_esa_misma_lista(self):
+        salida = self._salida_de_la_herramienta()
+        catalogo = V._definiciones_de_la_herramienta(salida)
+        texto = str(salida["tools"][0]["result"]).replace(
+            "- HIO — Alta Salida", "- HIO — Baja salida"
+        )
+        _, inventados = V._codigos_definidos(texto, catalogo)
+        assert inventados, "la inversión dentro de la lista pasó desapercibida"
+
+    def test_el_tramo_se_corta_por_linea_no_por_letras(self):
+        # Cortar por caracteres se tragaba la entrada siguiente, y las palabras
+        # coladas eran exactamente las del vecino: el vecino ganaba siempre.
+        texto = "- UST — Falsa Parada\n- BRD — Averia o Ruptura: Daño Grave"
+        tramo = V._tramo_tras(texto, texto.index("UST") + 3)
+        assert "BRD" not in tramo and "Ruptura" not in tramo
+
+
+class TestLosDialesDeLaNegacion:
+    """Al quitar la ventana inerte quedó sin fijar el criterio: recortar a 20
+    caracteres convierte una abstención legítima en acusación."""
+
+    def test_una_abstencion_larga_sigue_reconociendose(self):
+        assert V._es_negacion(
+            "consultado con explain_iso_code, sin resultados en el catálogo"
+        )
+
+    def test_y_una_corta_tambien(self):
+        assert V._es_negacion("no existe")
+
+    def test_una_definicion_de_verdad_no_es_negacion(self):
+        assert not V._es_negacion("Falla en arrancar cuando es requerido")
+
+    def test_una_definicion_larga_se_compara_entera(self):
+        # El tope del tramo es un dial: recortarlo parte las definiciones largas
+        # del catálogo y las deja sin las palabras que las distinguen.
+        from rcm_runbook.models.catalogs import fixture
+
+        mas_larga = max(
+            fixture().menu.iso14224_failure_mode_codes,
+            key=lambda c: len(f"{c.definition}: {c.description}"),
+        )
+        linea = f"- {mas_larga.code} — {mas_larga.definition}: {mas_larga.description}"
+        tramo = V._tramo_tras(linea, linea.index(mas_larga.code) + len(mas_larga.code))
+        assert mas_larga.description[-12:] in tramo, (
+            f"la definición más larga del catálogo llega cortada: «{tramo}»"
+        )
