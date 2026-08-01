@@ -953,7 +953,10 @@ class TestElPlanContradictorioNoSePuedeExportar:
             "failure_mode_id": fm, "frequency": "Mensual", "duration_hours": 2.0,
             "discipline": "Mecánico", "requires_shutdown": False,
         }
-        s.tasks[fm].append(MaintenanceTask(description="Análisis de vibración", **base))
+        s.tasks[fm].append(MaintenanceTask(
+            description="Análisis de vibración de los rodamientos de la bomba P-101",
+            **base,
+        ))
         s.tasks[fm].append(MaintenanceTask(**{**base, **segunda}))
         return s, fm
 
@@ -961,14 +964,40 @@ class TestElPlanContradictorioNoSePuedeExportar:
         from rcm_runbook.engine import compliance
 
         s, fm = self._con_dos_tareas(
-            description="Medición de vibraciones", requires_shutdown=True,
+            description="Análisis de vibraciones de rodamientos de bomba P-101",
+            requires_shutdown=True,
             duration_hours=3.0, frequency="Semestral",
         )
         bloqueos = compliance.export_blockers(s)
         contradiccion = [b for b in bloqueos if "se contradicen" in b]
         assert contradiccion, f"el plan contradictorio se exporta: {bloqueos}"
         assert fm in contradiccion[0]
-        assert "paro de planta" in contradiccion[0]
+        # Los cuatro campos, no solo el paro: comparar uno solo cazaba el
+        # incidente original por casualidad.
+        for etiqueta in ("frecuencia", "duración", "requiere paro"):
+            assert etiqueta in contradiccion[0], f"no señala {etiqueta}"
+
+    def test_solo_la_frecuencia_distinta_ya_contradice_el_plan(self):
+        # El caso que se colaba hasta el .xlsx: sinónimo + dos periodicidades
+        # para el mismo trabajo, con el mismo requires_shutdown.
+        from rcm_runbook.engine import compliance
+
+        s, _ = self._con_dos_tareas(
+            description="Análisis de vibraciones de rodamientos de bomba P-101",
+            frequency="Semestral",
+        )
+        bloqueos = [b for b in compliance.export_blockers(s) if "se contradicen" in b]
+        assert bloqueos, "dos periodicidades para el mismo modo llegan al CMMS"
+        assert "frecuencia" in bloqueos[0]
+
+    def test_solo_el_ejecutor_distinto_ya_contradice_el_plan(self):
+        from rcm_runbook.engine import compliance
+
+        s, _ = self._con_dos_tareas(
+            description="Análisis de vibraciones de rodamientos de bomba P-101",
+            discipline="Instrumentista",
+        )
+        assert [b for b in compliance.export_blockers(s) if "ejecutor" in b]
 
     def test_dos_tareas_compatibles_no_bloquean(self):
         # El contrapeso: un modo puede llevar varias tareas legítimas, y
@@ -976,7 +1005,8 @@ class TestElPlanContradictorioNoSePuedeExportar:
         from rcm_runbook.engine import compliance
 
         s, _ = self._con_dos_tareas(
-            description="Lubricación de rodamientos", frequency="Semestral",
+            description="Lubricación de los rodamientos de la bomba P-101",
+            frequency="Semestral",
             duration_hours=1.0,
         )
         assert not [b for b in compliance.export_blockers(s) if "se contradicen" in b]
@@ -1105,3 +1135,168 @@ class TestElUmbralDeCasiIgualEstaFijado:
         fuente = inspect.getsource(RCMSession.add_task)
         for campo in ("frequency", "duration_hours", "discipline", "requires_shutdown"):
             assert campo in fuente, f"{campo} no se compara: una corrección se perdería"
+
+
+class TestLaHojaAmefNoCallaTareas:
+    """La hoja que el cliente abre primero mostraba `tasks[0]` y callaba el
+    resto — en el caso real, callaba justo la corregida. Ninguna heurística de
+    texto caza un sinónimo sin rechazar tareas legítimas, así que la garantía
+    que sí es absoluta es esta: lo registrado no desaparece del entregable."""
+
+    def _con_dos_tareas(self):
+        from rcm_runbook.models.domain import MaintenanceTask
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        base = {
+            "failure_mode_id": fm, "duration_hours": 2.0,
+            "discipline": "Mecánico", "requires_shutdown": False,
+        }
+        s.tasks[fm] = [
+            MaintenanceTask(description="Análisis de vibración", frequency="Mensual", **base),
+            MaintenanceTask(description="Termografía del motor", frequency="Semestral", **base),
+        ]
+        return s, fm
+
+    def test_las_dos_tareas_aparecen_en_la_hoja_amef(self):
+        from rcm_runbook.export.rows import to_amef_rows
+
+        s, fm = self._con_dos_tareas()
+        fila = next(f for f in to_amef_rows(s) if True)
+        texto = " ".join(str(v) for v in fila.model_dump().values())
+        assert "Análisis de vibración" in texto
+        assert "Termografía del motor" in texto, "la hoja AMEF calló una tarea"
+
+    def test_manda_al_plan_en_vez_de_inventar_una_frecuencia(self):
+        # Con dos frecuencias distintas, elegir una sería mentir; y dejarla en
+        # blanco, esconderlo.
+        from rcm_runbook.export.rows import to_amef_rows
+
+        s, _ = self._con_dos_tareas()
+        texto = " ".join(str(v) for v in to_amef_rows(s)[0].model_dump().values())
+        assert "Ver PLAN DE MANTENIMIENTO" in texto
+
+    def test_con_una_sola_tarea_la_hoja_no_cambia(self):
+        from rcm_runbook.export.rows import to_amef_rows
+
+        s, fm = self._con_dos_tareas()
+        s.tasks[fm] = s.tasks[fm][:1]
+        texto = " ".join(str(v) for v in to_amef_rows(s)[0].model_dump().values())
+        assert "Mensual" in texto and "Ver PLAN" not in texto
+
+
+class TestElGlosarioLlegaAlModelo:
+    """`ROUTE_LABELS_ES` arreglaba la salida de `run_decision_logic` pero nunca
+    entraba en el contexto del modelo: preguntado a pelo —que es lo que hará el
+    cliente al mirar la columna «Falla Evidente (ABCD)» de su Excel— cuatro
+    corridas dieron tres alfabetos contradictorios, una de ellas re-asignando
+    las siete letras a políticas de mantenimiento."""
+
+    def _instrucciones(self) -> str:
+        from rcm_runbook.agent.instructions_es import INSTRUCTIONS_ES
+
+        return INSTRUCTIONS_ES
+
+    def test_las_siete_letras_estan_en_las_instrucciones(self):
+        from rcm_runbook.models.catalogs import ROUTE_LABELS_ES
+
+        texto = self._instrucciones()
+        for letra, significado in ROUTE_LABELS_ES.items():
+            assert f"- {letra} — {significado}" in texto, f"la ruta {letra} no llega"
+
+    def test_las_politicas_estan_en_las_instrucciones(self):
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+
+        texto = self._instrucciones()
+        for politica, nombre in POLICY_LABELS_ES.items():
+            assert f"- {politica.value} — {nombre}" in texto, f"{politica.value} no llega"
+
+    def test_avisa_de_la_colision_de_la_A(self):
+        # Una corrida racionalizó la colisión con «Parecen iguales pero no lo
+        # son». Sí lo son, y hay que decirlo antes de que la explique.
+        assert "AMBAS familias" in self._instrucciones()
+
+    def test_explica_como_corregir_un_dato(self):
+        texto = self._instrucciones()
+        assert "reemplazar=True" in texto
+        assert "record_task" in texto
+
+
+class TestUnaCorreccionNoSeDescartaEnSilencio:
+    """La familia entera. Revertir el arreglo de `add_failure_mode` —volver a
+    `return existing`— dejaba las 344 en verde: el arreglo se documentó como
+    corregido y no tenía ni un test. Estos cubren los tres mutadores."""
+
+    def _sesion(self):
+        from rcm_runbook.models.session import RCMSession
+
+        s = RCMSession()
+        s.add_function(kind="primaria", verb="bombear", object="crudo",
+                       performance_standard="850 GPM a 150 psi")
+        s.add_functional_failure("F-001", "No alcanza el caudal requerido")
+        return s
+
+    def _modo(self, s, **cambios):
+        base = dict(
+            description="Cavitación por NPSH por debajo del requerido",
+            mechanism="Cavitación", iso_code="LOO",
+            cause="Operación fuera de las condiciones de diseño",
+            root_cause="Filtro de succión obstruido",
+            failure_pattern="Aleatoria",
+        )
+        base.update(cambios)
+        return s.add_failure_mode("FF-001", **base)
+
+    def test_el_modo_con_otra_causa_no_se_traga_en_silencio(self):
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+
+        s = self._sesion()
+        self._modo(s)
+        with pytest.raises(ReglaDeNegocio, match="reemplazar=True"):
+            self._modo(s, cause="Lubricante degradado por agua")
+        assert s.failure_modes["FM-001"].cause.startswith("Operación fuera")
+
+    def test_con_reemplazar_la_correccion_del_modo_se_aplica(self):
+        s = self._sesion()
+        self._modo(s)
+        fm = self._modo(s, cause="Lubricante degradado por agua", reemplazar=True)
+        assert fm.id == "FM-001" and len(s.failure_modes) == 1
+        assert s.failure_modes["FM-001"].cause == "Lubricante degradado por agua"
+
+    def test_un_reintento_que_omite_un_opcional_no_se_toma_por_correccion(self):
+        # El diff comparaba el volcado entero: un reintento sin el argumento
+        # opcional llegaba con el valor por defecto y se reportaba como
+        # «cambia: cause, tpef» cuando nadie tocó el tpef.
+        s = self._sesion()
+        self._modo(s, tpef_hours=None)
+        assert self._modo(s).id == "FM-001", "un reintento parcial disparó el rechazo"
+
+    def test_la_tarea_se_puede_reemplazar_de_verdad(self):
+        # El mensaje prometía «la reemplazo» y no había forma de hacerlo: una
+        # tarea mal registrada era permanente.
+        from rcm_runbook.models.domain import MaintenanceTask
+
+        s = self._sesion()
+        self._modo(s)
+        base = dict(failure_mode_id="FM-001", discipline="Mecánico",
+                    duration_hours=2.0, requires_shutdown=False)
+        s.add_task(MaintenanceTask(description="Inspección de rodamientos",
+                                   frequency="Mensual", **base))
+        s.add_task(MaintenanceTask(description="Inspección de rodamientos",
+                                   frequency="Semestral", **base), reemplazar=True)
+        assert len(s.tasks["FM-001"]) == 1
+        assert s.tasks["FM-001"][0].frequency == "Semestral"
+
+    def test_confirmar_que_no_hay_funciones_primarias_no_es_un_no_op(self):
+        # Devolvía «✔ Confirmado» sobre una rama que no existía.
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+        from rcm_runbook.models.domain import FunctionKind
+
+        s = self._sesion()
+        with pytest.raises(ReglaDeNegocio, match="siempre tiene función primaria"):
+            s.confirm_no_functions_of_kind(FunctionKind.PRIMARIA)

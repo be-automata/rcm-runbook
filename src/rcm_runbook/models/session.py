@@ -147,6 +147,30 @@ class RCMSession(BaseModel):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _campos_distintos(existente: Any, candidato: Any, enviados: dict[str, Any]) -> list[str]:
+        """Qué cambia de verdad, mirando SOLO los campos que el llamador mandó.
+
+        Comparar el volcado entero delataba campos que nadie tocó: un reintento
+        que omite un argumento opcional llegaba con el valor por defecto y se
+        reportaba como «cambia: cause, tpef» cuando solo cambiaba la causa. El
+        agente lo leía como conflicto y se quedaba atascado.
+        """
+        distintos = []
+        for campo in enviados:
+            if campo == "id" or not hasattr(existente, campo):
+                continue
+            viejo, nuevo = getattr(existente, campo), getattr(candidato, campo)
+            # El texto se compara como en la identidad: si «Bombear» y
+            # «bombear» cuentan como la misma función, no pueden aparecer
+            # después en la lista de lo que cambió.
+            if isinstance(viejo, str) and isinstance(nuevo, str):
+                if not RCMSession._same_text(viejo, nuevo):
+                    distintos.append(campo)
+            elif viejo != nuevo:
+                distintos.append(campo)
+        return distintos
+
+    @staticmethod
     def _sin_acentos(t: str) -> str:
         plano = unicodedata.normalize("NFKD", t)
         return "".join(c for c in plano if not unicodedata.combining(c))
@@ -218,13 +242,31 @@ class RCMSession(BaseModel):
             return True  # solo cambiaron artículos, preposiciones o el plural
         return len(ta & tb) / len(ta | tb) >= 0.8
 
-    def add_function(self, **kwargs: Any) -> Function:
+    def add_function(self, reemplazar: bool = False, **kwargs: Any) -> Function:
         candidate = Function(id="F-000", **kwargs)
         for existing in self.functions.values():
-            if existing.kind == candidate.kind and self._same_text(
+            if existing.kind != candidate.kind or not self._same_text(
                 f"{existing.verb} {existing.object}", f"{candidate.verb} {candidate.object}"
             ):
-                return existing  # ya registrada — idempotente
+                continue
+            # Comparaba verbo y objeto e ignoraba `performance_standard`, que es
+            # justo el campo que define la falla funcional. En el guion de UAT
+            # esto es el paso 2 de la fase 2 —«que bombee bien» → «250 m³/h a
+            # 12 bar»—: la corrección se contestaba con un ✔ y se tiraba.
+            distintos = self._campos_distintos(existing, candidate, kwargs)
+            if not distintos:
+                return existing  # idempotente: la misma llamada, otra vez
+            if not reemplazar:
+                raise ReglaDeNegocio(
+                    f"La función {existing.id} ya existe con ese verbo y objeto, pero "
+                    f"lo que llega cambia: {', '.join(distintos)} "
+                    f"(actual: {existing.performance_standard}). Si es una "
+                    f"corrección, vuelve a llamar con reemplazar=True; si es otra "
+                    "función, distínguela en el verbo o el objeto."
+                )
+            actualizada = candidate.model_copy(update={"id": existing.id})
+            self.functions[existing.id] = actualizada
+            return actualizada
         fid = self._next_id("F", self.functions)
         fn = candidate.model_copy(update={"id": fid})
         self.functions[fid] = fn
@@ -240,6 +282,15 @@ class RCMSession(BaseModel):
             self.secondary_functions_confirmed = True
         elif kind == FunctionKind.PROTECCION:
             self.protective_functions_confirmed = True
+        else:
+            # 'primaria' pasaba el validador del enum, no tenía rama aquí y la
+            # herramienta contestaba «✔ Confirmado» sobre un no-op. Un activo
+            # sin función primaria no es un activo: no hay nada que confirmar.
+            raise ReglaDeNegocio(
+                "Solo se confirma la ausencia de funciones 'secundaria' o "
+                "'proteccion'. Un activo siempre tiene función primaria: si no "
+                "la tiene clara, regístrela con record_function."
+            )
 
     def add_functional_failure(self, function_id: str, description: str) -> FunctionalFailure:
         self._require("función", function_id, self.functions)
@@ -253,7 +304,9 @@ class RCMSession(BaseModel):
         self.functional_failures[ffid] = ff
         return ff
 
-    def add_failure_mode(self, functional_failure_id: str, **kwargs: Any) -> FailureMode:
+    def add_failure_mode(
+        self, functional_failure_id: str, reemplazar: bool = False, **kwargs: Any
+    ) -> FailureMode:
         self._require("falla funcional", functional_failure_id, self.functional_failures)
         candidate = FailureMode(
             id="FM-000", functional_failure_id=functional_failure_id, **kwargs
@@ -268,19 +321,24 @@ class RCMSession(BaseModel):
             # «Actualizado: FM-001 ahora tiene causa = "…" ✅» y la sesión seguía
             # con la causa vieja. Es el mismo descarte silencioso que ya había
             # en add_task, en el método hermano.
-            distintos = [
-                campo
-                for campo, valor in candidate.model_dump().items()
-                if campo not in ("id",) and getattr(existing, campo) != valor
-            ]
+            distintos = self._campos_distintos(existing, candidate, kwargs)
             if not distintos:
                 return existing  # idempotente: la misma llamada, otra vez
-            raise ReglaDeNegocio(
-                f"El modo {existing.id} ya existe con esa descripción, pero lo que "
-                f"llega cambia: {', '.join(distintos)}. Para corregirlo usa "
-                f"update_failure_mode sobre {existing.id}; si es otro modo, dale una "
-                "descripción que lo distinga."
-            )
+            if not reemplazar:
+                # El mensaje mandaba a `update_failure_mode`, que NO es una
+                # herramienta: el agente la buscó, no la encontró y siguió
+                # adelante dejando el dato viejo. Un callejón sin salida es peor
+                # que el descarte silencioso que vino a corregir, así que la
+                # salida tiene que ser algo que el agente pueda llamar.
+                raise ReglaDeNegocio(
+                    f"El modo {existing.id} ya existe con esa descripción, pero lo "
+                    f"que llega cambia: {', '.join(distintos)}. Si es una "
+                    f"corrección, vuelve a llamar con reemplazar=True; si es otro "
+                    "modo, dale una descripción que lo distinga."
+                )
+            actualizado = candidate.model_copy(update={"id": existing.id})
+            self.failure_modes[existing.id] = actualizado
+            return actualizado
         fmid = self._next_id("FM", self.failure_modes)
         fm = candidate.model_copy(update={"id": fmid})
         self.failure_modes[fmid] = fm
@@ -318,14 +376,17 @@ class RCMSession(BaseModel):
         self._require("modo de falla", action.failure_mode_id, self.failure_modes)
         self.actions.setdefault(action.failure_mode_id, []).append(action)
 
-    def add_task(self, task: MaintenanceTask) -> None:
+    def add_task(self, task: MaintenanceTask, reemplazar: bool = False) -> None:
         self._require("modo de falla", task.failure_mode_id, self.failure_modes)
         existing_tasks = self.tasks.setdefault(task.failure_mode_id, [])
         campos = ("frequency", "duration_hours", "discipline", "requires_shutdown")
-        for existing in existing_tasks:
+        for indice, existing in enumerate(existing_tasks):
             if self._same_text(existing.description, task.description):
                 if all(getattr(existing, c) == getattr(task, c) for c in campos):
                     return  # idempotente: la misma llamada, otra vez
+                if reemplazar:
+                    existing_tasks[indice] = task
+                    return
                 # Mismo texto y distintos datos es una corrección, no un
                 # reintento. Quedarse con la primera en silencio deja en el plan
                 # el dato viejo justo cuando alguien intentaba arreglarlo.
@@ -335,10 +396,13 @@ class RCMSession(BaseModel):
                     f"'{existing.description}' ({existing.frequency}, "
                     f"{existing.duration_hours} h, "
                     f"{'requiere paro' if existing.requires_shutdown else 'sin paro'}). "
-                    "Si quieres corregirla, dilo explícitamente; si es otra "
-                    "tarea, dale una descripción que las distinga."
+                    "Si es una corrección, vuelve a llamar con reemplazar=True; "
+                    "si es otra tarea, dale una descripción que las distinga."
                 )
             if self._casi_igual(existing.description, task.description):
+                if reemplazar:
+                    existing_tasks[indice] = task
+                    return
                 # Ni se duplica ni se fusiona en silencio: las dos salidas
                 # calladas producen un plan de mantenimiento en el que el
                 # cliente no puede confiar. Se devuelve la pelota con el dato
@@ -351,8 +415,9 @@ class RCMSession(BaseModel):
                     f"La nueva sería '{task.description}' ({task.frequency}, "
                     f"{task.duration_hours} h, "
                     f"{'requiere paro' if task.requires_shutdown else 'sin paro'}). "
-                    "Si es la misma tarea corregida, dilo y la reemplazo; si son "
-                    "dos tareas distintas, diferencia las descripciones."
+                    "Si es la misma tarea corregida, vuelve a llamar con "
+                    "reemplazar=True; si son dos tareas distintas, diferencia las "
+                    "descripciones."
                 )
         existing_tasks.append(task)
 

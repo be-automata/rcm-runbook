@@ -102,8 +102,25 @@ def _task_cells(task: MaintenanceTask | None) -> tuple[str, str, float | str, st
 
 
 def _first_task(session: RCMSession, fmid: str) -> tuple[str, str, float | str, str, str]:
+    """La celda de tarea de la hoja AMEF, que es una fila por modo de falla.
+
+    Antes devolvía `tasks[0]` a secas. Con dos tareas registradas para el mismo
+    modo, la hoja que el cliente abre primero mostraba una y callaba la otra —y
+    en el caso real callaba justo la corregida—. La hoja AMEF no puede crecer a
+    una fila por tarea sin dejar de ser el AMEF del cliente, así que dice la
+    verdad de otra forma: las nombra todas y manda al plan para el detalle.
+    """
     tasks = session.tasks.get(fmid, [])
-    return _task_cells(tasks[0] if tasks else None)
+    if len(tasks) <= 1:
+        return _task_cells(tasks[0] if tasks else None)
+    ver_el_plan = "Ver PLAN DE MANTENIMIENTO"
+    return (
+        " / ".join(t.description for t in tasks),
+        ver_el_plan,
+        ver_el_plan,
+        ver_el_plan,
+        ver_el_plan,
+    )
 
 
 def to_amef_rows(session: RCMSession) -> list[AMEFRow]:

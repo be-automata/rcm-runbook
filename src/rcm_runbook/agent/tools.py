@@ -255,14 +255,19 @@ def record_team_member(run_context: Any, name: str, role: str) -> str:
 @tool
 @_spanish_errors
 def record_function(
-    run_context: Any, kind: str, verb: str, object: str, performance_standard: str
+    run_context: Any, kind: str, verb: str, object: str, performance_standard: str,
+    reemplazar: bool = False,
 ) -> str:
     """Registra una función del activo. kind: 'primaria', 'secundaria' o 'proteccion'.
-    El estándar de desempeño debe ser cuantitativo/verificable (ej. '120 m³/h a 6 bar')."""
+    El estándar de desempeño debe ser cuantitativo/verificable (ej. '120 m³/h a 6 bar').
+
+    reemplazar=True para CORREGIR una función ya registrada: mismo verbo y objeto,
+    estándar nuevo. Sin él, la herramienta rechaza el cambio en vez de aplicarlo,
+    para no pisar un dato bueno por un reintento."""
     session = _load(run_context)
     fn = session.add_function(
         kind=FunctionKind(kind), verb=verb, object=object,
-        performance_standard=performance_standard,
+        performance_standard=performance_standard, reemplazar=reemplazar,
     )
     _save(run_context, session)
     return f"✔ Función {fn.id} registrada: {fn.statement}"
@@ -319,11 +324,19 @@ def record_failure_mode(
     tpef_hours: float | None = None,
     tpef_fuente: str = "",
     tpef_note: str = "",
+    reemplazar: bool = False,
 ) -> str:
     """Registra un modo de falla con su código ISO 14224, causa (≠ modo), causa raíz,
     patrón de falla y — si se conocen — intervalo P-F y TPEF con su fuente de dato
     (OREDA / Historial CMMS / Opinión de experto / Fabricante). Si el modo NO es
-    creíble en este contexto, pase credible=False con la justificación del descarte."""
+    creíble en este contexto, pase credible=False con la justificación del descarte.
+
+    failure_pattern, uno de: Aleatoria, Fin de Vida Útil, Mortalidad Infantil,
+    Desgaste, Fatiga (la herramienta devuelve la lista completa si no coincide).
+
+    reemplazar=True para CORREGIR un modo ya registrado: misma descripción, datos
+    nuevos. Sin él la herramienta rechaza el cambio en vez de aplicarlo, para no
+    pisar un dato bueno con un reintento."""
     session = _load(run_context)
     tpef = None
     if tpef_hours:
@@ -333,6 +346,7 @@ def record_failure_mode(
         )
     fm = session.add_failure_mode(
         functional_failure_id,
+        reemplazar=reemplazar,
         description=description,
         mechanism=mechanism,
         iso_code=iso_code,
@@ -676,16 +690,25 @@ def record_task(
     duration_hours: float,
     discipline: str,
     requires_shutdown: bool = False,
+    reemplazar: bool = False,
 ) -> str:
-    """Registra una tarea del plan de mantenimiento (para el CMMS): descripción,
-    frecuencia (catálogo del cliente: Diario…Según sea el caso), duración en horas,
-    ejecutor/disciplina y si requiere paro del equipo."""
+    """Registra una tarea del plan de mantenimiento (para el CMMS).
+
+    frequency, del catálogo del cliente: Diario, Semanal, Catorcenal, Quinquenal,
+    Mensual, Bimestral, Trimestral, Tetramestral, Semestral, Anual, Bi-Anual,
+    Tri-Anual, Tetra-Anual, Quinque-Annual, Parada de planta, Según sea el caso.
+    discipline: Mecánico, Electricista, Rotativo, Predictivo, Estatico, Operador,
+    Instrumentista. (Elidirlos con «…» hacía que el modelo inventara valores como
+    'Diaria' o 'Cada 36 meses', y cada invento cuesta un turno de rechazo.)
+
+    reemplazar=True para CORREGIR una tarea ya registrada: misma descripción o casi,
+    datos nuevos. Sin él la herramienta rechaza el cambio en vez de aplicarlo."""
     session = _load(run_context)
     session.add_task(MaintenanceTask(
         failure_mode_id=failure_mode_id, description=description, frequency=frequency,
         duration_hours=duration_hours, discipline=discipline,
         requires_shutdown=requires_shutdown,
-    ))
+    ), reemplazar=reemplazar)
     _save(run_context, session)
     return f"✔ Tarea registrada para {failure_mode_id}: {description[:50]} [{frequency}]"
 

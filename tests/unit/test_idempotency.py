@@ -15,10 +15,35 @@ def _session() -> RCMSession:
 
 class TestIdempotentMutators:
     def test_duplicate_function_returns_existing(self):
+        # La misma llamada, otra vez: el reintento del LLM no duplica.
         s = _session()
+        original = s.functions["F-001"].performance_standard
         again = s.add_function(kind="primaria", verb="Bombear", object="CRUDO",
-                               performance_standard="otro estándar da igual")
+                               performance_standard=original)
         assert again.id == "F-001" and len(s.functions) == 1
+
+    def test_un_estandar_distinto_no_se_descarta_en_silencio(self):
+        # Este test decía antes «otro estándar da igual» y afirmaba que se
+        # devolvía el existente: codificaba el defecto. `performance_standard`
+        # es justo el campo que define la falla funcional, y en el guion de UAT
+        # esto es el paso «que bombee bien» → «250 m³/h a 12 bar».
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+
+        s = _session()
+        with pytest.raises(ReglaDeNegocio, match="reemplazar=True"):
+            s.add_function(kind="primaria", verb="Bombear", object="CRUDO",
+                           performance_standard="250 m³/h a 12 bar")
+        assert len(s.functions) == 1, "no debe duplicar tampoco"
+
+    def test_con_reemplazar_la_correccion_se_aplica(self):
+        s = _session()
+        fn = s.add_function(kind="primaria", verb="Bombear", object="CRUDO",
+                            performance_standard="250 m³/h a 12 bar", reemplazar=True)
+        assert fn.id == "F-001"
+        assert s.functions["F-001"].performance_standard == "250 m³/h a 12 bar"
+        assert len(s.functions) == 1
 
     def test_duplicate_ff_returns_existing(self):
         s = _session()

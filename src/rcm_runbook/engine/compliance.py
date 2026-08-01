@@ -212,6 +212,12 @@ def tareas_contradictorias(session: RCMSession) -> list[str]:
     Se vio en el primer análisis completo real: «Mensual, 2 h, Mecánico, sin
     paro» y «Semestral, 3 h, Instrumentista, con paro» para el mismo modo, y la
     hoja AMEF mostró en silencio solo la primera.
+
+    La primera versión de esto comparaba SOLO `requires_shutdown`, o sea una de
+    las cuatro diferencias que narra el párrafo de arriba: ese incidente se
+    cazaba por casualidad. Con un sinónimo y dos frecuencias distintas, el plan
+    definitivo salía con dos periodicidades para el mismo trabajo y nada lo
+    paraba. Ahora se comparan los cuatro campos que el CMMS ejecuta.
     """
     problemas: list[str] = []
     for fmid, tareas in session.tasks.items():
@@ -219,14 +225,27 @@ def tareas_contradictorias(session: RCMSession) -> list[str]:
             continue
         for i, a in enumerate(tareas):
             for b in tareas[i + 1 :]:
-                if a.requires_shutdown != b.requires_shutdown:
+                if not RCMSession._casi_igual(a.description, b.description):
+                    # Dos tareas de verdad distintas (termografía y análisis de
+                    # aceite) pueden y deben tener frecuencias distintas.
+                    continue
+                choques = [
+                    f"{etiqueta}: '{getattr(a, campo)}' contra '{getattr(b, campo)}'"
+                    for campo, etiqueta in (
+                        ("frequency", "frecuencia"),
+                        ("duration_hours", "duración"),
+                        ("discipline", "ejecutor"),
+                        ("requires_shutdown", "requiere paro"),
+                    )
+                    if getattr(a, campo) != getattr(b, campo)
+                ]
+                if choques:
                     problemas.append(
-                        f"[Plan] {fmid} tiene dos tareas que se contradicen sobre si "
-                        f"requiere paro de planta: '{a.description}' "
-                        f"({'con paro' if a.requires_shutdown else 'sin paro'}) y "
-                        f"'{b.description}' "
-                        f"({'con paro' if b.requires_shutdown else 'sin paro'}). "
-                        "Resuelva cuál vale antes de exportar."
+                        f"[Plan] {fmid} tiene dos tareas equivalentes que se "
+                        f"contradicen — '{a.description}' y '{b.description}' — en "
+                        + "; ".join(choques)
+                        + ". Al CMMS no se le puede mandar las dos: resuelva cuál "
+                        "vale (record_task con reemplazar=True) antes de exportar."
                     )
     return problemas
 

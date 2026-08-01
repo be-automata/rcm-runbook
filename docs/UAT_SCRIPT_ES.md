@@ -317,6 +317,9 @@ done
 | 35 | Una corrección de un modo o de una tarea no se descarta en silencio: o se aplica, o se avisa | ☐ |
 | 36 | Nada de lo registrado en un turno con varias herramientas se pierde (compárese lo que dijo el agente con `/sessions/<id>`) | ☐ |
 | 37 | Una causa que repite el modo se rechaza aunque se escriba sin tildes | ☐ |
+| 38 | Una corrección se puede aplicar de verdad: la herramienta ofrece `reemplazar=True` y funciona | ☐ |
+| 39 | La hoja AMEF no calla ninguna tarea registrada del modo | ☐ |
+| 40 | Preguntado **a pelo** (sin ejecutar herramientas) qué significan las letras de ruta y las siglas de política, el agente acierta | ☐ |
 
 ## Limitación conocida — la compuerta del entregable definitivo
 
