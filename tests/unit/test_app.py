@@ -1,5 +1,8 @@
 """AgentOS app construction + export download endpoint (P3b exit criteria)."""
 
+import asyncio
+import json
+import re
 
 import pytest
 
@@ -2953,3 +2956,138 @@ class TestElFfiCaducadoSeAnotaNoSeEsconde:
         # fila debajo.
         texto, fm = self._hoja(vigente=False)
         assert "Nomenclatura:" in texto and fm in texto
+
+
+class TestElFalloDelProveedorNoSaleEnInglesNiConLaFacturacion:
+    """Criterio 44 del UAT, y 49. El fallo del proveedor NO llega como error
+    HTTP: llega con 200 y el inglés dentro del `content` del turno, con el
+    estado de facturación del operador. Estaba traducido solo en `demo.html`,
+    o sea en el navegador: la UI de os.agno.com y cualquier cliente de la API
+    seguían viendo «Your credit balance is too low… Plans & Billing».
+    """
+
+    CRUDO = (
+        "Error code: 400 - {'type': 'error', 'error': {'type': "
+        "'invalid_request_error', 'message': 'Your credit balance is too low to "
+        "access the Anthropic API. Please go to Plans & Billing to upgrade or "
+        "purchase credits.'}, 'request_id': 'req_011CdcXjgktwbRwnTeM3XbG5'}"
+    )
+
+    def test_traduce_y_no_deja_ni_una_palabra_de_la_facturacion(self):
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        salida = en_espanol_si_es_fallo_del_proveedor(self.CRUDO)
+        for prohibido in ("credit balance", "Plans & Billing", "upgrade",
+                          "purchase credits", "Please", "Anthropic API",
+                          "request_id", "invalid_request_error"):
+            assert prohibido not in salida, f"se filtró «{prohibido}»"
+        assert "no está disponible" in salida
+
+    @pytest.mark.parametrize(
+        "crudo",
+        [
+            "Error code: 429 - rate_limit_error: too many requests",
+            "Error code: 529 - {'type': 'error', 'error': {'type': 'overloaded_error'}}",
+            "Error code: 401 - authentication_error: invalid x-api-key",
+        ],
+    )
+    def test_los_demas_fallos_del_proveedor_tambien(self, crudo):
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        salida = en_espanol_si_es_fallo_del_proveedor(crudo)
+        assert salida != crudo
+        assert not re.search(r"[a-z]+_error|Error code", salida)
+
+    @pytest.mark.parametrize(
+        "legitima",
+        [
+            "El modo FTS es el más frecuente en bombas centrífugas.",
+            "Hubo un error al registrar la tarea: la frecuencia es obligatoria.",
+            "Le devuelvo el borrador del Excel con lo registrado hasta ahora.",
+        ],
+    )
+    def test_una_respuesta_legitima_no_se_convierte_en_un_aviso_de_averia(
+        self, legitima
+    ):
+        # El riesgo simétrico: traducir de más convierte una respuesta buena del
+        # agente en «el servicio no está disponible», que es una avería falsa.
+        from rcm_runbook.app import en_espanol_si_es_fallo_del_proveedor
+
+        assert en_espanol_si_es_fallo_del_proveedor(legitima) == legitima
+
+    def test_el_turno_completo_sale_traducido_por_la_api_no_por_el_navegador(
+        self, client
+    ):
+        """Extremo a extremo por el middleware: es lo que distingue este arreglo
+        del que ya había. Si solo tradujera el navegador, esto seguiría en
+        inglés."""
+        from rcm_runbook import app as app_mod
+
+        async def responder(scope, receive, send):
+            cuerpo = json.dumps(
+                {"content": self.CRUDO, "session_id": "s-fallo"}
+            ).encode()
+            await send({
+                "type": "http.response.start", "status": 200,
+                "headers": [(b"content-type", b"application/json"),
+                            (b"content-length", str(len(cuerpo)).encode())],
+            })
+            await send({"type": "http.response.body", "body": cuerpo})
+
+        mw = app_mod.TraducirFallosDelProveedor(responder)
+        recibido: list[dict] = []
+
+        async def recoger(mensaje):
+            recibido.append(mensaje)
+
+        async def vacio():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        asyncio.run(mw({"type": "http", "path": "/agents/x/runs"}, vacio, recoger))
+        cuerpo = json.loads(
+            b"".join(m.get("body", b"") for m in recibido if m["type"].endswith("body"))
+        )
+        assert "credit balance" not in cuerpo["content"]
+        assert "no está disponible" in cuerpo["content"]
+        assert cuerpo["session_id"] == "s-fallo", "se comió el resto de la respuesta"
+        largo = dict(
+            (k.decode().lower(), v.decode())
+            for m in recibido if m["type"].endswith("start") for k, v in m["headers"]
+        )["content-length"]
+        assert int(largo) == len(
+            b"".join(m.get("body", b"") for m in recibido if m["type"].endswith("body"))
+        ), "el content-length quedó mintiendo tras reescribir"
+
+    def test_lo_que_no_es_json_pasa_intacto(self):
+        """El streaming de os.agno.com va por SSE y NO se toca: bufferearlo
+        rompería el backpressure que consume su UI. Queda descubierto y
+        anotado, no resuelto: por ahí el inglés todavía sale."""
+        from rcm_runbook import app as app_mod
+
+        crudo = b"data: " + self.CRUDO.encode()
+
+        async def responder(scope, receive, send):
+            await send({
+                "type": "http.response.start", "status": 200,
+                "headers": [(b"content-type", b"text/event-stream")],
+            })
+            await send({"type": "http.response.body", "body": crudo})
+
+        recibido: list[dict] = []
+
+        async def recoger(mensaje):
+            recibido.append(mensaje)
+
+        async def vacio():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        asyncio.run(
+            app_mod.TraducirFallosDelProveedor(responder)(
+                {"type": "http", "path": "/agents/x/runs"}, vacio, recoger
+            )
+        )
+        assert any(m.get("body") == crudo for m in recibido)
+        # Y la cabecera tiene que salir: sin ella la respuesta nunca arranca.
+        arranques = [m for m in recibido if m["type"] == "http.response.start"]
+        assert len(arranques) == 1, f"cabeceras enviadas: {len(arranques)}"
+        assert dict(arranques[0]["headers"])[b"content-type"] == b"text/event-stream"

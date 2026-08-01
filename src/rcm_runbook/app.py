@@ -11,6 +11,7 @@ the bearer header or `?key=<key>` (browser-friendly links from the chat).
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import re
 import shutil
@@ -76,6 +77,8 @@ _SAFE_NAME = re.compile(r"^(?!\.+$)[\w.\-]+$")
 # `/favicon.ico` entra porque Safari lo pide aunque el icono vaya embebido, y un
 # 401 ahí deja un error rojo en la consola del cliente en cada carga.
 _PUBLIC_PATHS = frozenset({"/demo", "/health", "/favicon.ico"})
+
+logger = logging.getLogger(__name__)
 
 # Orígenes que AgentOS ya autoriza por CORS. Sin esto, nuestro 401 sale sin
 # cabeceras CORS (envolvemos al CORSMiddleware) y os.agno.com muestra un error
@@ -173,6 +176,125 @@ class RequireKey:
         await respuesta(scope, receive, send)
 
 
+# Los fallos del proveedor del modelo NO llegan como error HTTP: llegan con 200
+# y el texto en inglés dentro del `content` del turno, con el estado de
+# facturación del operador dentro. Se vio literal en producción:
+# «Your credit balance is too low… Please go to Plans & Billing to upgrade».
+#
+# Estaba traducido en el navegador, en `demo.html`. Eso deja fuera a todo el que
+# no use esa página —la UI de os.agno.com, cualquier cliente de la API—, que es
+# la mitad de los caminos y justo la que un integrador ve primero. La capa que
+# traduce errores envuelve las llamadas a herramientas, no la del modelo, así
+# que el único fallo que estaba ocurriendo era precisamente el que no cubría.
+_FALLOS_DEL_PROVEEDOR: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"credit balance is too low", re.I),
+     "El servicio no está disponible en este momento por un problema de la "
+     "cuenta del sistema. Avise a quien le compartió este enlace; su análisis "
+     "queda guardado y puede retomarlo después."),
+    (re.compile(r"rate.?limit|too many requests", re.I),
+     "El sistema está recibiendo muchas consultas a la vez. Espere unos "
+     "segundos y vuelva a enviar su mensaje."),
+    (re.compile(r"overloaded|\b529\b", re.I),
+     "El servicio está saturado en este momento. Espere unos segundos y vuelva "
+     "a intentarlo."),
+    (re.compile(r"authentication_error|invalid x-api-key", re.I),
+     "El servicio no está disponible por un problema de configuración del "
+     "sistema. Avise a quien le compartió este enlace."),
+    (re.compile(r"Error code: \d+ - \{'type': 'error'", re.I),
+     "El sistema tuvo un fallo técnico al procesar su mensaje. Avise a quien le "
+     "compartió este enlace; su análisis queda guardado."),
+)
+
+
+def en_espanol_si_es_fallo_del_proveedor(texto: str) -> str:
+    """El texto del turno, con el fallo del proveedor traducido y sin facturación.
+
+    Devuelve el original si no reconoce ningún fallo: traducir de más
+    convertiría una respuesta legítima del agente en un aviso de avería.
+    """
+    if not isinstance(texto, str):
+        return texto
+    for patron, en_espanol in _FALLOS_DEL_PROVEEDOR:
+        if patron.search(texto):
+            # Sin adjuntar el original: lleva dentro el estado de facturación
+            # del operador, que no es asunto del cliente.
+            logger.warning("fallo del proveedor servido al cliente: %s", texto[:200])
+            return en_espanol
+    return texto
+
+
+class TraducirFallosDelProveedor:
+    """Traduce el fallo del proveedor antes de que salga del servidor.
+
+    ASGI puro y solo sobre respuestas JSON no-transmitidas, por lo mismo que
+    `RequireKey`: bufferizar el streaming de runs rompe el backpressure que
+    consume la UI de os.agno.com. Lo que va por SSE no se toca —queda
+    documentado como descubierto, no como resuelto—; el chat de `/demo` pide
+    `stream=false`, así que ese camino sí queda cubierto en el servidor además
+    de en el navegador.
+    """
+
+    def __init__(self, app: Callable) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Callable, send: Callable) -> None:
+        if scope["type"] != "http" or "/runs" not in scope.get("path", ""):
+            await self.app(scope, receive, send)
+            return
+
+        inicio: dict[str, Any] = {}
+        trozos: list[bytes] = []
+        es_json = False
+
+        async def interceptar(mensaje: dict) -> None:
+            nonlocal es_json
+            if mensaje["type"] == "http.response.start":
+                cabeceras = {k.decode().lower(): v.decode() for k, v in mensaje["headers"]}
+                es_json = cabeceras.get("content-type", "").startswith("application/json")
+                if not es_json:
+                    await send(mensaje)
+                    return
+                inicio.update(mensaje)
+                return
+            if mensaje["type"] == "http.response.body" and es_json:
+                trozos.append(mensaje.get("body", b""))
+                if mensaje.get("more_body"):
+                    return
+                await _enviar_traducido(send, inicio, b"".join(trozos))
+                return
+            await send(mensaje)
+
+        await self.app(scope, receive, interceptar)
+
+
+async def _enviar_traducido(send: Callable, inicio: dict, cuerpo: bytes) -> None:
+    """Reescribe `content` si trae un fallo del proveedor y reenvía la respuesta.
+
+    Cualquier tropiezo deja pasar el original: un traductor que rompe la
+    respuesta es peor que uno que no traduce.
+    """
+    nuevo = cuerpo
+    try:
+        datos = json.loads(cuerpo)
+        if isinstance(datos, dict) and isinstance(datos.get("content"), str):
+            traducido = en_espanol_si_es_fallo_del_proveedor(datos["content"])
+            if traducido != datos["content"]:
+                datos["content"] = traducido
+                nuevo = json.dumps(datos).encode()
+    except (ValueError, TypeError):  # pragma: no cover — cuerpo no JSON
+        nuevo = cuerpo
+    cabeceras = [
+        (k, v) for k, v in inicio["headers"] if k.decode().lower() != "content-length"
+    ]
+    cabeceras.append((b"content-length", str(len(nuevo)).encode()))
+    await send({**inicio, "headers": cabeceras})
+    await send({"type": "http.response.body", "body": nuevo, "more_body": False})
+
+
+# El orden importa: `add_middleware` apila, así que el último añadido envuelve
+# por fuera. La llave se comprueba primero; traducir la respuesta de quien no
+# está autorizado no tendría sentido.
+app.add_middleware(TraducirFallosDelProveedor)
 app.add_middleware(RequireKey)
 
 
