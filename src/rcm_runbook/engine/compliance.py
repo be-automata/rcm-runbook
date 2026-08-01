@@ -212,11 +212,19 @@ def _sigue_necesitando_busqueda_de_fallas(session: RCMSession, fmid: str) -> boo
     fm = session.failure_modes.get(fmid)
     if fm is None or not fm.credible:
         return False
-    efecto = session.effects.get(fmid)
-    if efecto is not None and not efecto.is_hidden:
-        return False
     decision = session.decisions.get(fmid)
-    return not (decision is not None and decision.policy == MaintenancePolicy.OHF)
+    if decision is not None:
+        if decision.policy == MaintenancePolicy.OHF:
+            return False
+        if decision.policy == MaintenancePolicy.BF:
+            # La política ES búsqueda de fallas: hace falta la tarea aunque el
+            # efecto diga que el modo no es oculto. Esa contradicción es del
+            # análisis —la marca `stale_decisions` por su cuenta— y no una razón
+            # para saltarse una compuerta de seguridad. Las excepciones se
+            # añadieron para no rechazar análisis correctos, y este no lo es.
+            return True
+    efecto = session.effects.get(fmid)
+    return efecto is None or efecto.is_hidden
 
 
 def tareas_mas_lentas_que_el_ffi(session: RCMSession) -> list[str]:

@@ -2453,12 +2453,37 @@ class TestUnFfiQueYaNoAplicaNoBloqueaParaSiempre:
         s, _ = self._sesion()
         assert self._bloquea(s), "el contrapeso: aquí SÍ hace falta la tarea"
 
-    def test_si_deja_de_ser_oculto_ya_no_bloquea(self):
+    def test_si_deja_de_ser_oculto_y_se_reevalua_ya_no_bloquea(self):
+        # Corregir el efecto deja obsoleta la decisión; el escenario honesto es
+        # corregir las dos cosas.
         s, fm = self._sesion()
         s.effects[fm] = s.effects[fm].model_copy(
             update={"is_hidden": False, "hidden_route": None}
         )
+        s.decisions.pop(fm)
         assert not self._bloquea(s)
+
+    def test_una_politica_de_busqueda_de_fallas_con_efecto_no_oculto_bloquea(self):
+        # Contradicción del análisis: la política ES búsqueda de fallas. No es
+        # razón para saltarse una compuerta de seguridad — las excepciones se
+        # añadieron para no rechazar análisis correctos, y este no lo es.
+        s, fm = self._sesion()
+        s.effects[fm] = s.effects[fm].model_copy(
+            update={"is_hidden": False, "hidden_route": None}
+        )
+        assert self._bloquea(s)
+
+    def test_un_modo_oculto_sin_decision_todavia_bloquea(self):
+        s, fm = self._sesion()
+        s.decisions.pop(fm)
+        assert self._bloquea(s)
+
+    def test_un_modo_sin_efecto_registrado_bloquea(self):
+        # Falta información, que no es lo mismo que estar bien.
+        s, fm = self._sesion()
+        s.effects.pop(fm)
+        s.decisions.pop(fm)
+        assert self._bloquea(s)
 
     def test_si_la_politica_pasa_a_operar_hasta_la_falla_ya_no_bloquea(self):
         from rcm_runbook.models.catalogs import MaintenancePolicy
