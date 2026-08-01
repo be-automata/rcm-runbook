@@ -68,20 +68,29 @@ class TestElArnesNoFirmaLoQueNoMidio:
         assert "LÍNEA BASE ROJA" in r.stdout
         assert "MUERTO" not in r.stdout, "declaró muerto a un comentario"
 
-    def test_una_suite_que_no_existe_es_invalida_no_superviviente(self, tmp_path):
-        # Devolvía VIVO: fabricaba un hueco de test que no existe.
+    def test_una_corrida_que_no_ocurre_es_invalida_no_superviviente(self, tmp_path):
+        """Devolvía VIVO: fabricaba un hueco de test que no existe.
+
+        La suite tiene que EXISTIR y pasar en la línea base, y romperse solo al
+        mutar. Si se apunta a una suite inexistente, aborta antes por línea base
+        roja y el test pasa sin haber tocado nunca la rama del `returncode` —que
+        es justo lo que se quiere fijar—. Aquí la mutación deja el módulo sin
+        importar, así que pytest devuelve 2 (error de recolección), no 1.
+        """
         modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)
         try:
             r = _correr([{
-                "nombre": "la suite apuntada no existe",
+                "nombre": "la mutación impide recolectar la suite",
                 "fichero": str(modulo.relative_to(RAIZ)),
-                "antes": "VALOR * 2", "despues": "VALOR * 3",
-                "suite": "tests/unit/no_existe_esta_suite.py",
+                "antes": "VALOR = 4",
+                "despues": "import modulo_que_no_existe\n\nVALOR = 4",
+                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
             }], tmp_path)
         finally:
             self._limpiar()
+        assert "LÍNEA BASE ROJA" not in r.stdout, "abortó antes de medir"
         assert r.returncode == 2, f"contó como medición lo que no corrió:\n{r.stdout}"
-        assert "VIVO" not in r.stdout
+        assert "VIVO" not in r.stdout and "MUERTO" not in r.stdout
 
     def test_un_mutante_de_verdad_muere_y_uno_inerte_sobrevive(self, tmp_path):
         modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)
@@ -98,6 +107,11 @@ class TestElArnesNoFirmaLoQueNoMidio:
             self._limpiar()
         assert "MUERTO  rompe el cálculo" in r.stdout
         assert "VIVO    toca un comentario" in r.stdout
+        # Y el que se APUNTA como hueco tiene que ser el que sobrevivió: con la
+        # lista de supervivientes construida al revés, las dos líneas de arriba
+        # salen igual y el arnés señala al mutante equivocado.
+        cola = r.stdout.split("sobreviven")[-1]
+        assert "toca un comentario" in cola and "rompe el cálculo" not in cola
         assert r.returncode == 1, "un superviviente es un hueco, no un éxito"
 
     def test_deja_el_fichero_como_estaba(self, tmp_path):
@@ -112,6 +126,23 @@ class TestElArnesNoFirmaLoQueNoMidio:
             assert modulo.read_text() == antes
         finally:
             self._limpiar()
+
+    def test_una_mutacion_que_aplica_dos_veces_tampoco(self, tmp_path):
+        # El tercer motivo del docstring de `mutar.py` —«el reemplazo que aplica
+        # de más»— no tenía test: con dos coincidencias se muta más de lo que se
+        # cree y el resultado no dice nada del sitio que se quería probar.
+        modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)
+        try:
+            r = _correr([{
+                "nombre": "dos coincidencias",
+                "fichero": str(modulo.relative_to(RAIZ)),
+                "antes": "VALOR", "despues": "OTRO",
+                "suite": "tests/unit/_arnes_tmp/test_modulo.py",
+            }], tmp_path)
+        finally:
+            self._limpiar()
+        assert r.returncode == 2, f"midió con el reemplazo repetido:\n{r.stdout}"
+        assert "2 coincidencias" in r.stdout
 
     def test_una_mutacion_que_no_aplica_no_se_cuenta_como_medida(self, tmp_path):
         modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)

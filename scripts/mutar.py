@@ -58,10 +58,17 @@ def _correr(suite: str) -> int:
     0 = pasa · 1 = falla (el mutante muere) · lo demás = la corrida no ocurrió.
     """
     entorno = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-    return subprocess.run(
-        ["uv", "run", "pytest", "-q", "-p", "no:cacheprovider", suite],
-        capture_output=True, text=True, cwd=RAIZ, env=entorno,
-    ).returncode
+    try:
+        return subprocess.run(
+            ["uv", "run", "pytest", "-q", "-p", "no:cacheprovider", suite],
+            capture_output=True, text=True, cwd=RAIZ, env=entorno,
+            # Con tope: un mutante puede colgar la suite —un bucle que no
+            # termina—, y sin esto el arnés se queda esperando para siempre con
+            # el fichero mutado en el árbol.
+            timeout=600,
+        ).returncode
+    except subprocess.TimeoutExpired:
+        return -1
 
 
 def mutar(mutaciones: list[dict]) -> int:

@@ -422,16 +422,18 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
             r"^[\s\-*|>#]*\**([A-Z]{3,4})\**\s*[—–:|-]\s*\**([^\n|]{4,120})",
             crudo, re.M,
         )
-        # Un catálogo de UNA sola entrada solo vale si la herramienta lo dice.
-        # `bool(reales)` es hoy todo el veredicto del criterio 29, y cualquier
-        # línea «SIGLA: texto» lo llenaba: «NOTA: no hay catálogo disponible» o
-        # «HTTP - 500 Internal Server Error» aprobaban el criterio entero. Que
-        # «AVISO» y «ERROR» tengan cinco letras era el único motivo de que no
-        # pasaran más: un dial, no una defensa.
-        if len(pares) == 1 and not re.search(
-            r"^\s*[-*|>]\s*\**[A-Z]{3,4}|[A-Z]{3,4}\**\s*[—–]", crudo, re.M
-        ):
-            continue
+        # Aquí NO va un guardia contra «basura que parezca un catálogo». Se
+        # puso uno —exigir marca de lista o raya tipográfica en la entrada
+        # única— y costó cinco formatos legítimos: los dos puntos pelados, el
+        # guion ASCII, la tabla sin barra inicial, la sangría y el encabezado
+        # markdown pasaron a rojo con el agente respondiendo bien. Reinstalaba
+        # justo la avería que el comentario de arriba describe.
+        #
+        # Y defendía contra algo que no puede entrar: `crudo` es el valor que
+        # devolvió NUESTRA herramienta, no texto libre del modelo. «NOTA: no hay
+        # catálogo» solo aparece ahí si alguien lo inyecta en un test. Pagar
+        # cinco regresiones reales por un ataque imposible es mal negocio, y la
+        # basura que sí colaba —con una viñeta delante— seguía colando.
         # TODAS las llamadas, no la primera: si la primera era la rama de éxito
         # —un solo código—, el catálogo quedaba con un elemento y el detector no
         # podía acusar nada por construcción, mientras la evidencia decía
@@ -612,11 +614,14 @@ def _fases_mencionadas(texto: str) -> set[str]:
     La primera versión solo veía el singular, así que el criterio se aprobaba
     con una lista de faltantes íntegramente inventada.
     """
+    # Una sola pasada. Había una segunda para «Fase 3 — AMEF» y los encabezados
+    # sueltos, y era código muerto: la primera ya los captura, porque su clase
+    # `[\d\s,y]+` empieza por el mismo dígito. Un barrido de 200 000 cadenas no
+    # encontró ni una en la que la segunda aportara algo. Apagarla no cambiaba
+    # ninguna respuesta, así que el test que decía cubrirla no cubría nada.
     fases: set[str] = set()
     for tramo in re.findall(r"[Ff]ases?\s*([\d\s,y]+)", texto):
         fases.update(re.findall(r"\d", tramo))
-    # También «Fase 3 — AMEF» enumerado en lista, y los encabezados sueltos.
-    fases.update(re.findall(r"[Ff]ases?\s*(\d)", texto))
     return fases
 
 
