@@ -1,4 +1,9 @@
-"""Excel deliverable builder — pure projection, no knowledge of gates or drafts.
+"""Excel deliverable builder — proyección casi pura.
+
+La única regla de negocio que conoce esta capa es si un intervalo de búsqueda de
+fallas sigue aplicando, y la comparte con la compuerta a propósito
+(`compliance.sigue_necesitando_busqueda_de_fallas`): tener dos reglas separadas
+las hacía divergir dentro del mismo libro.
 
 Builds the workbook from the frozen benchmark fixture (title block, header row,
 lookup dropdowns, SAE reference sheet) and appends AMEF/PLAN rows. The gate
@@ -252,12 +257,12 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ).alignment = WRAP
         row += 1
     for fmid, ffi in session.ffi_por_modo.items():
-        if not sigue_necesitando_busqueda_de_fallas(session, fmid):
-            # El mismo criterio que usa la compuerta. Borrar la entrada al
-            # corregir el efecto —lo que se intentó antes— dejaba a la compuerta
-            # sin nada que visitar y desactivaba la excepción de política BF:
-            # un modo de seguridad sin tarea que lo ejecute salía limpio.
-            continue
+        # Los que ya no aplican se ANOTAN, no se esconden. Filtrarlos dejaba una
+        # sección con su cabecera y su nomenclatura y cero filas —definiciones
+        # sin término— y, peor, hacía desaparecer del entregable un intervalo
+        # que sí se calculó, sin decirlo. Es el mismo descarte silencioso un
+        # piso más arriba.
+        vigente = sigue_necesitando_busqueda_de_fallas(session, fmid)
         ws.cell(row=row, column=1, value=fmid)
         ws.cell(row=row, column=2, value=round(ffi.horas, 1))
         ws.cell(row=row, column=3, value=f"{ffi.horas / 730.0:.1f} meses")
@@ -278,8 +283,13 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ]
         ws.cell(
             row=row, column=6,
-            value="Ejecutado por: " + ("; ".join(marcadas) if marcadas
-                                       else "NINGUNA TAREA MARCADA"),
+            value=(
+                "Ejecutado por: " + ("; ".join(marcadas) if marcadas
+                                     else "NINGUNA TAREA MARCADA")
+                if vigente
+                else "YA NO APLICA: el modo dejó de requerir búsqueda de fallas "
+                     "(efecto evidente, operar-hasta-la-falla o descartado)"
+            ),
         ).alignment = WRAP
         ws.cell(row=row, column=7, value="; ".join(ffi.avisos)).alignment = WRAP
         row += 1

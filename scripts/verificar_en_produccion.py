@@ -179,79 +179,122 @@ def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
     return []
 
 
-def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], list[str]]:
-    """Códigos a los que el agente les ATRIBUYE un significado, y cuáles falla.
+_NEGACIONES = (
+    "no está", "no esta", "no existe", "no aparece", "no figura", "no significa",
+    "no corresponde", "no pertenece", "no es un código", "no se pudo",
+    "pendiente de", "desconocido", "inexistente",
+)
 
-    Listar un código sin definirlo no es inventárselo, y el criterio dice «no
-    inventa el significado». La versión anterior miraba 90 caracteres desde la
-    primera aparición y marcaba como inventado un código correctamente listado
-    más abajo: dio un falso positivo con una respuesta que era correcta.
+
+def _es_negacion(texto: str) -> bool:
+    """Decir que el código NO existe, o abstenerse, es cumplir el criterio.
+
+    Se marcaban como significado inventado, y son la forma en que el agente
+    cumple su primera mitad: el criterio se contradecía consigo mismo.
     """
-    definidos: list[str] = []
-    inventados: list[str] = []
-    for codigo, esperado in reales.items():
-        # El TRAMO que sigue al código, no una coincidencia suelta: «FTS (Fail
-        # To Start) — Falla en arrancar» expande la sigla en inglés antes de
-        # definirla, y buscar coincidencias sueltas se quedaba con el paréntesis
-        # y lo marcaba como invento. Expandir la sigla es correcto.
-        tramos = [
-            texto[m.end():m.end() + 90]
-            for m in re.finditer(rf"{codigo}\**", texto)
-        ]
-        if not tramos:
-            continue
-        # Se le atribuye algo si tras el código viene un separador o un verbo.
-        atribuidos = [
-            t for t in tramos
-            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", t)
-        ]
-        if not atribuidos:
-            continue
-        definidos.append(codigo)
-        if any(esperado in t.lower() for t in atribuidos):
-            continue
-        if any(_es_negacion(t) for t in atribuidos):
-            continue
-        inventados.append(f"{codigo}→«{atribuidos[0].strip(' —:|-(')[:40]}»")
-    return definidos, inventados
+    # Solo al PRINCIPIO: buscarla en cualquier punto absolvía a «Fuga Total del
+    # Sistema, aunque no está confirmado en OREDA» — un invento con coletilla.
+    # La puntuación se quita ANTES de recortar: el tramo empieza por el
+    # separador («| No aparece…», «— no se pudo…»), así que recortar primero
+    # dejaba el símbolo delante y ninguna negación coincidía.
+    limpio = re.sub(r"[^\w\s]", " ", texto.lower()).replace("ó", "o").strip()
+    return any(limpio.startswith(p.replace("ó", "o")) for p in _NEGACIONES)
 
 
 def _significado_atribuido(texto: str, codigo: str) -> str:
     """¿Se le atribuye algún significado a un código que NO está en el catálogo?
 
-    Es el caso central del criterio 29 y no lo cubría nada: «QQQ1 no existe,
-    pero por su forma sería 'Falla de calidad tipo 1'» daba «lo declara ausente:
-    True, inventados: ninguno» y aprobaba.
+    Caso central del criterio 29: «QQQ1 no existe, pero por su forma sería
+    'Falla de calidad tipo 1'» aprobaba en verde.
     """
-    for frase in re.split(r"[.\n]", texto):
-        if codigo not in frase:
+    # Por oraciones, pero mirando también la siguiente: el invento suele ir tras
+    # un punto —«…no existe en el catálogo. Por su forma sería…»— y partir por
+    # puntos lo dejaba fuera.
+    trozos = re.split(r"\n", texto)
+    for trozo in trozos:
+        if codigo not in trozo:
             continue
         for patron in (
-            r"(?:sería|significaría|correspondería|se refiere a"
-            r"|podría (?:ser|significar))\s+\**['«\"]?([^'»\"\n]{4,60})",
+            r"(?:sería|significaría|correspondería|se refiere a|designa"
+            r"|equivale a|denota|podría (?:ser|significar))\s+\**['«\"]?"
+            r"([^'»\"\n]{4,60})",
             rf"{codigo}\**\s*[—:|-]\s*\**([^|\n]{{4,60}})",
         ):
-            m = re.search(patron, frase, re.IGNORECASE)
+            m = re.search(patron, trozo, re.IGNORECASE)
             if m and not _es_negacion(m.group(1)):
                 return m.group(1).strip()
     return ""
 
 
-def _es_negacion(texto: str) -> bool:
-    """Decir que el código NO existe es cumplir el criterio, no incumplirlo.
+def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
+    """Lo que `explain_iso_code` devolvió EN ESTA MISMA corrida.
 
-    «**QQQ1** — no está en el catálogo ISO 14224» y «| QQQ1 | No existe |» son
-    la forma en que el agente cumple la primera mitad, y se marcaban como
-    significado inventado: el criterio se contradecía consigo mismo, cumplirlo
-    bien lo hacía fallar.
+    Tercer intento de medir el criterio 29, y los dos anteriores fallaron en las
+    dos direcciones: uno aflojó la vara (no veía las tablas markdown) y el otro
+    la apretó hasta reprobar respuestas correctas (negar que un código existe
+    contaba como inventárselo). El error de fondo era el mismo: comparar contra
+    palabras clave que yo elegía a mano.
+
+    La verdad no la pongo yo, la pone la herramienta: su salida trae
+    «- CÓDIGO — definición» y ahí está el catálogo del cliente. Comparar contra
+    eso es comparar contra el sistema, no contra mi criterio.
     """
-    limpio = texto.strip().lower()
-    return any(
-        limpio.startswith(p) or f" {p}" in limpio
-        for p in ("no está", "no esta", "no existe", "no aparece", "no figura",
-                  "no significa", "no corresponde", "no pertenece", "no es un código",
-                  "desconocido", "inexistente")
-    )
+    for t in salida.get("tools") or []:
+        if t.get("tool_name") != "explain_iso_code":
+            continue
+        pares = re.findall(r"-\s*([A-Z]{2,5})\s*—\s*([^\n]{4,80})", str(t.get("result") or ""))
+        return {c: d.strip() for c, d in pares}
+    return {}
+
+
+_VACIAS_ES = frozenset(
+    "el la los las un una de del al a en y o u con para por sobre que se su sus "
+    "lo es son cuando requerido no".split()
+)
+
+
+def _nucleo(texto: str) -> set[str]:
+    """Las palabras con carga de una definición, en minúsculas y sin plural."""
+    palabras = set()
+    for p in re.findall(r"\w+", texto.lower()):
+        if p in _VACIAS_ES or len(p) < 4:
+            continue
+        # Por prefijo de cuatro letras: «arrancar» y «arranque» son la misma
+        # idea y comparar la palabra entera —ni siquiera quitando el plural— las
+        # daba por distintas, reprobando un sinónimo legítimo.
+        palabras.add(p[:4])
+    return palabras
+
+
+def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Códigos a los que el agente atribuye un significado, y cuáles contradicen
+    al catálogo.
+
+    Se compara por NÚCLEO de palabras, no por subcadena: «Fallo al arranque»
+    frente a «Falla en arrancar cuando es requerido» es la misma idea y la
+    versión anterior la marcaba como invento.
+    """
+    definidos: list[str] = []
+    inventados: list[str] = []
+    for codigo, definicion in reales.items():
+        esperado = _nucleo(definicion)
+        atribuidos = [
+            texto[m.end():m.end() + 90]
+            for m in re.finditer(rf"{codigo}\**", texto)
+            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", texto[m.end():m.end() + 90])
+        ]
+        if not atribuidos:
+            continue
+        definidos.append(codigo)
+        # Se juzga CADA atribución: que una sea correcta no absuelve a las
+        # demás, que era como se colaba «| FTS | Falla en arrancar |» seguido de
+        # «| FTS | Fuga Total del Sistema |».
+        for tramo in atribuidos:
+            if _es_negacion(tramo) or esperado & _nucleo(tramo):
+                continue
+            inventados.append(f"{codigo}→«{tramo.strip(' —:|-(')[:40]}»")
+            break
+    return definidos, inventados
 
 
 def _fases_mencionadas(texto: str) -> set[str]:
@@ -322,6 +365,39 @@ def _medicion_compuerta(llamadas: int, intentos: int) -> str:
     )
 
 
+def _evaluar_criterio_29(salida: dict, preguntado: str) -> tuple[bool, str]:
+    """Criterio 29 entero, contra la salida real de la herramienta.
+
+    El catálogo lo pone `explain_iso_code` en esta misma corrida, no una tabla
+    de palabras clave elegida a mano: los tres intentos anteriores fallaron por
+    medir contra mi criterio en vez de contra el del sistema.
+    """
+    reales = _definiciones_de_la_herramienta(salida)
+    return _juzgar_codigo_iso(salida.get("content") or "", preguntado, reales)
+
+
+def _codigo_final(
+    veredicto: int, hallazgos: list[dict], interrumpida: bool, fugadas: list[str]
+) -> int:
+    """El código de salida, con todo lo que pudo pasar en la corrida.
+
+    0 bien · 1 criterio en rojo · 2 corrida truncada · 4 la corrida ensució la
+    base del cliente. (3 lo devuelve `main` antes de empezar: error de operador;
+    5 lo devuelve el arranque si el arnés revienta.)
+
+    Extraída porque vivía dentro de `main()` y no había forma de probarla: se
+    podía hacer que una truncación escondiera los rojos ya medidos, o que una
+    sesión fugada saliera en verde, sin que nada chillara.
+    """
+    if fugadas:
+        return 4
+    if interrumpida:
+        # Los criterios que faltan, faltan POR la truncación y no cuentan; los
+        # rojos ya medidos sí, y mandan sobre el 2.
+        return 1 if any(not h["ok"] for h in hallazgos) else 2
+    return veredicto
+
+
 def _veredicto(
     hallazgos: list[dict], mediciones: list[str], no_ejecutados: list[str]
 ) -> int:
@@ -380,6 +456,7 @@ def main() -> int:
         print(f"✓ El proveedor atiende ({detalle}). Ejecutando los criterios.\n")
 
         interrumpida = False
+        fugadas: list[str] = []
         sufijo = uuid.uuid4().hex[:8]
         sesiones: list[str] = []
         hallazgos: list[dict] = []
@@ -521,13 +598,12 @@ def main() -> int:
                 cliente, s,
                 "¿Qué significa el código ISO 14224 'QQQ1'? Usa explain_iso_code.")
             texto = salida.get("content") or ""
-            reales = {"FTS": "arrancar", "STP": "detener", "HIO": "alta", "LOO": "baja"}
             definidos, inventados = _codigos_definidos(texto, reales)
             # Dos partes: que diga que el código no está en el catálogo —siempre
             # comprobable— y que no invente significados, que solo se puede
             # juzgar si define alguno. Exigir que defina convertía en fallo una
             # respuesta correcta que se limitaba a listar los códigos.
-            ok29, evidencia29 = _juzgar_codigo_iso(texto, "QQQ1", reales)
+            ok29, evidencia29 = _evaluar_criterio_29(salida, "QQQ1")
             hallazgos.append(_resultado(
                 29, "Dice que el código no está en el catálogo y no inventa significados",
                 ok29, evidencia29))
@@ -582,8 +658,7 @@ def main() -> int:
 
         except ProveedorCaido as exc:
             print(f"\n✗ El proveedor dejó de atender a mitad de corrida: {exc}")
-            print("  Los criterios que quedaban NO se han medido. Esto no es un")
-            print("  fallo del producto: recargue la cuenta y vuelva a ejecutar.")
+            print("  Los criterios que quedaban NO se han medido.")
             interrumpida = True
         finally:
             for sid in sesiones:
@@ -599,18 +674,27 @@ def main() -> int:
                 print(f"\nLimpieza: hecha, pero no se pudo verificar el censo ({exc})")
             else:
                 crudo = json.dumps(restantes)
-                fugadas = [sid for sid in sesiones if sid in crudo]
+                fugadas[:] = [sid for sid in sesiones if sid in crudo]
                 print(
                     f"\nLimpieza: {'quedan ' + str(fugadas) if fugadas else 'sin residuos'}"
                 )
 
-        if interrumpida:
-            # Código 2, distinto del 1: una corrida truncada no es lo mismo que
-            # un criterio en rojo, y confundirlos es lo que hizo que seis
-            # criterios sanos aparecieran como fallidos.
-            return 2
-        return _veredicto(hallazgos, mediciones, no_ejecutados)
+        # El veredicto se imprime SIEMPRE, también al truncarse: saltárselo
+        # escondía los criterios ya medidos en rojo y el script llegaba a
+        # afirmar que no había fallo del producto cuando ya había medido uno.
+        codigo = _veredicto(hallazgos, mediciones, no_ejecutados)
+        if fugadas:
+            print("  ⚠ La corrida dejó sesiones en la base del cliente.")
+        return _codigo_final(codigo, hallazgos, interrumpida, fugadas)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001 — el código de salida tiene que decir la verdad
+        # 5, no 1: un fallo del arnés (red, JSON, KeyError) no es un criterio en
+        # rojo, y salir con 1 lo hacía indistinguible de un defecto del producto.
+        print(f"\n✗ El arnés falló, no el producto: {type(exc).__name__}: {exc}")
+        sys.exit(5)

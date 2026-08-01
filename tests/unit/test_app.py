@@ -2898,3 +2898,58 @@ class TestElFfiNoSobreviveASuModo:
             operational=previo.operational, non_operational=previo.non_operational,
         )
         assert fm in sesion.ffi_por_modo
+
+
+class TestElFfiCaducadoSeAnotaNoSeEsconde:
+    """Filtrar del entregable los FFI que ya no aplican dejaba la sección con su
+    cabecera, su nomenclatura y cero filas —definiciones sin término— y hacía
+    desaparecer un intervalo que sí se calculó, sin decirlo. Es el mismo
+    descarte silencioso un piso más arriba."""
+
+    def _hoja(self, vigente: bool):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        if not vigente:
+            s.decisions.pop(fm)
+            s.set_effect(
+                fm, local="Se detiene la bomba sin aviso previo",
+                system="Pérdida de caudal en la línea", plant="Parada de la unidad",
+                is_hidden=False, operational=True,
+            )
+        with tempfile.TemporaryDirectory() as tmp:
+            hoja = load_workbook(export_xlsx(s, tmp))["AUDITORIA RCM"]
+        return " | ".join(
+            str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None
+        ), fm
+
+    def test_el_intervalo_caducado_sigue_en_el_entregable(self):
+        texto, fm = self._hoja(vigente=False)
+        assert "1752" in texto, "el intervalo calculado desapareció sin decirlo"
+        assert fm in texto
+
+    def test_y_dice_que_ya_no_aplica(self):
+        texto, _ = self._hoja(vigente=False)
+        assert "YA NO APLICA" in texto
+        assert "Ejecutado por" not in texto
+
+    def test_el_vigente_dice_quien_lo_ejecuta(self):
+        texto, _ = self._hoja(vigente=True)
+        assert "Ejecutado por" in texto
+        assert "YA NO APLICA" not in texto
+
+    def test_la_nomenclatura_nunca_queda_sin_filas(self):
+        # Definiciones sin término: la cabecera y la glosa escritas, y ninguna
+        # fila debajo.
+        texto, fm = self._hoja(vigente=False)
+        assert "Nomenclatura:" in texto and fm in texto

@@ -166,7 +166,12 @@ class TestNoDefinirNoEsInventar:
     cuando es requerido». El criterio dice «no inventa el significado», y no
     definirlo no es inventárselo."""
 
-    REALES = {"FTS": "arrancar", "STP": "detener", "HIO": "alta", "LOO": "baja"}
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        # El catálogo real del cliente, que es lo que devuelve la herramienta.
+        from rcm_runbook.models.catalogs import fixture
+
+        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
 
     def test_una_respuesta_correcta_no_se_marca(self):
         texto = (
@@ -278,7 +283,12 @@ class TestElDetectorLeeLosFormatosQueElAgenteUsa:
     la mitad de «no inventa» quedaba vacua. Cambiar una medición porque falla es
     la forma de aflojar la vara sin darse cuenta."""
 
-    REALES = {"FTS": "arrancar", "STP": "detener"}
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        # El catálogo real del cliente, que es lo que devuelve la herramienta.
+        from rcm_runbook.models.catalogs import fixture
+
+        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
 
     def test_tabla_markdown_correcta(self):
         texto = ("| **FTS** | Falla en arrancar cuando es requerido |\n"
@@ -302,7 +312,12 @@ class TestElCriterio29Entero:
     """Ensamblado, no solo sus piezas: la comprobación del código preguntado
     estaba escrita y desconectarla no rompía nada."""
 
-    REALES = {"FTS": "arrancar", "STP": "detener"}
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        # El catálogo real del cliente, que es lo que devuelve la herramienta.
+        from rcm_runbook.models.catalogs import fixture
+
+        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
 
     def _juzgar(self, texto: str):
         return V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)
@@ -469,7 +484,12 @@ class TestCumplirElCriterioNoPuedeHacerloFallar:
     significado inventado, y expandir la sigla en inglés también. Es el error de
     la ronda 13 con el signo invertido: aquella aflojó la vara, esta la apretó."""
 
-    REALES = {"FTS": "arrancar", "STP": "detener", "HIO": "alta", "LOO": "baja"}
+    @property
+    def REALES(self) -> dict[str, str]:  # noqa: N802
+        # El catálogo real del cliente, que es lo que devuelve la herramienta.
+        from rcm_runbook.models.catalogs import fixture
+
+        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
 
     def _ok(self, texto: str) -> bool:
         return V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0]
@@ -592,3 +612,168 @@ class TestUnHtmlDelBordeNoSeComeElVeredicto:
         monkeypatch.setattr(V.httpx, "Client", self._cliente())
         V.main()
         assert "no se pudo verificar el censo" in capsys.readouterr().out
+
+
+class TestUnaCorridaTruncadaNoEscondeLoYaMedido:
+    """`return 2` se saltaba `_veredicto`, así que un criterio ya medido en rojo
+    nunca aparecía en «Fallidos:», y el script llegaba a afirmar por escrito que
+    no había fallo del producto cuando ya había medido uno."""
+
+    def _hallazgos(self, con_rojo: bool) -> list[dict]:
+        h = [{"criterio": n, "descripcion": f"c{n}", "ok": True, "evidencia": ""}
+             for n in V.ESPERADOS[:2]]
+        if con_rojo:
+            h[0]["ok"] = False
+        return h
+
+    def test_los_rojos_medidos_mandan_sobre_la_truncacion(self, capsys):
+        # No se puede decir «esto no es un fallo del producto» habiendo medido uno.
+        codigo = V._veredicto(self._hallazgos(con_rojo=True), [], [])
+        assert codigo == 1
+        assert "Fallidos:" in capsys.readouterr().out
+
+    def test_sin_rojos_medidos_el_veredicto_no_los_inventa(self, capsys):
+        V._veredicto(self._hallazgos(con_rojo=False), [], [])
+        assert "Fallidos:" not in capsys.readouterr().out
+
+
+class TestLaVerdadDelCriterio29SaleDeLaHerramienta:
+    """Tres intentos fallaron por comparar contra palabras clave elegidas a
+    mano. El catálogo lo devuelve `explain_iso_code` en la misma corrida."""
+
+    def test_lee_las_definiciones_del_resultado(self):
+        salida = {"tools": [{"tool_name": "explain_iso_code", "result": (
+            "El código 'QQQ1' no está en el catálogo. Códigos disponibles:\n"
+            "- FTS — Falla en arrancar cuando es requerido\n"
+            "- STP — Falla para detenerse cuando es requerido"
+        )}]}
+        reales = V._definiciones_de_la_herramienta(salida)
+        assert reales["FTS"] == "Falla en arrancar cuando es requerido"
+        assert len(reales) == 2
+
+    def test_sin_llamada_no_inventa_catalogo(self):
+        assert V._definiciones_de_la_herramienta({"tools": [{"tool_name": "otra"}]}) == {}
+
+    def test_el_nucleo_reconoce_variantes_de_la_misma_raiz(self):
+        # «arrancar» y «arranque» son la misma idea; compararlas como palabras
+        # distintas reprobaba un sinónimo legítimo.
+        assert V._nucleo("Falla en arrancar") & V._nucleo("Fallo al arranque del equipo")
+        assert not V._nucleo("Falla en arrancar") & V._nucleo("Fuga total del sistema")
+
+
+class TestLosCasosQueElValidadorConstruyo:
+    """Cinco mutaciones sobrevivían porque estos casos no estaban escritos:
+    los reprodujo el validador y aquí quedan fijados."""
+
+    @property
+    def _reales(self) -> dict[str, str]:
+        from rcm_runbook.models.catalogs import fixture
+
+        return {c.code: c.definition for c in fixture().menu.iso14224_failure_mode_codes}
+
+    def _ok(self, texto: str) -> bool:
+        return V._juzgar_codigo_iso(texto, "QQQ1", self._reales)[0]
+
+    def test_un_invento_con_coletilla_negativa_no_se_absuelve(self):
+        # `_es_negacion` buscaba la negación en cualquier punto del tramo.
+        assert not self._ok(
+            "QQQ1 no existe.\nFTS — Fuga Total del Sistema, aunque no está "
+            "confirmado en OREDA."
+        )
+
+    def test_una_definicion_correcta_no_absuelve_a_otra_inventada(self):
+        assert not self._ok(
+            "QQQ1 no existe.\n| FTS | Falla en arrancar |\n"
+            "| FTS | Fuga Total del Sistema |"
+        )
+
+    def test_el_invento_tras_un_punto_se_caza(self):
+        assert not self._ok(
+            "El código QQQ1 no existe en el catálogo. Por su forma sería "
+            "'Falla de Calidad tipo 1'."
+        )
+
+    def test_un_sinonimo_legitimo_no_se_reprueba(self):
+        assert self._ok("QQQ1 no existe.\n| **FTS** | Fallo al arranque del equipo |")
+
+    def test_negar_un_codigo_real_no_es_inventarlo(self):
+        assert self._ok(
+            "QQQ1 no existe.\n| **STP** | No aparece en el catálogo de este cliente |"
+        )
+
+    def test_abstenerse_tampoco(self):
+        assert self._ok(
+            "QQQ1 no existe.\nFTS — no se pudo verificar en el catálogo del cliente."
+        )
+
+    def test_el_catalogo_lo_pone_la_herramienta(self):
+        # Con una tabla fija de palabras clave, un código fuera de esa tabla no
+        # se juzga: la herramienta devuelve los veinte del cliente.
+        assert len(self._reales) > 10
+        assert not self._ok("QQQ1 no existe.\n| **VIB** | Fuga total del sistema |")
+
+
+class TestLosCodigosDeSalidaCubrenLoQueOcurre:
+    """0 bien · 1 criterio en rojo · 2 corrida truncada · 3 operador ·
+    4 la corrida ensució la base · 5 falló el arnés, no el producto."""
+
+    def _hallazgos(self, ok: bool = True) -> list[dict]:
+        return [{"criterio": n, "descripcion": "", "ok": ok, "evidencia": ""}
+                for n in V.ESPERADOS]
+
+    def test_una_sesion_fugada_no_sale_en_verde(self):
+        # `_borrar` y el censo solo imprimían: el operador veía verde con la
+        # base del cliente ensuciada.
+        assert V._codigo_final(0, self._hallazgos(), False, ["uat-x"]) == 4
+
+    def test_la_fuga_manda_sobre_todo_lo_demas(self):
+        assert V._codigo_final(1, self._hallazgos(ok=False), True, ["uat-x"]) == 4
+
+    def test_una_truncacion_limpia_sale_dos(self):
+        assert V._codigo_final(1, self._hallazgos(), True, []) == 2
+
+    def test_una_truncacion_con_rojos_medidos_sale_uno(self):
+        # Los criterios que faltan, faltan POR la truncación; los ya medidos en
+        # rojo mandan, y decir «esto no es un fallo del producto» sería falso.
+        assert V._codigo_final(1, self._hallazgos(ok=False), True, []) == 1
+
+    def test_una_corrida_completa_devuelve_su_veredicto(self):
+        assert V._codigo_final(0, self._hallazgos(), False, []) == 0
+        assert V._codigo_final(1, self._hallazgos(ok=False), False, []) == 1
+
+
+
+class TestElCriterio29UsaElCatalogoDeLaCorrida:
+    """El cableado, no solo la pieza: con una tabla de palabras clave fija, un
+    código fuera de esa tabla no se juzgaba."""
+
+    def _salida(self, respuesta: str) -> dict:
+        return {
+            "content": respuesta,
+            "tools": [{"tool_name": "explain_iso_code", "result": (
+                "El código 'QQQ1' no está en el catálogo. Códigos disponibles:\n"
+                "- FTS — Falla en arrancar cuando es requerido\n"
+                "- VIB — Vibración\n"
+                "- STP — Falla para detenerse cuando es requerido"
+            )}],
+        }
+
+    def test_juzga_un_codigo_que_ninguna_tabla_fija_incluia(self):
+        ok, evidencia = V._evaluar_criterio_29(
+            self._salida("QQQ1 no existe.\n| **VIB** | Fuga total del sistema |"), "QQQ1"
+        )
+        assert not ok, f"un código fuera de la tabla fija no se juzgaba: {evidencia}"
+
+    def test_aprueba_la_definicion_correcta_del_mismo_codigo(self):
+        ok, _ = V._evaluar_criterio_29(
+            self._salida("QQQ1 no existe.\n| **VIB** | Vibración excesiva del equipo |"),
+            "QQQ1",
+        )
+        assert ok
+
+    def test_sin_catalogo_no_puede_juzgar_inventos(self):
+        # Si la herramienta no se llamó, no hay verdad contra la que comparar.
+        ok, evidencia = V._evaluar_criterio_29(
+            {"content": "QQQ1 no existe.", "tools": []}, "QQQ1"
+        )
+        assert ok and "ninguno" in evidencia
