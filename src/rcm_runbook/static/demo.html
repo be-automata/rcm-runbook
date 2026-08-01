@@ -441,9 +441,40 @@
     return typeof run.content === 'string' ? run.content.trim() : '';
   }
 
+  // Los fallos del proveedor del modelo llegan como contenido del turno, en
+  // inglés y con el detalle de la cuenta del operador dentro. Se vio en
+  // producción: «Your credit balance is too low to access the Anthropic API.
+  // Please go to Plans & Billing…» en la burbuja del Facilitador. La capa que
+  // traduce errores envuelve las herramientas, no la llamada al modelo, así que
+  // el único fallo que estaba ocurriendo era justo el que no cubría.
+  var FALLOS_DEL_PROVEEDOR = [
+    { patron: /credit balance is too low/i,
+      texto: 'El servicio no está disponible en este momento por un problema de la cuenta del sistema. Avise a quien le compartió este enlace; su análisis queda guardado y puede retomarlo después.' },
+    { patron: /rate.?limit|too many requests/i,
+      texto: 'El sistema está recibiendo muchas consultas a la vez. Espere unos segundos y vuelva a enviar su mensaje.' },
+    { patron: /overloaded|529/i,
+      texto: 'El servicio está saturado en este momento. Espere unos segundos y vuelva a intentarlo.' },
+    { patron: /Error code: \d+ - \{'type': 'error'/i,
+      texto: 'El sistema tuvo un fallo técnico al procesar su mensaje. Avise a quien le compartió este enlace; su análisis queda guardado.' },
+  ];
+
+  function enEspanolSiEsFalloDelProveedor(texto){
+    if(typeof texto !== 'string') return texto;
+    for(var i = 0; i < FALLOS_DEL_PROVEEDOR.length; i++){
+      if(FALLOS_DEL_PROVEEDOR[i].patron.test(texto)){
+        // Sin adjuntar el original: lleva dentro el estado de facturación del
+        // operador, que no es del cliente.
+        console.warn('fallo del proveedor', texto.slice(0, 200));
+        return FALLOS_DEL_PROVEEDOR[i].texto;
+      }
+    }
+    return texto;
+  }
+
   function pinta(cls, text, destino){
     var d = document.createElement('div');
     d.className = cls;
+    if(cls.indexOf('msg bot') === 0){ text = enEspanolSiEsFalloDelProveedor(text); }
     // Solo el bot lleva markdown: lo del usuario y los avisos son texto plano,
     // y no hay nada que ganar dándoles una superficie de ataque.
     if(cls.indexOf('msg bot') === 0){

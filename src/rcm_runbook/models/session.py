@@ -101,6 +101,15 @@ PALABRAS_VACIAS = frozenset(
 )
 
 
+class FFIRegistro(BaseModel):
+    """El intervalo de búsqueda de fallas calculado para un modo oculto."""
+
+    horas: float
+    metodo: str
+    formula: str
+    avisos: list[str] = Field(default_factory=list)
+
+
 class RCMSession(BaseModel):
     schema_version: int = SCHEMA_VERSION
     phase: Phase = Phase.P1_ALCANCE
@@ -122,6 +131,12 @@ class RCMSession(BaseModel):
     decisions: dict[str, DecisionResult] = Field(default_factory=dict)
     actions: dict[str, list[RecommendedAction]] = Field(default_factory=dict)
     tasks: dict[str, list[MaintenanceTask]] = Field(default_factory=dict)
+    # El FFI se calculaba, se enseñaba con un ✔ y se perdía: `DecisionResult`
+    # declaraba `ffi_hours` y nadie lo escribía nunca, así que el número que fija
+    # cada cuánto se prueba un dispositivo de seguridad no aparecía en ninguna
+    # celda de ninguna hoja. Lo que llegaba al CMMS era la frecuencia que el
+    # agente tecleaba a mano, sin relación con lo calculado.
+    ffi_por_modo: dict[str, FFIRegistro] = Field(default_factory=dict)
 
     kpis: list[KPI] = Field(default_factory=list)
     review_triggers: list[str] = Field(default_factory=list)
@@ -264,9 +279,20 @@ class RCMSession(BaseModel):
                     f"corrección, vuelve a llamar con reemplazar=True; si es otra "
                     "función, distínguela en el verbo o el objeto."
                 )
-            actualizada = candidate.model_copy(update={"id": existing.id})
+            actualizada = existing.model_copy(
+                update={c: getattr(candidate, c) for c in kwargs if hasattr(existing, c)}
+            )
             self.functions[existing.id] = actualizada
             return actualizada
+        if reemplazar:
+            conocidas = ", ".join(
+                f"{f.id} ('{f.verb} {f.object}')" for f in self.functions.values()
+            ) or "ninguna"
+            raise ReglaDeNegocio(
+                f"Pediste reemplazar, pero no hay ninguna función con ese verbo y "
+                f"objeto. Registradas: {conocidas}. Si es una función nueva, llama "
+                "sin reemplazar."
+            )
         fid = self._next_id("F", self.functions)
         fn = candidate.model_copy(update={"id": fid})
         self.functions[fid] = fn
@@ -336,9 +362,31 @@ class RCMSession(BaseModel):
                     f"corrección, vuelve a llamar con reemplazar=True; si es otro "
                     "modo, dale una descripción que lo distinga."
                 )
-            actualizado = candidate.model_copy(update={"id": existing.id})
+            # Fusión, no sustitución. `model_copy(update=candidate)` borraba
+            # todo opcional que la corrección no repitiera: se corrigió una
+            # causa y se perdió el TPEF con su fuente OREDA, con un ✔ delante.
+            # Peor: un descarte documentado por no credibilidad —el registro
+            # que JA1011 exige conservar— se resucitaba con la justificación en
+            # blanco. El arreglo de la ronda 7 abrió una fuga donde cerró un
+            # callejón sin salida.
+            actualizado = existing.model_copy(
+                update={c: getattr(candidate, c) for c in kwargs if hasattr(existing, c)}
+            )
+            FailureMode.model_validate(actualizado.model_dump())
             self.failure_modes[existing.id] = actualizado
             return actualizado
+        if reemplazar:
+            conocidos = ", ".join(
+                f"{m.id} ('{m.description[:40]}')"
+                for m in self.failure_modes.values()
+                if m.functional_failure_id == functional_failure_id
+            ) or "ninguno"
+            raise ReglaDeNegocio(
+                f"Pediste reemplazar, pero no hay ningún modo con esa descripción "
+                f"en {functional_failure_id}. Registrados: {conocidos}. Si es un "
+                "modo nuevo, llama sin reemplazar; si querías corregir uno, usa su "
+                "descripción tal como está registrada."
+            )
         fmid = self._next_id("FM", self.failure_modes)
         fm = candidate.model_copy(update={"id": fmid})
         self.failure_modes[fmid] = fm
@@ -360,7 +408,15 @@ class RCMSession(BaseModel):
     def add_control(self, failure_mode_id: str, **kwargs: Any) -> Control:
         self._require("modo de falla", failure_mode_id, self.failure_modes)
         control = Control(failure_mode_id=failure_mode_id, **kwargs)
-        self.controls.setdefault(failure_mode_id, []).append(control)
+        existentes = self.controls.setdefault(failure_mode_id, [])
+        for previo in existentes:
+            if previo.model_dump() == control.model_dump():
+                # El único mutador que se quedó sin guarda, y justo el que entra
+                # en failure_mode_snapshot: un reintento byte a byte idéntico
+                # marcaba como obsoletas la valoración y la decisión del modo, y
+                # en un modo de seguridad obligaba a repetir la firma del HITL.
+                return previo
+        existentes.append(control)
         return control
 
     def set_risk_score(self, score: RiskScore) -> None:
@@ -419,6 +475,13 @@ class RCMSession(BaseModel):
                     "reemplazar=True; si son dos tareas distintas, diferencia las "
                     "descripciones."
                 )
+        if reemplazar:
+            conocidas = ", ".join(f"'{t.description[:40]}'" for t in existing_tasks) or "ninguna"
+            raise ReglaDeNegocio(
+                f"Pediste reemplazar, pero no hay ninguna tarea parecida en "
+                f"{task.failure_mode_id}. Registradas: {conocidas}. Si es una tarea "
+                "nueva, llama sin reemplazar."
+            )
         existing_tasks.append(task)
 
     # ------------------------------------------------------------------

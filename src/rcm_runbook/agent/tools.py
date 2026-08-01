@@ -48,6 +48,7 @@ from rcm_runbook.models.domain import (
 from rcm_runbook.models.session import (
     PHASE_NAMES_ES,
     SCHEMA_VERSION,
+    FFIRegistro,
     Phase,
     RCMSession,
     ScopeMeta,
@@ -318,8 +319,8 @@ def record_failure_mode(
     cause: str,
     root_cause: str,
     failure_pattern: str,
-    credible: bool = True,
-    non_credible_discard: str = "",
+    credible: bool | None = None,
+    non_credible_discard: str | None = None,
     pf_interval_hours: float | None = None,
     tpef_hours: float | None = None,
     tpef_fuente: str = "",
@@ -331,37 +332,49 @@ def record_failure_mode(
     (OREDA / Historial CMMS / Opinión de experto / Fabricante). Si el modo NO es
     creíble en este contexto, pase credible=False con la justificación del descarte.
 
-    failure_pattern, uno de: Aleatoria, Fin de Vida Útil, Mortalidad Infantil,
-    Desgaste, Fatiga (la herramienta devuelve la lista completa si no coincide).
+    failure_pattern, EXACTAMENTE uno de estos cuatro: 'Mortalidad Infantil',
+    'Aleatoria', 'Fin de Vida Útil', 'Aleatoria/Fin de Vida Útil'. No existen
+    'Desgaste' ni 'Fatiga' — estaban en esta lista por error y el agente llegó a
+    ofrecérselos al interesado dos veces en producción, para que la herramienta
+    los rechazara después.
 
     reemplazar=True para CORREGIR un modo ya registrado: misma descripción, datos
     nuevos. Sin él la herramienta rechaza el cambio en vez de aplicarlo, para no
     pisar un dato bueno con un reintento."""
     session = _load(run_context)
-    tpef = None
+    # Solo se manda lo que el agente mencionó. Antes se mandaban siempre los
+    # diez campos, así que al corregir con reemplazar=True los que él no
+    # repetía llegaban con su valor por defecto y borraban lo que había: se
+    # corrigió una causa y se perdió el TPEF con fuente OREDA, y un descarte
+    # documentado por no credibilidad se resucitó con la justificación vacía.
+    campos: dict[str, Any] = {
+        "description": description,
+        "mechanism": mechanism,
+        "iso_code": iso_code,
+        "cause": cause,
+        "root_cause": root_cause,
+        "failure_pattern": failure_pattern,
+    }
+    if credible is not None:
+        campos["credible"] = credible
+    if non_credible_discard is not None:
+        campos["non_credible_discard"] = non_credible_discard
+    if pf_interval_hours is not None:
+        campos["pf_interval_hours"] = pf_interval_hours
     if tpef_hours:
-        tpef = TPEFEstimate(
+        campos["tpef"] = TPEFEstimate(
             value_hours=tpef_hours, fuente=normalize_data_source(tpef_fuente),
             note=tpef_note,
         )
     fm = session.add_failure_mode(
-        functional_failure_id,
-        reemplazar=reemplazar,
-        description=description,
-        mechanism=mechanism,
-        iso_code=iso_code,
-        cause=cause,
-        root_cause=root_cause,
-        failure_pattern=failure_pattern,
-        credible=credible,
-        non_credible_discard=non_credible_discard,
-        pf_interval_hours=pf_interval_hours,
-        tpef=tpef,
+        functional_failure_id, reemplazar=reemplazar, **campos
     )
     _save(run_context, session)
-    if not credible:
+    # Sobre el modo guardado, no sobre el parámetro: con  (no lo
+    # mencionó) el mensaje anunciaba un descarte que nadie pidió.
+    if not fm.credible:
         return f"✔ Modo {fm.id} registrado como NO creíble (descarte documentado en auditoría)."
-    return f"✔ Modo de falla {fm.id} registrado: {description} [{iso_code}]"
+    return f"✔ Modo de falla {fm.id} registrado: {fm.description} [{fm.iso_code}]"
 
 
 @tool
@@ -574,6 +587,7 @@ def calculate_ffi(
     mted_list_hours: str = "",
     cff: float = 0,
     cmf: float = 0,
+    failure_mode_id: str = "",
 ) -> str:
     """Calcula el intervalo de búsqueda de fallas (FFI) — SOLO para modos de falla
     ocultos de dispositivos de protección.
@@ -647,9 +661,31 @@ def calculate_ffi(
             + _en_espanol(str(exc))
         ) from exc
     warn = ("\n⚠ " + "\n⚠ ".join(result.warnings)) if result.warnings else ""
+    guardado = ""
+    if failure_mode_id:
+        session = _load(run_context)
+        if failure_mode_id not in session.failure_modes:
+            known = ", ".join(session.failure_modes) or "ninguno"
+            raise ReglaDeNegocio(
+                f"No existe modo de falla '{failure_mode_id}'. Registrados: {known}."
+            )
+        session.ffi_por_modo[failure_mode_id] = FFIRegistro(
+            horas=result.ffi_hours, metodo=method, formula=result.formula,
+            avisos=list(result.warnings),
+        )
+        _save(run_context, session)
+        guardado = f" Queda registrado para {failure_mode_id} y sale en el entregable."
+    else:
+        # Sin modo al que atarlo, el número se enseña y se pierde: no aparecía en
+        # ninguna celda de ninguna hoja, y al CMMS llegaba la frecuencia que el
+        # agente tecleaba a mano, sin relación con lo calculado.
+        guardado = (
+            " ⚠ NO queda registrado: vuelve a llamar con failure_mode_id=<FM-00X> "
+            "para que este intervalo llegue al entregable."
+        )
     return (
         f"✔ FFI ({method}): {result.ffi_hours:.0f} h ≈ {result.ffi_months:.1f} meses "
-        f"≈ {result.ffi_years:.2f} años. Fórmula: {result.formula}{warn}"
+        f"≈ {result.ffi_years:.2f} años. Fórmula: {result.formula}{warn}{guardado}"
     )
 
 
@@ -694,9 +730,16 @@ def record_task(
 ) -> str:
     """Registra una tarea del plan de mantenimiento (para el CMMS).
 
-    frequency, del catálogo del cliente: Diario, Semanal, Catorcenal, Quinquenal,
-    Mensual, Bimestral, Trimestral, Tetramestral, Semestral, Anual, Bi-Anual,
-    Tri-Anual, Tetra-Anual, Quinque-Annual, Parada de planta, Según sea el caso.
+    frequency, del catálogo del cliente, EXACTAMENTE como se escribe aquí:
+    Diario, Semanal, Catorcenal, Quinquenal, Mensual, Bimestral, Trimestral,
+    Tetramestral, Semestral, Anual, Bi-Anual, Tri-Anual, Tetra-Anual,
+    Quinque-Annual, Parada de Planta, Arranque, Según sea el caso.
+
+    **'Quinquenal' es ambiguo y NO debes elegirlo por tu cuenta.** En el catálogo
+    aparece entre 'Catorcenal' y 'Mensual', que por posición sería quincenal (15
+    días), pero la palabra sugiere cinco años — y 'Quinque-Annual' ya ocupa esa
+    ranura al final de la serie anual. Si el intervalo que necesitas cae por ahí,
+    pregunta al interesado qué significa en SU catálogo antes de registrarlo.
     discipline: Mecánico, Electricista, Rotativo, Predictivo, Estatico, Operador,
     Instrumentista. (Elidirlos con «…» hacía que el modelo inventara valores como
     'Diaria' o 'Cada 36 meses', y cada invento cuesta un turno de rechazo.)

@@ -807,3 +807,53 @@ class TestTablas:
         assert "textAlign=center" in salida
         assert "textAlign=right" in salida
         assert salida.count("textAlign") == 4, "no la aplica a cabecera y cuerpo"
+
+
+class TestLosFallosDelProveedorNoLleganCrudos:
+    """Producción estuvo caída con esto en la burbuja del Facilitador:
+    «Error code: 400 … Your credit balance is too low to access the Anthropic
+    API. Please go to Plans & Billing to upgrade or purchase credits.»
+
+    En inglés, con el estado de facturación del operador dentro, y para un
+    cliente que no puede hacer nada con esa información. `_spanish_errors`
+    envuelve las herramientas, no la llamada al modelo: el único fallo que
+    estaba ocurriendo era justo el que no cubría."""
+
+    CREDITO = ("Error code: 400 - {'type': 'error', 'error': {'type': "
+               "'invalid_request_error', 'message': 'Your credit balance is too low "
+               "to access the Anthropic API. Please go to Plans & Billing to upgrade "
+               "or purchase credits.'}}")
+
+    def _pinta(self, texto: str) -> str:
+        # Con `correr` y no con `render`: el traductor deja constancia en la
+        # consola (el original lleva el estado de facturación y no se muestra),
+        # y `render` trata cualquier console.warn como caída del renderizador.
+        r = correr(
+            busqueda="?key=abc&session=demo-previa", estado=200,
+            runs=[{"status": "COMPLETED", "run_input": "x", "content": texto}],
+        )
+        burbujas = [b for b in r["burbujas"] if b.startswith("bot|")]
+        assert burbujas, r["burbujas"]
+        return burbujas[0][4:]
+
+    def test_no_se_le_ensena_la_facturacion_al_cliente(self):
+        salida = self._pinta(self.CREDITO)
+        for fuga in ("credit balance", "Plans & Billing", "Anthropic API", "Error code"):
+            assert fuga not in salida, f"le llega al cliente: {fuga}"
+
+    def test_le_dice_en_espanol_que_hacer(self):
+        salida = self._pinta(self.CREDITO)
+        assert "no está disponible" in salida
+        assert "queda guardado" in salida, "no le dice que no perdió su trabajo"
+
+    def test_el_limite_de_ritmo_se_explica_distinto(self):
+        # Este sí se resuelve solo: decirle «avise a alguien» sería mandarlo a
+        # molestar a nadie por una espera de segundos.
+        salida = self._pinta("Error code: 429 - rate_limit_error: too many requests")
+        assert "unos segundos" in salida
+        assert "429" not in salida
+
+    def test_una_respuesta_normal_no_se_toca(self):
+        salida = render("El **TAG** es P-101 y el error code está bajo control")
+        assert "strong()[TAG]" in salida
+        assert "error code está bajo control" in salida

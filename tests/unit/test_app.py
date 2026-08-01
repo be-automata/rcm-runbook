@@ -1300,3 +1300,250 @@ class TestUnaCorreccionNoSeDescartaEnSilencio:
         s = self._sesion()
         with pytest.raises(ReglaDeNegocio, match="siempre tiene función primaria"):
             s.confirm_no_functions_of_kind(FunctionKind.PRIMARIA)
+
+
+class TestElEntregableLlevaLoQueLasCompuertasExigen:
+    """Cinco datos se entrevistaban al cliente, bloqueaban el entregable hasta
+    tenerlos, y luego no llegaban a ninguna hoja. Y el FFI —el número que fija
+    cada cuánto se prueba un dispositivo de seguridad— se calculaba, se enseñaba
+    con un ✔ y moría en el chat: `DecisionResult.ffi_hours` estaba declarado y
+    nadie lo escribía nunca."""
+
+    def _libro(self, sesion):
+        import io
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+
+        destino = io.BytesIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            # export_xlsx recibe el DIRECTORIO y decide el nombre.
+            destino.write(export_xlsx(sesion, tmp).read_bytes())
+        destino.seek(0)
+        return load_workbook(destino)
+
+    def _texto_auditoria(self, sesion) -> str:
+        hoja = self._libro(sesion)["AUDITORIA RCM"]
+        return " | ".join(
+            str(c.value) for fila in hoja.iter_rows() for c in fila if c.value is not None
+        )
+
+    def test_el_ffi_calculado_aparece_en_el_entregable(self):
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=4380.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        texto = self._texto_auditoria(s)
+        assert "4380" in texto, "el FFI no llega a ninguna celda"
+        assert "single_single" in texto
+        assert fm in texto
+
+    def test_las_acciones_recomendadas_llegan(self):
+        from rcm_runbook.models.domain import RecommendedAction
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        s.actions[fm] = [RecommendedAction(
+            failure_mode_id=fm, what="Instalar sensor de vibración en línea",
+            who="Ana Pérez", when="2026-09-30",
+            verification="Lectura registrada en el CMMS",
+        )]
+        texto = self._texto_auditoria(s)
+        assert "Instalar sensor de vibración" in texto
+        assert "Ana Pérez" in texto and "2026-09-30" in texto
+
+    def test_el_equipo_y_la_gobernanza_llegan(self):
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        s.review_triggers = ["Cambio de contexto operacional"]
+        s.validation_signoff = "Validado por Operaciones — Luis Ramos"
+        texto = self._texto_auditoria(s)
+        assert s.team[0].name in texto, "el equipo multidisciplinario no llega"
+        assert "Cambio de contexto operacional" in texto
+        assert "Luis Ramos" in texto
+
+    def test_el_ffi_sin_modo_de_falla_avisa_de_que_no_se_guarda(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-ffi3"
+            session_state: dict = {}
+
+        salida = tools_mod.calculate_ffi.entrypoint(
+            Ctx(), method="single_single", mtive_hours=43800, mted_hours=8760,
+            mmf_hours=100000,
+        )
+        assert "NO queda registrado" in salida, "se pierde en silencio, como antes"
+        assert "failure_mode_id" in salida
+
+    def test_el_ffi_con_modo_de_falla_se_guarda(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import RCMSession
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(iter(sesion.failure_modes))
+
+        class Ctx:
+            session_id = "s-ffi4"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        ctx = Ctx()
+        salida = tools_mod.calculate_ffi.entrypoint(
+            ctx, method="single_single", mtive_hours=43800, mted_hours=8760,
+            mmf_hours=100000, failure_mode_id=fm,
+        )
+        assert "sale en el entregable" in salida
+        guardada = RCMSession.model_validate(ctx.session_state["rcm"])
+        assert fm in guardada.ffi_por_modo
+        assert guardada.ffi_por_modo[fm].horas > 0
+
+
+class TestCorregirNoBorraLoQueNoSeMenciona:
+    """El `reemplazar=True` de la ronda 7 sustituía el objeto entero: se
+    corrigió una causa y se perdió el TPEF con fuente OREDA, y un descarte
+    documentado por no credibilidad —el registro que JA1011 exige conservar— se
+    resucitó con la justificación en blanco. Con un ✔ delante las dos veces."""
+
+    BASE = dict(
+        functional_failure_id="FF-001",
+        description="Cavitación por NPSH por debajo del requerido",
+        mechanism="Cavitación", iso_code="LOO",
+        cause="Operación fuera de las condiciones de diseño",
+        root_cause="Filtro de succión obstruido", failure_pattern="Aleatoria",
+    )
+
+    def _ctx(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-corr"
+            session_state: dict = {}
+
+        c = Ctx()
+        tools_mod.record_function.entrypoint(
+            c, kind="primaria", verb="bombear", object="crudo",
+            performance_standard="850 GPM a 150 psi",
+        )
+        tools_mod.record_functional_failure.entrypoint(
+            c, function_id="F-001", description="No alcanza el caudal requerido"
+        )
+        return c
+
+    def _guardado(self, ctx, fmid="FM-001"):
+        from rcm_runbook.models.session import RCMSession
+
+        return RCMSession.model_validate(ctx.session_state["rcm"]).failure_modes[fmid]
+
+    def test_corregir_la_causa_no_borra_el_tpef(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        c = self._ctx()
+        tools_mod.record_failure_mode.entrypoint(
+            c, **self.BASE, tpef_hours=26000, tpef_fuente="OREDA"
+        )
+        tools_mod.record_failure_mode.entrypoint(
+            c, **{**self.BASE, "cause": "Lubricante degradado por agua"}, reemplazar=True
+        )
+        fm = self._guardado(c)
+        assert fm.cause == "Lubricante degradado por agua"
+        assert fm.tpef is not None, "se perdió el TPEF al corregir la causa"
+        assert fm.tpef.value_hours == 26000
+
+    def test_corregir_no_resucita_un_descarte_documentado(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        c = self._ctx()
+        tools_mod.record_failure_mode.entrypoint(
+            c, **self.BASE, credible=False,
+            non_credible_discard="No hay historial en este contexto operacional",
+        )
+        tools_mod.record_failure_mode.entrypoint(
+            c, **{**self.BASE, "cause": "Otra causa registrada"}, reemplazar=True
+        )
+        fm = self._guardado(c)
+        assert fm.credible is False, "el descarte por no credibilidad se resucitó"
+        assert fm.non_credible_discard, "la justificación del descarte quedó vacía"
+
+    def test_reemplazar_sin_nada_que_reemplazar_no_crea_una_entidad_nueva(self):
+        # El agente creía corregir y duplicaba: dos periodicidades para el mismo
+        # trabajo, con el dato viejo intacto en el entregable.
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import RCMSession
+
+        c = self._ctx()
+        tools_mod.record_failure_mode.entrypoint(c, **self.BASE)
+        salida = tools_mod.record_failure_mode.entrypoint(
+            c, **{**self.BASE, "description": "Erosión del impulsor por sólidos"},
+            reemplazar=True,
+        )
+        assert "no hay ningún modo con esa descripción" in salida
+        guardada = RCMSession.model_validate(c.session_state["rcm"])
+        assert len(guardada.failure_modes) == 1, "creó una entidad nueva creyendo corregir"
+
+    def test_un_control_repetido_no_invalida_el_riesgo_ni_la_decision(self):
+        # add_control era el único mutador sin guarda, y el único cuyo contenido
+        # entra en el hash de obsolescencia: un reintento byte a byte idéntico
+        # marcaba como desactualizadas la valoración y la decisión, y en un modo
+        # de seguridad obligaba a repetir la firma del supervisor.
+        from rcm_runbook.engine import compliance
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        assert not [b for b in compliance.export_blockers(s) if "desactualizada" in b]
+        previo = s.controls[fm][0]
+        s.add_control(fm, **{k: v for k, v in previo.model_dump().items()
+                             if k != "failure_mode_id"})
+        assert len(s.controls[fm]) == 1, "duplicó un control idéntico"
+        assert not [b for b in compliance.export_blockers(s) if "desactualizada" in b]
+
+
+class TestElDocstringNoEnsenaValoresInvalidos:
+    """El agente le ofreció al interesado, dos veces en producción, «¿Desgaste?
+    ¿Fatiga?» — valores que su propio tool doc le enseñó y que la herramienta
+    rechaza. Cada invento cuesta un turno."""
+
+    def test_los_patrones_del_docstring_son_los_del_catalogo(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.catalogs import fixture
+
+        doc = tools_mod.record_failure_mode.entrypoint.__doc__ or ""
+        validos = fixture().menu.failure_patterns
+        for patron in validos:
+            assert f"'{patron}'" in doc, f"falta el patrón válido {patron}"
+        # 'Desgaste' y 'Fatiga' solo pueden aparecer DESPUÉS del aviso de que
+        # no existen, nunca en la lista de valores a usar.
+        for inventado in ("Desgaste", "Fatiga"):
+            assert doc.index(inventado) > doc.index("No existen"), (
+                f"{inventado} se sigue ofreciendo como valor válido"
+            )
+
+    def test_avisa_de_que_desgaste_y_fatiga_no_existen(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        doc = " ".join((tools_mod.record_failure_mode.entrypoint.__doc__ or "").split())
+        assert "No existen 'Desgaste' ni 'Fatiga'" in doc
+
+    def test_las_frecuencias_del_docstring_son_las_del_catalogo(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.catalogs import fixture
+
+        doc = tools_mod.record_task.entrypoint.__doc__ or ""
+        for frecuencia in fixture().menu.frequencies:
+            assert frecuencia in doc, f"falta la frecuencia {frecuencia}"
+
+    def test_avisa_de_que_quinquenal_es_ambiguo(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        doc = tools_mod.record_task.entrypoint.__doc__ or ""
+        assert "'Quinquenal' es ambiguo" in doc
+        assert "pregunta al interesado" in doc

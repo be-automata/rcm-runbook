@@ -210,6 +210,59 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ws.cell(row=row, column=4, value=fm.tpef.fuente)
         ws.cell(row=row, column=5, value=fm.tpef.note)
         row += 1
+    # Cinco datos que las compuertas exigen y que no llegaban a ninguna hoja: se
+    # entrevistaba al cliente por ellos, se bloqueaba el entregable hasta
+    # tenerlos, y luego se tiraban. Van aquí, que es la hoja del expediente.
+    row += 1
+    ws.cell(row=row, column=1, value="Intervalo de búsqueda de fallas (FFI) calculado").font = (
+        Font(bold=True)
+    )
+    row += 1
+    for fmid, ffi in session.ffi_por_modo.items():
+        ws.cell(row=row, column=1, value=fmid)
+        ws.cell(row=row, column=2, value=round(ffi.horas, 1))
+        ws.cell(row=row, column=3, value=f"{ffi.horas / 730.0:.1f} meses")
+        ws.cell(row=row, column=4, value=ffi.metodo)
+        ws.cell(row=row, column=5, value=ffi.formula)
+        ws.cell(row=row, column=6, value="; ".join(ffi.avisos)).alignment = WRAP
+        row += 1
+
+    row += 1
+    ws.cell(row=row, column=1, value="Acciones recomendadas").font = Font(bold=True)
+    row += 1
+    for fmid, acciones in session.actions.items():
+        for accion in acciones:
+            ws.cell(row=row, column=1, value=fmid)
+            ws.cell(row=row, column=2, value=accion.what).alignment = WRAP
+            ws.cell(row=row, column=3, value=accion.who)
+            ws.cell(row=row, column=4, value=accion.when)
+            ws.cell(row=row, column=5, value=accion.verification)
+            ws.cell(row=row, column=6, value=accion.resources)
+            row += 1
+
+    row += 1
+    ws.cell(row=row, column=1, value="Equipo multidisciplinario").font = Font(bold=True)
+    row += 1
+    for miembro in session.team:
+        ws.cell(row=row, column=1, value=miembro.name)
+        ws.cell(row=row, column=2, value=miembro.role)
+        row += 1
+
+    row += 1
+    ws.cell(row=row, column=1, value="Gobernanza del plan").font = Font(bold=True)
+    row += 1
+    for kpi in session.kpis:
+        ws.cell(row=row, column=1, value="KPI")
+        ws.cell(row=row, column=3, value=str(kpi)).alignment = WRAP
+        row += 1
+    for disparador in session.review_triggers:
+        ws.cell(row=row, column=1, value="Disparador de revisión")
+        ws.cell(row=row, column=3, value=disparador).alignment = WRAP
+        row += 1
+    ws.cell(row=row, column=1, value="Validación / aprobación")
+    ws.cell(row=row, column=3, value=session.validation_signoff).alignment = WRAP
+    row += 1
+
     for col, width in (("A", 10), ("B", 14), ("C", 70), ("D", 12), ("E", 12), ("F", 12), ("G", 16)):
         ws.column_dimensions[col].width = width
 

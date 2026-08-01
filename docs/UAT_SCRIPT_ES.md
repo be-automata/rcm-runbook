@@ -320,6 +320,26 @@ done
 | 38 | Una corrección se puede aplicar de verdad: la herramienta ofrece `reemplazar=True` y funciona | ☐ |
 | 39 | La hoja AMEF no calla ninguna tarea registrada del modo | ☐ |
 | 40 | Preguntado **a pelo** (sin ejecutar herramientas) qué significan las letras de ruta y las siglas de política, el agente acierta | ☐ |
+| 41 | El FFI calculado aparece en el entregable, no solo en el chat | ☐ |
+| 42 | Acciones, KPIs, disparadores, validación y equipo llegan al `.xlsx` | ☐ |
+| 43 | Corregir un dato no borra lo que la corrección no menciona (TPEF, descarte documentado) | ☐ |
+| 44 | Un fallo del proveedor del modelo se explica en español y no enseña la facturación del operador | ☐ |
+
+## Pendiente de confirmar con el cliente — «Quinquenal»
+
+El catálogo de frecuencias está ordenado por período creciente en todo su
+recorrido salvo en un punto: `Quinquenal` aparece **entre `Catorcenal` y
+`Mensual`**, mientras `Quinque-Annual` ocupa la ranura de cinco años al final de
+la serie anual. Por posición, `Quinquenal` sería quincenal (15 días); por la
+palabra, cinco años. **Son dos lecturas con un factor de 120 entre ellas**, y esa
+frecuencia va a la columna que el CMMS ejecuta.
+
+Preguntado a pelo, el agente la leyó como cinco años 3 de 3 veces. Mientras no
+se confirme, el agente tiene instrucciones de **no elegirla por su cuenta** y de
+preguntar qué significa en el catálogo del cliente.
+
+**Pregunta para el cliente**: ¿`Quinquenal` en su catálogo es cada 15 días o cada
+5 años? Si es lo primero, conviene renombrarla a `Quincenal`.
 
 ## Limitación conocida — la compuerta del entregable definitivo
 
