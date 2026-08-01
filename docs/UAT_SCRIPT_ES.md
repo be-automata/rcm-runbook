@@ -292,6 +292,24 @@ done
 | 29 | Un código ISO fuera del catálogo se explica como tal, y el agente NO inventa el significado de los códigos | ☐ |
 | 30 | Un dato que la herramienta rechaza (frecuencia, método de FFI, tipo de función) se explica en español y pide corregir, sin hablar de fallo técnico | ☐ |
 | 31 | Un enlace de descarga con salto de directorio codificado (`%2e%2e`) no es clicable | ☐ |
-| 32 | Ninguna respuesta del agente llega con tablas markdown (barras `|` visibles en pantalla) | ☐ |
+| 32 | Una tabla del agente se dibuja como tabla, sin barras `|` visibles, y no desborda la pantalla del teléfono | ☐ |
+
+## Limitación conocida — la compuerta del entregable definitivo
+
+Si el interesado pide **por escrito** el Excel definitivo, el agente a veces
+rechaza por su cuenta en vez de llamar a `export_excel`, y entonces la lista de
+faltantes que enumera es inventada: no son los bloqueadores reales del
+entregable. Medido en producción tras dos rondas de refuerzo de instrucciones:
+**6 de 10** llamadas correctas.
+
+**El camino garantizado es el botón «Descargar Excel»**, que llama al endpoint
+sin pasar por el modelo: siempre entrega el archivo, y si el análisis está
+incompleto lo marca `BORRADOR_`. Al validar los criterios 15, 17 y 27, usar el
+botón como referencia; lo que conteste el chat es orientativo.
+
+Cerrarlo del todo exige detectar la intención de exportar en el servidor y
+forzar la llamada. Se decidió no hacerlo: mete un clasificador sobre texto libre
+—otra pieza que puede equivocarse— para un camino que ya tiene alternativa
+determinista.
 
 **Resultado**: APROBADO ☐ / RECHAZADO ☐ — Observaciones: ______________________

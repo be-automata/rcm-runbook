@@ -684,3 +684,64 @@ class TestSaltoDeDirectorioCodificado:
             ["node", "-e", guion], capture_output=True, text=True, timeout=30, check=True
         )
         assert _json.loads(salida.stdout) == [True, False, False, False, False]
+
+
+class TestTablas:
+    """El agente responde con tablas —el catálogo ISO salió así 2 de 3 veces en
+    producción— y sin soporte llegaban las barras y los guiones en crudo. Pedirle
+    por instrucción que no las use funcionó 1 de 3; el renderizador sí es
+    determinista, así que la solución vive aquí."""
+
+    NORMAL = ("| Código | Descripción |\n|--------|-------------|\n"
+              "| **FTS** | Falla en arrancar |\n| STP | Falla para detenerse |")
+
+    def test_produce_una_tabla_de_verdad(self):
+        salida = render(self.NORMAL)
+        assert "table()" in salida and "thead()" in salida and "tbody()" in salida
+        assert "th()[Código]" in salida and "td()[Falla en arrancar]" in salida
+
+    def test_ninguna_barra_queda_visible(self):
+        salida = render(self.NORMAL)
+        assert "|" not in salida, "el cliente vería las barras en pantalla"
+        assert "---" not in salida
+
+    def test_el_formato_dentro_de_la_celda_se_respeta(self):
+        assert "strong()[FTS]" in render(self.NORMAL)
+
+    def test_sin_barras_en_los_extremos(self):
+        # GitHub las acepta y el modelo las emite así a menudo.
+        salida = render("Código | Valor\n--- | ---\nFTS | 1")
+        assert "th()[Código]" in salida and "td()[1]" in salida
+
+    def test_una_barra_suelta_no_es_una_tabla(self):
+        # Sin exigir el separador, "El TAG es P-101 | revisar" se convertiría en
+        # tabla y el párrafo del cliente quedaría destrozado.
+        salida = render("El TAG es P-101 | revisar mañana")
+        assert "table()" not in salida
+        assert "P-101 | revisar mañana" in salida
+
+    def test_dos_lineas_con_barras_sin_separador_siguen_siendo_un_parrafo(self):
+        # El caso de una sola línea no prueba nada: sin línea siguiente no hay
+        # separador que evaluar. Aquí sí, y es donde el agente escribe de verdad
+        # («la bomba P-101 | turno A» en dos renglones seguidos).
+        salida = render("El TAG es P-101 | turno A\ny el motor M-2 | turno B")
+        assert "table()" not in salida, "convirtió un párrafo normal en tabla"
+        assert "turno A" in salida and "turno B" in salida
+
+    def test_una_tabla_despues_de_un_parrafo_no_se_come_la_cabecera(self):
+        salida = render("Aquí va:\n| a | b |\n|---|---|\n| 1 | 2 |")
+        assert "p()[Aquí va:]" in salida
+        assert "th()[a]" in salida, "la cabecera acabó dentro del párrafo"
+
+    def test_la_tabla_se_desborda_dentro_de_su_caja(self):
+        # Sin el envoltorio con scroll, una tabla ancha estira la burbuja y con
+        # ella toda la conversación — en el teléfono es inusable.
+        assert "md-tabla-caja" in render(self.NORMAL)
+        assert ".md-tabla-caja { overflow-x:auto" in DEMO_HTML
+
+    def test_una_celda_no_es_una_puerta_para_javascript(self):
+        salida = render("| enlace |\n|---|\n| [x](javascript:alert(1)) |")
+        # Queda como texto inerte, no como ancla: lo que importa no es que la
+        # cadena desaparezca, sino que no haya nada que pulsar.
+        assert "a(){href=javascript" not in salida
+        assert "a()" not in salida

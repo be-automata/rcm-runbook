@@ -605,21 +605,12 @@ class TestUnRechazoDelMetodoNoEsUnaAveria:
         assert "Diario" in salida, "no ofrece la frecuencia válida del catálogo"
 
 
-class TestNoSePidenTablas:
-    """El renderizador no dibuja tablas (fuera del alcance de su spec), así que
-    una tabla markdown llega al cliente como barras y guiones en crudo. Se vio
-    en producción justo después de arreglar ALTA-1: el agente respondió el
-    catálogo ISO como tabla."""
+class TestElCatalogoIsoLlegaComoLista:
+    """La salida de la herramienta se mantiene en lista aunque el renderizador
+    ya dibuje tablas: es lo que el modelo copia, y una lista se lee igual de
+    bien en el chat y en el Excel exportado."""
 
-    def test_las_instrucciones_prohiben_las_tablas_y_ofrecen_la_alternativa(self):
-        from rcm_runbook.agent.instructions_es import INSTRUCTIONS_ES
-
-        assert "No uses tablas markdown" in INSTRUCTIONS_ES
-        assert "- FTS — Falla en arrancar" in INSTRUCTIONS_ES, "no da el formato a usar"
-
-    def test_la_herramienta_ya_devuelve_lista_no_tabla(self):
-        # Si la propia salida trajera una tabla, la instrucción pelearía contra
-        # el ejemplo que tiene delante — y gana el ejemplo.
+    def test_la_herramienta_devuelve_lista_no_tabla(self):
         from rcm_runbook.agent import tools as tools_mod
 
         class Ctx:

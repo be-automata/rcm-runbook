@@ -40,6 +40,13 @@
   .bot p:first-child { margin-top:0; }
   .bot p:last-child { margin-bottom:0; }
   .bot ul, .bot ol { margin:.45em 0; padding-left:1.4em; }
+  /* La caja se lleva el desbordamiento: sin ella una tabla ancha estira la
+     burbuja y con ella toda la conversación, sobre todo en el teléfono. */
+  .md-tabla-caja { overflow-x:auto; margin:.5em 0; }
+  .md-tabla { border-collapse:collapse; font-size:.94em; }
+  .md-tabla th, .md-tabla td { border:1px solid #d7dbe0; padding:.32em .6em; text-align:left; }
+  .md-tabla th { background:#f2f4f7; font-weight:600; }
+  .md-tabla tr:nth-child(even) td { background:#fafbfc; }
   .bot li { margin:.15em 0; }
   .bot .md-h { font-weight:600; margin:.6em 0 .2em; }
   .bot .md-h:first-child { margin-top:0; }
@@ -279,6 +286,63 @@
     }
   }
 
+  // Tabla: una fila es cualquier línea con al menos una barra, y la segunda
+  // línea es el separador (|---|:--:|). Se exige el separador porque una frase
+  // con una barra suelta no es una tabla y convertirla arruinaría el párrafo.
+  var RE_FILA = /^\s*\|?.*\|.*$/;
+  var RE_SEP = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+
+  function celdas(linea){
+    var t = linea.trim();
+    if(t.charAt(0) === '|') t = t.slice(1);
+    if(t.charAt(t.length - 1) === '|') t = t.slice(0, -1);
+    return t.split('|');
+  }
+
+  // Alineación declarada en el separador: :--- / :---: / ---:
+  function alineaciones(sep){
+    return celdas(sep).map(function(c){
+      var t = c.trim();
+      var izq = t.charAt(0) === ':', der = t.charAt(t.length - 1) === ':';
+      return der ? (izq ? 'center' : 'right') : '';
+    });
+  }
+
+  function tabla(lineas, i, destino){
+    var alineada = alineaciones(lineas[i + 1]);
+    var tabl = document.createElement('table');
+    tabl.className = 'md-tabla';
+    var thead = document.createElement('thead');
+    var filaCab = document.createElement('tr');
+    celdas(lineas[i]).forEach(function(c, k){
+      var th = document.createElement('th');
+      if(alineada[k]) th.style.textAlign = alineada[k];
+      enLinea(c.trim(), th);
+      filaCab.appendChild(th);
+    });
+    thead.appendChild(filaCab); tabl.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    var j = i + 2;
+    while(j < lineas.length && RE_FILA.test(lineas[j]) && !/^\s*$/.test(lineas[j])){
+      var tr = document.createElement('tr');
+      celdas(lineas[j]).forEach(function(c, k){
+        var td = document.createElement('td');
+        if(alineada[k]) td.style.textAlign = alineada[k];
+        enLinea(c.trim(), td);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr); j++;
+    }
+    tabl.appendChild(tbody);
+    // La tabla se desborda sola en el teléfono; el envoltorio se lleva el
+    // scroll horizontal para que la burbuja no ensanche toda la conversación.
+    var caja = document.createElement('div');
+    caja.className = 'md-tabla-caja';
+    caja.appendChild(tabl);
+    destino.appendChild(caja);
+    return j;
+  }
+
   function markdown(texto, destino){
     var lineas = String(texto).replace(/\r\n/g, '\n').split('\n');
     var i = 0;
@@ -299,6 +363,11 @@
       if(/^\s*([-*_])\s*\1\s*\1[-*_\s]*$/.test(l)){   // línea horizontal: --- *** ___
         destino.appendChild(document.createElement('hr'));
         i++; continue;
+      }
+      if(l.indexOf('|') !== -1 && i + 1 < lineas.length && RE_SEP.test(lineas[i + 1])
+         && RE_FILA.test(l)){
+        i = tabla(lineas, i, destino);
+        continue;
       }
       var h = /^\s*(#{1,6})\s+(.*)$/.exec(l);
       if(h){
@@ -325,7 +394,9 @@
       }
       var parrafo = [];
       while(i < lineas.length && !/^\s*$/.test(lineas[i]) && !/^\s*```/.test(lineas[i])
-            && !/^\s*#{1,6}\s/.test(lineas[i]) && !RE_ORD.test(lineas[i]) && !RE_VIN.test(lineas[i])){
+            && !/^\s*#{1,6}\s/.test(lineas[i]) && !RE_ORD.test(lineas[i]) && !RE_VIN.test(lineas[i])
+            && !(lineas[i].indexOf('|') !== -1 && i + 1 < lineas.length
+                 && RE_SEP.test(lineas[i + 1]) && RE_FILA.test(lineas[i]))){
         parrafo.push(lineas[i]); i++;
       }
       var p = document.createElement('p');
