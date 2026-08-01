@@ -1743,14 +1743,13 @@ class TestLaSondaDistingueVivoDeFuncionando:
 
 
 class TestElFfiGobiernaLaFrecuenciaDelCmms:
-    """El entregable salía con los dos números contradiciéndose y ningún aviso:
-    AUDITORIA decía «FFI = 1752 h» para el presostato y el PLAN decía
-    «Semestral» (4380 h). El ✔ era literalmente cierto —el número llegaba a una
-    celda— y a la vez engañoso, porque no mandaba sobre la única columna que
-    alguien ejecuta. Es un dispositivo de protección con consecuencia de
-    seguridad."""
+    """Tres intentos. Comparar TODAS las tareas rechazaba planes correctos;
+    comparar «que cumpla alguna» dejaba pasar la prueba atrasada en cuanto
+    hubiera una limpieza mensual al lado — el defecto original, reabierto por su
+    propio arreglo. El error estaba en deducirlo: el dato no existía en el
+    modelo, y ahora existe."""
 
-    def _sesion_con_ffi(self, frecuencia: str, horas_ffi: float = 1752.0):
+    def _sesion(self, frecuencia: str, horas_ffi: float = 1752.0, marcada: bool = True):
         from rcm_runbook.models.domain import MaintenanceTask
         from rcm_runbook.models.session import FFIRegistro
         from tests.unit.test_compliance import full_session
@@ -1763,74 +1762,69 @@ class TestElFfiGobiernaLaFrecuenciaDelCmms:
         s.tasks[fm] = [MaintenanceTask(
             failure_mode_id=fm, description="Prueba funcional del disparo",
             frequency=frecuencia, duration_hours=4.0, discipline="Instrumentista",
-            requires_shutdown=True,
+            requires_shutdown=True, es_busqueda_de_fallas=marcada,
         )]
         return s, fm
+
+    def _otra(self, s, fm, descripcion: str, frecuencia: str):
+        from rcm_runbook.models.domain import MaintenanceTask
+
+        s.tasks[fm].append(MaintenanceTask(
+            failure_mode_id=fm, description=descripcion, frequency=frecuencia,
+            duration_hours=2.0, discipline="Instrumentista",
+        ))
+        return s
 
     def _bloqueos(self, s):
         from rcm_runbook.engine import compliance
 
         return [b for b in compliance.export_blockers(s) if "búsqueda de fallas" in b]
 
-    def test_una_tarea_mas_espaciada_que_el_ffi_bloquea_el_entregable(self):
-        s, fm = self._sesion_con_ffi("Semestral")  # 4380 h contra 1752 calculadas
+    def test_la_prueba_mas_espaciada_que_el_ffi_bloquea(self):
+        s, fm = self._sesion("Semestral")  # 4380 h contra 1752 calculadas
         bloqueos = self._bloqueos(s)
-        assert bloqueos, "el CMMS recibe una frecuencia que contradice el FFI"
-        assert fm in bloqueos[0]
+        assert bloqueos and fm in bloqueos[0]
         assert "1752" in bloqueos[0] and "Semestral" in bloqueos[0]
 
-    def test_una_tarea_dentro_del_intervalo_no_bloquea(self):
-        s, _ = self._sesion_con_ffi("Bimestral")  # 1460 h ≤ 1752
-        assert not self._bloqueos(s)
+    def test_una_tarea_rapida_al_lado_no_tapa_la_prueba_atrasada(self):
+        # El caso que reabrió el defecto: `any` no distingue «existe la prueba a
+        # tiempo» de «existe cualquier otra cosa a tiempo».
+        s, fm = self._sesion("Semestral")
+        self._otra(s, fm, "Inspección visual del tablero", "Diario")
+        assert self._bloqueos(s), "una inspección diaria tapó la prueba semestral"
 
-    def test_probar_mas_seguido_de_lo_calculado_es_aceptable(self):
-        # Conservador, y decisión del cliente: no se bloquea.
-        s, _ = self._sesion_con_ffi("Mensual")
-        assert not self._bloqueos(s)
-
-    def test_una_frecuencia_sin_equivalencia_bloquea_en_vez_de_colarse(self):
-        # Antes se saltaban con un `continue` silencioso. Un presostato con la
-        # prueba puesta en 'Parada de Planta' —de 2 a 6 años en la práctica—
-        # cruzaba la compuerta con un ✔ contra un FFI de 1752 h.
-        from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS
-
-        for frecuencia in ("Quinquenal", "Parada de Planta", "Arranque",
-                           "Según sea el caso"):
-            assert frecuencia not in FRECUENCIA_EN_HORAS
-            s, _ = self._sesion_con_ffi(frecuencia)
-            bloqueos = self._bloqueos(s)
-            assert bloqueos, f"'{frecuencia}' se coló sin comprobar"
-            assert "sin equivalencia en horas" in bloqueos[0]
+    def test_parada_de_planta_no_se_cuela_ni_con_una_limpieza_mensual(self):
+        s, fm = self._sesion("Parada de Planta")
+        self._otra(s, fm, "Limpieza del entorno del equipo", "Mensual")
+        bloqueos = self._bloqueos(s)
+        assert bloqueos, "la prueba a Parada de Planta cruzó la compuerta"
+        assert "no tiene equivalencia en horas" in bloqueos[0]
 
     def test_una_calibracion_anual_no_estorba_si_la_prueba_cumple(self):
-        # `MaintenanceTask` no tiene campo de política, así que comparar tarea a
-        # tarea llamaba «búsqueda de fallas» a una calibración y dejaba sin
-        # entregable un plan correcto. La pregunta es si cumple ALGUNA.
-        from rcm_runbook.models.domain import MaintenanceTask
-
-        s, fm = self._sesion_con_ffi("Bimestral")  # 1460 h ≤ 1752
-        s.tasks[fm].append(MaintenanceTask(
-            failure_mode_id=fm, description="Calibración del transmisor",
-            frequency="Anual", duration_hours=2.0, discipline="Instrumentista",
-        ))
+        s, fm = self._sesion("Bimestral")  # 1460 h ≤ 1752
+        self._otra(s, fm, "Calibración del transmisor", "Anual")
         assert not self._bloqueos(s), "rechazó un plan correcto"
 
-    def test_si_ninguna_tarea_cumple_bloquea_aunque_haya_varias(self):
-        from rcm_runbook.models.domain import MaintenanceTask
-
-        s, fm = self._sesion_con_ffi("Semestral")  # 4380 h > 1752
-        s.tasks[fm].append(MaintenanceTask(
-            failure_mode_id=fm, description="Calibración del transmisor",
-            frequency="Anual", duration_hours=2.0, discipline="Instrumentista",
-        ))
+    def test_un_modo_con_ffi_y_sin_tarea_marcada_bloquea(self):
+        # `_gate_p6` salta los modos OHF y los no creíbles, así que dar por
+        # hecho que ya exigía tareas era falso: exportaba limpio con un
+        # intervalo calculado que no ejecutaba nadie.
+        s, fm = self._sesion("Bimestral", marcada=False)
         bloqueos = self._bloqueos(s)
-        assert bloqueos
-        assert "ninguna de sus tareas" in bloqueos[0]
+        assert bloqueos, "un FFI sin tarea que lo ejecute salió en el entregable"
+        assert "ninguna tarea marcada" in bloqueos[0]
+        assert "es_busqueda_de_fallas=True" in bloqueos[0], "no dice cómo arreglarlo"
 
-    def test_el_mensaje_no_llama_busqueda_de_fallas_a_otra_tarea(self):
-        s, _ = self._sesion_con_ffi("Semestral")
-        bloqueos = self._bloqueos(s)
-        assert "Prueba funcional del disparo' cada Semestral" in bloqueos[0].replace("'", "'")
+    def test_un_modo_con_ffi_y_cero_tareas_bloquea(self):
+        s, fm = self._sesion("Bimestral")
+        s.tasks[fm] = []
+        assert self._bloqueos(s)
+
+    def test_el_umbral_es_el_intervalo_calculado_no_un_multiplo(self):
+        s, _ = self._sesion("Trimestral", horas_ffi=2000.0)  # 2190 > 2000
+        assert self._bloqueos(s), "una tarea apenas más lenta que el FFI se coló"
+        s, _ = self._sesion("Trimestral", horas_ffi=2190.0)  # exacto
+        assert not self._bloqueos(s), "el intervalo exacto debe aceptarse"
 
     def test_los_valores_del_catalogo_estan_fijados(self):
         # De los 13 valores solo dos estaban sujetos por una prueba: los otros
@@ -1848,23 +1842,12 @@ class TestElFfiGobiernaLaFrecuenciaDelCmms:
         assert FRECUENCIA_EN_HORAS == esperado
 
     def test_el_catalogo_de_horas_esta_ordenado_como_el_del_cliente(self):
-        # La ordenación creciente es lo que resuelve 'Bi-Anual', y sería lo que
-        # resolvería 'Quinquenal' si el cliente lo confirma.
         from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, fixture
 
         del_catalogo = [f for f in fixture().menu.frequencies if f in FRECUENCIA_EN_HORAS]
         horas = [FRECUENCIA_EN_HORAS[f] for f in del_catalogo]
         pares = list(zip(del_catalogo, horas, strict=True))
         assert horas == sorted(horas), f"el orden no crece: {pares}"
-
-    def test_el_umbral_es_el_intervalo_calculado_no_un_multiplo(self):
-        # El umbral toleraba un error de 2,4×: `horas > ffi * 2` pasaba con las
-        # 410 en verde. Es el número que decide si un dispositivo de seguridad
-        # se prueba a tiempo.
-        s, _ = self._sesion_con_ffi("Trimestral", horas_ffi=2000.0)  # 2190 > 2000
-        assert self._bloqueos(s), "una tarea apenas más lenta que el FFI se coló"
-        s, _ = self._sesion_con_ffi("Trimestral", horas_ffi=2190.0)  # exacto
-        assert not self._bloqueos(s), "el intervalo exacto debe aceptarse"
 
 
 class TestElValorDelFfiEstaFijado:
@@ -2236,3 +2219,144 @@ class TestLoQueLaRonda10DestapoSinCobertura:
 
         salida = tools_mod.advance_phase.entrypoint(Ctx())
         assert "fase 7" not in salida, salida
+
+
+class TestNingunaSiglaSeQuedaSinNombre:
+    """Van trece en esta familia. Los diccionarios de etiquetas usan `.get(x,
+    crudo)`: si mañana el motor añade un método de FFI o el dominio un tipo de
+    función, vuelve el identificador inglés al entregable y nadie se entera. Es
+    el mismo mecanismo que produjo «(proteccion)» sin tilde."""
+
+    def test_toda_politica_tiene_nombre(self):
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES, MaintenancePolicy
+
+        faltan = [p.value for p in MaintenancePolicy if p not in POLICY_LABELS_ES]
+        assert not faltan, f"políticas sin nombre en español: {faltan}"
+
+    def test_todo_tipo_de_funcion_tiene_nombre(self):
+        from rcm_runbook.models.catalogs import KIND_LABELS_ES
+        from rcm_runbook.models.domain import FunctionKind
+
+        faltan = [k.value for k in FunctionKind if k.value not in KIND_LABELS_ES]
+        assert not faltan, f"tipos de función sin nombre: {faltan}"
+
+    def test_todo_metodo_de_ffi_del_motor_tiene_nombre(self):
+        from rcm_runbook.engine.ffi import _METHODS
+        from rcm_runbook.models.catalogs import METODOS_FFI_ES
+
+        faltan = [m for m in _METHODS if m not in METODOS_FFI_ES]
+        assert not faltan, f"métodos del motor sin traducir: {faltan}"
+
+    def test_toda_ruta_del_diagrama_tiene_significado(self):
+        from rcm_runbook.models.catalogs import (
+            ROUTE_LABELS_ES,
+            EvidentRoute,
+            HiddenRoute,
+        )
+
+        faltan = [
+            r.value for r in list(EvidentRoute) + list(HiddenRoute)
+            if r.value not in ROUTE_LABELS_ES
+        ]
+        assert not faltan, f"rutas sin significado: {faltan}"
+
+    def test_la_politica_del_expediente_lleva_su_nombre(self):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        with tempfile.TemporaryDirectory() as tmp:
+            wb = load_workbook(export_xlsx(s, tmp))
+        aud = " | ".join(
+            str(c.value) for f in wb["AUDITORIA RCM"].iter_rows()
+            for c in f if c.value is not None
+        )
+        for decision in s.decisions.values():
+            nombre = POLICY_LABELS_ES[decision.policy]
+            assert f"{decision.policy.value} ({nombre})" in aud, (
+                f"{decision.policy.value} va pelado en el expediente"
+            )
+
+    def test_lookups_lleva_la_leyenda_de_politicas(self):
+        # La etiqueta venía en el fixture del cliente y se estaba tirando.
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from tests.unit.test_compliance import full_session
+
+        with tempfile.TemporaryDirectory() as tmp:
+            wb = load_workbook(export_xlsx(full_session(), tmp))
+        texto = " | ".join(
+            str(c.value) for f in wb["LOOKUPS"].iter_rows() for c in f if c.value
+        )
+        assert "Rd — " in texto and "ExEd — " in texto
+
+    def test_los_codigos_iso_de_lookups_no_se_movieron_de_columna(self):
+        # Las validaciones del libro apuntan a columnas concretas: añadir una
+        # clave en medio del diccionario desplazó los códigos ISO y habría roto
+        # los desplegables del cliente.
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.catalogs import fixture
+        from tests.unit.test_compliance import full_session
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hoja = load_workbook(export_xlsx(full_session(), tmp))["LOOKUPS"]
+        columna = [hoja.cell(row=r, column=5).value for r in range(2, 22)]
+        esperado = [c.code for c in fixture().menu.iso14224_failure_mode_codes]
+        assert columna == esperado
+
+
+class TestElAvisoConservaLosDosNumeros:
+    """`re.findall(...)[0]` se quedaba con la primera cifra de dos. En el chat el
+    modelo reconstruía el Mtive del contexto; en la celda F de AUDITORIA no hay
+    contexto que reconstruir. Y el test solo miraba uno de los dos avisos."""
+
+    def test_el_aviso_del_mtbf_conserva_los_dos(self):
+        from rcm_runbook.agent.tools import _aviso_en_espanol
+
+        traducido = _aviso_en_espanol(
+            "Computed FFI (306950.4 h) exceeds the protective device MTBF "
+            "(Mtive=8760.0 h); the interval is suspect - review inputs."
+        )
+        assert "306950.4" in traducido, "perdió el FFI calculado"
+        assert "8760.0" in traducido, "perdió el Mtive, que es con lo que se compara"
+
+    def test_el_aviso_de_las_24_h_conserva_el_suyo(self):
+        from rcm_runbook.agent.tools import _aviso_en_espanol
+
+        traducido = _aviso_en_espanol(
+            "Computed FFI (0.0 h) is shorter than 24 h; failure finding this "
+            "frequent is usually impractical - consider redesign."
+        )
+        assert "0.0" in traducido
+
+    def test_la_fila_de_nomenclatura_lleva_su_etiqueta(self):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        s.ffi_por_modo[next(iter(s.failure_modes))] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            hoja = load_workbook(export_xlsx(s, tmp))["AUDITORIA RCM"]
+        texto = " | ".join(
+            str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None
+        )
+        assert "Nomenclatura:" in texto, "la glosa quedó sin etiqueta que la anuncie"

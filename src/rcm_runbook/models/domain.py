@@ -248,7 +248,15 @@ class RecommendedAction(BaseModel):
 
 
 class MaintenanceTask(BaseModel):
-    """Plan row. TPEF is NOT stored here — it projects from the owning FailureMode."""
+    """Plan row. TPEF is NOT stored here — it projects from the owning FailureMode.
+
+    `es_busqueda_de_fallas` existe porque sin él no había forma de saber qué fila
+    ejecuta el intervalo calculado (FFI). Comparar todas las tareas rechazaba
+    planes correctos —una calibración anual disparaba el bloqueo—; comparar «que
+    cumpla alguna» dejaba pasar la prueba funcional atrasada en cuanto hubiera
+    una limpieza mensual al lado, que es peor y era el defecto original. El dato
+    faltaba en el modelo, así que se añade al modelo.
+    """
 
     failure_mode_id: str
     description: str = Field(min_length=10)
@@ -256,6 +264,7 @@ class MaintenanceTask(BaseModel):
     duration_hours: float = Field(gt=0)
     discipline: Discipline
     requires_shutdown: bool = False
+    es_busqueda_de_fallas: bool = False
 
 
 def snapshot_hash(*parts: object) -> str:

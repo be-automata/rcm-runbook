@@ -175,9 +175,14 @@ def _aviso_en_espanol(aviso: str) -> str:
     numeros = re.findall(r"[\d.]+", aviso)
     calculado = numeros[0] if numeros else "?"
     if "exceeds the protective device MTBF" in aviso:
+        # Los DOS números: el aviso inglés lleva el FFI y el Mtive, y quedarse
+        # con el primero perdía la mitad del dato. En el chat el modelo lo
+        # reconstruía del contexto; en la celda F de AUDITORIA no hay contexto.
+        mtive = numeros[1] if len(numeros) > 1 else "?"
         return (
             f"El FFI calculado ({calculado} h) supera el TPEF del propio dispositivo "
-            "de protección: el intervalo no es fiable, revise los datos de entrada."
+            f"de protección (Mtive = {mtive} h): el intervalo no es fiable, revise "
+            "los datos de entrada."
         )
     if "is shorter than 24 h" in aviso:
         return (
@@ -805,9 +810,17 @@ def record_task(
     duration_hours: float,
     discipline: str,
     requires_shutdown: bool = False,
+    es_busqueda_de_fallas: bool = False,
     reemplazar: bool = False,
 ) -> str:
     """Registra una tarea del plan de mantenimiento (para el CMMS).
+
+    **es_busqueda_de_fallas=True para LA tarea que ejecuta el intervalo FFI** de
+    un modo oculto (la prueba funcional del dispositivo de protección). Sin esa
+    marca no hay forma de saber qué fila cumple el intervalo calculado, y el
+    entregable se bloquea: un FFI que no gobierna ninguna tarea no sirve de
+    nada. Las demás tareas del mismo modo —calibraciones, limpiezas— van sin
+    marcar y no se comparan contra el FFI.
 
     frequency, del catálogo del cliente, EXACTAMENTE como se escribe aquí:
     Diario, Semanal, Catorcenal, Quinquenal, Mensual, Bimestral, Trimestral,
@@ -830,6 +843,7 @@ def record_task(
         failure_mode_id=failure_mode_id, description=description, frequency=frequency,
         duration_hours=duration_hours, discipline=discipline,
         requires_shutdown=requires_shutdown,
+        es_busqueda_de_fallas=es_busqueda_de_fallas,
     ), reemplazar=reemplazar)
     _save(run_context, session)
     return f"✔ Tarea registrada para {failure_mode_id}: {description[:50]} [{frequency}]"

@@ -201,57 +201,57 @@ def export_blockers(session: RCMSession) -> list[str]:
 
 
 def tareas_mas_lentas_que_el_ffi(session: RCMSession) -> list[str]:
-    """¿Hay ALGUNA tarea que cumpla el intervalo de búsqueda de fallas?
+    """La tarea de búsqueda de fallas tiene que ejecutar el intervalo calculado.
 
-    El entregable salía con los dos números contradiciéndose y ningún aviso:
-    AUDITORIA decía «FFI = 1752 h» para el presostato y el PLAN decía
-    «Semestral» (4380 h). Un dispositivo de protección con consecuencia de
-    seguridad probado 2,5 veces menos seguido de lo calculado.
+    Tres intentos, y los dos primeros estaban mal por lados opuestos:
 
-    La primera versión de esto comparaba TAREA A TAREA, y eso estaba mal por
-    los dos lados:
+    - Comparar TODAS las tareas rechazaba planes correctos: una calibración
+      anual disparaba el bloqueo llamándose a sí misma «búsqueda de fallas».
+    - Comparar «que cumpla ALGUNA» dejaba pasar la prueba funcional atrasada en
+      cuanto hubiera cualquier otra tarea más frecuente al lado. Medido: prueba
+      a `Parada de Planta` + una limpieza mensual cruzaba la compuerta con ✔.
+      Ese es el defecto original, reabierto por su propio arreglo.
 
-    - Rechazaba planes correctos. Un modo puede llevar varias tareas —la prueba
-      funcional bimestral y la calibración anual del transmisor— y la
-      calibración disparaba el bloqueo llamándose a sí misma «búsqueda de
-      fallas» en el mensaje. `MaintenanceTask` no tiene campo de política, así
-      que no hay forma de saber cuál es cuál.
-    - Y dejaba pasar lo peor. `Parada de Planta`, `Arranque` y `Según sea el
-      caso` no tienen equivalencia en horas, y un `continue` las saltaba en
-      silencio: un presostato con la prueba puesta en `Parada de Planta` —en la
-      práctica de 2 a 6 años— cruzaba la compuerta con un ✔.
-
-    La pregunta correcta no es «¿esta tarea cumple?» sino «¿cumple alguna?».
-    Así una calibración anual no molesta mientras exista la prueba funcional, y
-    un plan cuyas únicas tareas son de frecuencia indeterminada no pasa.
+    El error estaba en intentar deducirlo: el modelo no tenía el dato. Ahora
+    `MaintenanceTask.es_busqueda_de_fallas` lo dice, y esto solo mira esa fila.
+    Falla cerrado: un modo con FFI y ninguna tarea marcada bloquea, porque no
+    poder comprobarlo no es lo mismo que estar bien.
     """
     problemas: list[str] = []
     for fmid, ffi in session.ffi_por_modo.items():
         tareas = session.tasks.get(fmid, [])
-        if not tareas:
-            continue  # la compuerta de la fase 6 ya exige que existan
-        alguna_cumple = any(
-            (horas := FRECUENCIA_EN_HORAS.get(t.frequency)) is not None
-            and horas <= ffi.horas
-            for t in tareas
-        )
-        if alguna_cumple:
-            continue
-        detalle = "; ".join(
-            f"'{t.description}' cada {t.frequency}"
-            + (
-                f" ({FRECUENCIA_EN_HORAS[t.frequency]:.0f} h)"
-                if t.frequency in FRECUENCIA_EN_HORAS
-                else " (sin equivalencia en horas: no se puede comprobar)"
+        marcadas = [t for t in tareas if t.es_busqueda_de_fallas]
+        if not marcadas:
+            # El `continue` de la versión anterior daba por hecho que la
+            # compuerta de la fase 6 ya exigía tareas. No es cierto: _gate_p6
+            # salta los modos con política OHF y los no creíbles, así que un
+            # modo con FFI y sin ninguna tarea exportaba limpio.
+            otras = ", ".join(f"'{t.description}'" for t in tareas) or "ninguna"
+            problemas.append(
+                f"[Plan] {fmid} tiene un intervalo de búsqueda de fallas calculado "
+                f"({ffi.horas:.0f} h) y ninguna tarea marcada como la que lo ejecuta. "
+                f"Tareas registradas: {otras}. Registre la prueba con "
+                "record_task(es_busqueda_de_fallas=True), o el intervalo calculado no "
+                "gobierna nada."
             )
-            for t in tareas
-        )
-        problemas.append(
-            f"[Plan] La búsqueda de fallas de {fmid} está calculada cada "
-            f"{ffi.horas:.0f} h y ninguna de sus tareas se ejecuta con esa "
-            f"frecuencia o más seguido — {detalle}. Ajuste la frecuencia de la "
-            "prueba, o recalcule el FFI."
-        )
+            continue
+        for tarea in marcadas:
+            horas = FRECUENCIA_EN_HORAS.get(tarea.frequency)
+            if horas is None:
+                problemas.append(
+                    f"[Plan] La búsqueda de fallas de {fmid} está calculada cada "
+                    f"{ffi.horas:.0f} h, pero su tarea '{tarea.description}' se ejecuta "
+                    f"'{tarea.frequency}', que no tiene equivalencia en horas: no se "
+                    "puede comprobar que se cumpla. Use una frecuencia del catálogo "
+                    "con periodo definido."
+                )
+            elif horas > ffi.horas:
+                problemas.append(
+                    f"[Plan] La búsqueda de fallas de {fmid} está calculada cada "
+                    f"{ffi.horas:.0f} h, pero su tarea '{tarea.description}' se ejecuta "
+                    f"'{tarea.frequency}' ({horas:.0f} h) — más espaciada que el "
+                    "intervalo calculado. Ajuste la frecuencia o recalcule el FFI."
+                )
     return problemas
 
 

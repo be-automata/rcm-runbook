@@ -25,9 +25,11 @@ from rcm_runbook.export.rows import (
 )
 from rcm_runbook.models.catalogs import (
     METODOS_FFI_ES,
+    POLICY_LABELS_ES,
     SAE_DETECTION_ES,
     SAE_OCCURRENCE_ES,
     SAE_SEVERITY_ES,
+    MaintenancePolicy,
     fixture,
 )
 from rcm_runbook.models.session import RCMSession
@@ -82,6 +84,15 @@ def _write_lookups(wb: Workbook) -> dict[str, str]:
         "iso_codes": [c.code for c in fx.menu.iso14224_failure_mode_codes],
         "si_no": ["SI", "NO"],
         "marca": ["X", ""],
+        # Al FINAL a propósito: cada clave es una columna de LOOKUPS y las
+        # validaciones apuntan a columnas concretas — meterla en medio desplazó
+        # los códigos ISO y habría roto los desplegables del libro del cliente.
+        #
+        # El código sigue solo en `policies` porque la validación de la columna
+        # del AMEF apunta ahí y es el formato del benchmark. Pero la etiqueta
+        # venía en el fixture y se tiraba: quien abre el libro veía «Rd» y
+        # «ExEd» sin nada que los explicara en ninguna hoja.
+        "policies_es": [f"{p.code} — {p.label}" for p in fx.menu.policies],
     }
     ranges: dict[str, str] = {}
     for col, (name, values) in enumerate(vocabularies.items(), start=1):
@@ -190,7 +201,15 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         initial = session.risk_scores.get(fmid)
         residual = session.residual_scores.get(fmid)
         ws.cell(row=row, column=1, value=fmid)
-        ws.cell(row=row, column=2, value=decision.policy)
+        # Con su nombre: esta hoja es la del expediente, no la del benchmark, y
+        # la fila «Nomenclatura» está treinta filas más arriba en esta misma
+        # hoja glosando las siglas del FFI mientras esta columna iba pelada.
+        nombre_politica = POLICY_LABELS_ES.get(MaintenancePolicy(decision.policy), "")
+        ws.cell(
+            row=row, column=2,
+            value=f"{decision.policy} ({nombre_politica})" if nombre_politica
+            else decision.policy,
+        )
         ws.cell(row=row, column=3, value=decision.justification).alignment = WRAP
         ws.cell(row=row, column=4, value=initial.sod if initial else "")
         ws.cell(row=row, column=5, value=f"RPN {initial.rpn}" if initial else "")

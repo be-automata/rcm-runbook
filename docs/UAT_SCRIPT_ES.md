@@ -330,6 +330,7 @@ done
 | 47 | `GET /health/modelo` (con llave) distingue «el proceso vive» de «el producto funciona», y responde 503 cuando el proveedor está caído | ☐ |
 | 48 | El intervalo de búsqueda de fallas calculado gobierna la frecuencia que va al CMMS (no salen dos números incompatibles) | ☐ |
 | 49 | Nada en inglés llega al cliente ni al modelo: avisos del motor, digest, siglas del entregable | ☐ |
+| 50 | La tarea que ejecuta el FFI está marcada, y el entregable se bloquea si no la hay | ☐ |
 
 ## Los criterios que necesitan al modelo
 

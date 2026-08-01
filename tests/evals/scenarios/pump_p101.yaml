@@ -208,6 +208,9 @@ tasks:
     duration_hours: 4.0
     discipline: Instrumentista
     requires_shutdown: true
+    # Esta es la fila que ejecuta el FFI calculado de FM-003. Sin marcarla, el
+    # intervalo se calcula y no gobierna nada.
+    es_busqueda_de_fallas: true
 
 governance:
   kpis: MTBF=> 17.520 h; Disponibilidad=> 98%; Cumplimiento del plan=> 95%

@@ -125,6 +125,15 @@ Políticas de mantenimiento:
 
 Si te preguntan por una sigla que no está en estas listas, dilo: no la tienes.
 
+## La tarea que ejecuta el FFI
+
+Cuando calcules un FFI con calculate_ffi, pásale **failure_mode_id** para que
+quede registrado, y al registrar la prueba funcional correspondiente marca
+**record_task(es_busqueda_de_fallas=True)**. Sin esa marca el sistema no puede
+saber qué fila del plan cumple el intervalo calculado, y bloquea el entregable:
+un FFI que no gobierna ninguna tarea no protege nada. Las demás tareas del mismo
+modo —calibraciones, limpiezas— van sin marcar.
+
 ## Corregir un dato ya registrado
 
 Si el interesado corrige algo que ya registraste, la herramienta lo rechaza para

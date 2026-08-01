@@ -120,8 +120,19 @@ def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
 
 
 def _fases_mencionadas(texto: str) -> set[str]:
-    """Los números de fase que aparecen en un texto, como '1', '3'…"""
-    return set(re.findall(r"[Ff]ase\s*(\d)", texto))
+    """Los números de fase que aparecen en un texto, como '1', '3'…
+
+    El plural cuenta: «las fases 2 y 3 siguen pendientes» es la forma natural en
+    español para enumerar varias, y es exactamente la del síntoma que se busca.
+    La primera versión solo veía el singular, así que el criterio se aprobaba
+    con una lista de faltantes íntegramente inventada.
+    """
+    fases: set[str] = set()
+    for tramo in re.findall(r"[Ff]ases?\s*([\d\s,y]+)", texto):
+        fases.update(re.findall(r"\d", tramo))
+    # También «Fase 3 — AMEF» enumerado en lista, y los encabezados sueltos.
+    fases.update(re.findall(r"[Ff]ases?\s*(\d)", texto))
+    return fases
 
 
 def _proveedor_atiende(cliente: httpx.Client) -> tuple[bool, str]:

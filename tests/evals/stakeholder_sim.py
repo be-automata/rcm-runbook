@@ -214,7 +214,8 @@ def run_scripted_eval(exports_dir: str | None = None) -> RCMSession:
             _call(t.record_task, ctx, failure_mode_id=task["failure_mode_ref"],
                   description=task["description"], frequency=task["frequency"],
                   duration_hours=task["duration_hours"], discipline=task["discipline"],
-                  requires_shutdown=task.get("requires_shutdown", False))
+                  requires_shutdown=task.get("requires_shutdown", False),
+                  es_busqueda_de_fallas=task.get("es_busqueda_de_fallas", False))
         gov = scenario["governance"]
         _call(t.record_governance, ctx, kpis=gov["kpis"],
               review_triggers=gov["review_triggers"],
