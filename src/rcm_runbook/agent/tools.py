@@ -1017,8 +1017,11 @@ def explain_iso_code(run_context: Any, code: str) -> str:
         # siglas es un hueco que el modelo rellena inventando. Medido — con
         # solo los códigos se inventó el significado de FTS, STP, HIO, LOO y
         # BRD, distinto en cada corrida, en un análisis de seguridad.
+        # Con la descripción, no solo la definición corta: el agente parafrasea
+        # con ella —es lo natural— y dársela a medias le obliga a rellenar el
+        # hueco, que es justo lo que este mensaje vino a evitar.
         disponibles = "\n".join(
-            f"- {c.code} — {c.definition}"
+            f"- {c.code} — {c.definition}: {c.description}"
             for c in fixture().menu.iso14224_failure_mode_codes
         )
         return (

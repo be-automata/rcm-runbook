@@ -202,14 +202,12 @@ def _es_negacion(texto: str) -> bool:
     # La puntuación se quita ANTES de recortar: el tramo empieza por el
     # separador («| No aparece…», «— no se pudo…»), así que recortar primero
     # dejaba el símbolo delante y ninguna negación coincidía.
+    # `_codigos_definidos` ya no la usa —desde que compara contra el catálogo,
+    # una negación no encaja mejor con ningún código—; el único llamador que
+    # queda es `_significado_atribuido`, sobre el código PREGUNTADO, que no está
+    # en el catálogo y por tanto no se puede juzgar por parecido.
     limpio = re.sub(r"[^\w\s]", " ", texto.lower()).replace("ó", "o").strip()
-    # En el ARRANQUE del tramo, no en cualquier punto: buscarla en todo el texto
-    # absolvía «Fuga Total del Sistema, aunque no está confirmado en OREDA» —un
-    # invento con coletilla—. Pero limitarlo al primer carácter reprobaba
-    # «consultado con explain_iso_code, sin resultados en el catálogo», que es
-    # una abstención legítima con otra redacción.
-    cabeza = limpio[:60]
-    return any(p.replace("ó", "o") in cabeza for p in _NEGACIONES)
+    return any(p.replace("ó", "o") in limpio for p in _NEGACIONES)
 
 
 def _significado_atribuido(texto: str, codigo: str) -> str:
@@ -250,6 +248,7 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
     «- CÓDIGO — definición» y ahí está el catálogo del cliente. Comparar contra
     eso es comparar contra el sistema, no contra mi criterio.
     """
+    catalogo: dict[str, str] = {}
     for t in salida.get("tools") or []:
         if t.get("tool_name") != "explain_iso_code":
             continue
@@ -261,8 +260,12 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
         # (todos sus códigos son de tres). Con hasta cinco, «OREDA» —que aparece
         # en estas mismas respuestas como fuente de datos— se leía como código.
         pares = re.findall(r"^\s*-?\s*([A-Z]{3,4})\s*—\s*([^\n]{4,120})", crudo, re.M)
-        return {c: d.strip() for c, d in pares}
-    return {}
+        # TODAS las llamadas, no la primera: si la primera era la rama de éxito
+        # —un solo código—, el catálogo quedaba con un elemento y el detector no
+        # podía acusar nada por construcción, mientras la evidencia decía
+        # «definidos: ['FTS']», que se lee como una medición.
+        catalogo.update({c: d.strip() for c, d in pares})
+    return catalogo
 
 
 _VACIAS_ES = frozenset(
@@ -315,10 +318,11 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
             continue
         definidos.append(codigo)
         for tramo in atribuidos:
-            if _describe_mejor_a_otro(tramo, codigo, reales):
-                otro = _describe_mejor_a_otro(tramo, codigo, reales)
+            otro = _describe_mejor_a_otro(tramo, codigo, reales)
+            if otro:
                 inventados.append(
-                    f"{codigo}→«{tramo.strip(' —:|-(')[:40]}» (encaja con {otro})"
+                    f"{codigo}→«{tramo.strip(' —:|-(')[:40]}» "
+                    f"(encaja con {otro}: {reales[otro][:40]})"
                 )
                 break
     return definidos, inventados

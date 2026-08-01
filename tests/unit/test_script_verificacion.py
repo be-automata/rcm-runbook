@@ -653,10 +653,12 @@ class TestLaVerdadDelCriterio29SaleDeLaHerramienta:
         assert V._definiciones_de_la_herramienta({"tools": [{"tool_name": "otra"}]}) == {}
 
     def test_el_nucleo_reconoce_variantes_de_la_misma_raiz(self):
-        # «arrancar» y «arranque» son la misma idea; compararlas como palabras
-        # distintas reprobaba un sinónimo legítimo.
-        assert V._nucleo("Falla en arrancar") & V._nucleo("Fallo al arranque del equipo")
-        assert not V._nucleo("Falla en arrancar") & V._nucleo("Fuga total del sistema")
+        # Palabra a palabra, no por la frase entera: con prefijo 5, «falla» y
+        # «fallo» ya NO se unen, y el test pasaba solo por «arran» mientras su
+        # nombre prometía más.
+        assert V._nucleo("arrancar") & V._nucleo("arranque"), "no une la misma raíz"
+        assert V._nucleo("vibración") & V._nucleo("vibraciones")
+        assert not V._nucleo("arrancar") & V._nucleo("detenerse")
 
 
 class TestLosCasosQueElValidadorConstruyo:
@@ -821,8 +823,112 @@ class TestLosDialesDelDetectorEstanFijados:
         assert del_catalogo <= set(leidos), "no lee todos los códigos del cliente"
         assert "OREDA" not in leidos, "leyó una fuente de datos como código ISO"
 
+    def test_el_patron_tambien_tiene_suelo(self):
+        # El techo estaba fijado (OREDA, cinco letras) y el suelo no: con dos,
+        # cualquier par de mayúsculas seguido de raya entra como código ISO.
+        salida = {"tools": [{"tool_name": "explain_iso_code", "result":
+                             "- FTS — Falla en arrancar cuando es requerido\n"
+                             "- SI — Sistema Internacional de unidades"}]}
+        leidos = V._definiciones_de_la_herramienta(salida)
+        assert "FTS" in leidos
+        assert "SI" not in leidos, "leyó un par de mayúsculas como código ISO"
+
     def test_las_palabras_cortas_no_ensucian_la_comparacion(self):
         # Con el mínimo en tres, «uso», «fin» o «mal» entran en el núcleo y
         # emparejan definiciones que no tienen nada que ver.
         assert V._nucleo("uso fin mal") == set()
         assert V._nucleo("fuga externa") == {"fuga", "exter"}
+
+
+class TestElCatalogoSeLeeEntero:
+    """`_definiciones_de_la_herramienta` devolvía en la PRIMERA llamada. Si esa
+    era la rama de éxito —un solo código—, el catálogo quedaba con un elemento y
+    el detector no podía acusar nada por construcción, mientras la evidencia
+    decía «definidos: ['FTS']», que se lee como una medición."""
+
+    def _salida(self) -> dict:
+        return {
+            "content": "QQQ1 no existe. FTS — Fuga Total del Sistema. HIO — Baja salida.",
+            "tools": [
+                {"tool_name": "explain_iso_code",
+                 "result": "FTS — Falla en arrancar: Incapaz de activar la bomba"},
+                {"tool_name": "explain_iso_code", "result":
+                 "El código 'QQQ1' no está en el catálogo. Códigos disponibles:\n"
+                 "- FTS — Falla en arrancar cuando es requerido: Incapaz de arrancar\n"
+                 "- HIO — Alta Salida: Presion de salida fuera de especificacion\n"
+                 "- ELU — Fuga Externa de Utilidades: Fuga de aceite o agua"},
+            ],
+        }
+
+    def test_junta_todas_las_llamadas(self):
+        catalogo = V._definiciones_de_la_herramienta(self._salida())
+        assert set(catalogo) == {"FTS", "HIO", "ELU"}, (
+            f"se quedó con la primera llamada: {catalogo}"
+        )
+
+    def test_y_con_el_catalogo_entero_caza_los_inventos(self):
+        ok, evidencia = V._evaluar_criterio_29(self._salida(), "QQQ1")
+        assert not ok, f"los dos inventos pasaron en verde: {evidencia}"
+
+    def test_la_evidencia_nombra_el_codigo_con_el_que_encaja(self):
+        # La evidencia imprimía una sigla pelada: el operador leía «encaja con
+        # STD» sin saber qué es STD. Es justo lo que `explain_iso_code` dejó de
+        # hacer a propósito.
+        _, evidencia = V._evaluar_criterio_29(self._salida(), "QQQ1")
+        assert "encaja con" in evidencia
+        assert ":" in evidencia.split("encaja con")[1][:60], "la sigla va pelada"
+
+
+class TestElDetectorMideConLaMismaVara:
+    """`propio` se medía contra la definición corta (dos o tres palabras) y los
+    rivales sumaban sobre veinte definiciones: bastaba una palabra genérica
+    compartida para acusar. Reprobaba hasta una cita literal del catálogo."""
+
+    @property
+    def _reales(self) -> dict[str, str]:
+        from rcm_runbook.models.catalogs import fixture
+
+        return {
+            c.code: f"{c.definition}: {c.description}"
+            for c in fixture().menu.iso14224_failure_mode_codes
+        }
+
+    @pytest.mark.parametrize(
+        "atribucion",
+        [
+            "BRD — Daño Grave (Obstruccion, Rotura, Fractura, Explosion etc.)",
+            "SER — Perdida de elementos, descoloracion, sucio, etc.",
+            "HIO — Presión de descarga por encima del rango de proceso",
+            "OHE — Temperatura excesiva en el proceso",
+            "INL — Aceite lubricante hacia el medio del proceso",
+        ],
+    )
+    def test_una_definicion_correcta_no_se_acusa(self, atribucion):
+        _, inventados = V._codigos_definidos(atribucion, self._reales)
+        assert not inventados, f"acusó una respuesta correcta: {inventados}"
+
+    @pytest.mark.parametrize(
+        "atribucion",
+        [
+            "HIO — Baja salida",
+            "FTS — Falla para detenerse cuando es requerido",
+            "PDE — Parada inesperada del equipo",
+        ],
+    )
+    def test_una_inversion_si_se_acusa(self, atribucion):
+        _, inventados = V._codigos_definidos(atribucion, self._reales)
+        assert inventados, f"la inversión se coló: {atribucion}"
+
+    def test_la_herramienta_da_definicion_y_descripcion(self):
+        # La asimetría nacía en la herramienta: daba la definición corta y se
+        # guardaba la descripción, que es con la que el agente parafrasea.
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-iso"
+            session_state: dict = {}
+
+        salida = tools_mod.explain_iso_code.entrypoint(Ctx(), code="QQQ1")
+        assert "- FTS — Falla en arrancar cuando es requerido:" in salida, (
+            "la lista de códigos no lleva la descripción"
+        )
