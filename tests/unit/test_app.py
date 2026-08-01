@@ -1997,3 +1997,42 @@ class TestNadaEnInglesLlegaAlClienteNiAlModelo:
         texto = s.digest_es()
         assert "7/6" not in texto, "el modelo lee «fase 7 de 6» al cerrar el análisis"
         assert texto.splitlines()[0] == "FASE ACTUAL: Análisis completado"
+
+
+class TestLasPruebasCorrenEnUnEntornoLimpio:
+    """61 pruebas no llegaban a ejecutarse sin credencial del proveedor —el
+    cierre de la API, las rutas de export, la página de demo y la sonda solo
+    existían en la máquina del desarrollador— y otras 4 se saltaban en verde sin
+    llave. Una suite que desaparece justo donde se comprueba la seguridad no es
+    una red.
+
+    Se comprueba el EFECTO, no el texto del conftest: la primera versión de esto
+    hacía grep sobre el fuente y fallaba por una palabra dentro de un comentario.
+    """
+
+    def test_hay_credencial_del_proveedor_para_poder_importar_la_app(self):
+        # Contra `settings`, no contra el entorno: en modo suscripción,
+        # `build_model` BORRA ANTHROPIC_API_KEY del proceso a propósito (la API
+        # rechaza las peticiones que llevan las dos credenciales), así que
+        # mirarlo en os.environ da un falso negativo.
+        import os
+
+        from rcm_runbook.config import settings
+
+        assert settings.claude_code_oauth_token or os.environ.get("ANTHROPIC_API_KEY"), (
+            "sin credencial la app hace SystemExit y 61 pruebas no llegan a correr"
+        )
+
+    def test_hay_llave_configurada_para_que_nada_se_salte_en_verde(self):
+        from rcm_runbook.config import settings
+
+        assert settings.os_security_key, (
+            "sin llave, las cuatro pruebas del WebSocket se saltan justo donde se "
+            "comprueba que el socket exige autenticación"
+        )
+
+    def test_la_llave_de_prueba_no_activa_la_auth_propia_de_agno(self, client, con_llave):
+        # OS_SECURITY_KEY en el entorno activa la dependencia de agno (solo
+        # Bearer) y mata los enlaces `?key=`. Es un defecto que ya llegó a
+        # producción, y al escribir la fixture lo reintroduje sin darme cuenta.
+        assert client.get("/sessions", params={"key": con_llave}).status_code != 401
