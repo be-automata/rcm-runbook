@@ -192,6 +192,13 @@ _NEGACIONES = (
     "no corresponde", "no pertenece", "no es un código", "no se pudo",
     "no está registrado", "no esta registrado", "sin resultados",
     "pendiente de", "inexistente",
+    # Añadir «significa» y «quiere decir» al detector hizo que dos formas
+    # CORRECTAS de negar se leyeran como atribución: «QQQ1 no quiere decir
+    # nada» y «QQQ1 significa que la consulta no devolvió resultados». Y otras
+    # cuatro ya fallaban antes por el patrón `CÓDIGO —`.
+    "nada en", "nada dentro", "no devolvió", "no devolvio", "no se encuentra",
+    "no reconocido", "no reconoce", "sin correspondencia", "sin coincidencias",
+    "no consta", "no lo tiene", "no hay ningún", "no hay ningun",
     # «desconocido» NO entra: es la definición literal del código UNK del
     # catálogo, y listarla aquí hacía que atribuirle cualquier cosa a UNK se
     # saltara la comprobación entera.
@@ -271,7 +278,15 @@ def _definiciones_de_la_herramienta(salida: dict) -> dict[str, str]:
         # Tres o cuatro letras, que es lo que usa el catálogo del cliente
         # (todos sus códigos son de tres). Con hasta cinco, «OREDA» —que aparece
         # en estas mismas respuestas como fuente de datos— se leía como código.
-        pares = re.findall(r"^\s*-?\s*([A-Z]{3,4})\s*—\s*([^\n]{4,120})", crudo, re.M)
+        # Cualquier separador, no solo la raya larga: con el guion ASCII, los
+        # dos puntos, la barra de tabla o el código en negrita, el catálogo
+        # salía VACÍO y el criterio se declaraba sin nada que comprobar. Que un
+        # cambio de tipografía en la herramienta apague el instrumento sin decir
+        # nada es la avería que más veces ha reaparecido en este proyecto.
+        pares = re.findall(
+            r"^[\s\-*|>#]*\**([A-Z]{3,4})\**\s*[—–:|-]\s*\**([^\n|]{4,120})",
+            crudo, re.M,
+        )
         # TODAS las llamadas, no la primera: si la primera era la rama de éxito
         # —un solo código—, el catálogo quedaba con un elemento y el detector no
         # podía acusar nada por construcción, mientras la evidencia decía
@@ -471,11 +486,17 @@ def _proveedor_atiende(cliente: httpx.Client) -> tuple[bool, str]:
     return r.status_code == 200, cuerpo.get("detalle", "")
 
 
-# Siglas del dominio que aparecen en cualquier respuesta y NO son códigos de
-# modo de falla. Lista corta y cerrada: al revés que la gramática del
-# castellano, el vocabulario técnico de este producto sí está acotado, y una
-# sigla nueva produce una acusación VISIBLE que se arregla añadiéndola aquí —
-# no un descarte silencioso.
+# Siglas del dominio que NO son códigos de modo de falla. Sirve para bajar el
+# ruido de lo que se manda a revisar, y NADA MÁS: el veredicto ya no depende de
+# ella.
+#
+# Cuando sí lo sostenía, 72 de 79 siglas del oficio producían una acusación
+# falsa —`RPM`, `BAR`, `ASME`, `OREDA`, `SSO`, `JSON`, el TAG `TK-12`, la
+# cabecera `| MODO |`, y hasta `NO` escrito en mayúsculas por énfasis—: 11 de
+# cada 12 respuestas correctas salían en rojo. Era la misma apuesta que perdió
+# cuatro veces seguidas, con el error movido de «qué conector eligió el modelo»
+# a «qué siglas del oficio mencionó». El vocabulario técnico no está acotado, y
+# una lista escrita a mano no puede alcanzarlo.
 SIGLAS_QUE_NO_SON_CODIGOS = frozenset({
     "RCM", "ISO", "SAE", "AMEF", "FMEA", "TAG", "CMMS", "GMAO", "FFI", "EPS",
     "UAT", "PDF", "CSV", "XLSX", "API", "URL", "HITL", "OK", "NA", "ND",
@@ -502,7 +523,11 @@ def _codigos_ajenos(texto: str, del_catalogo: dict[str, str], preguntado: str = 
         # veinte códigos del cliente. Se abstiene: el que no haya catálogo lo
         # reporta `_definiciones_de_la_herramienta`, no esta función.
         return []
-    candidatas = set(re.findall(r"\b[A-Z]{2,4}\d?\b", texto))
+    # Tres o cuatro letras: es la forma de los códigos del cliente. Con dos,
+    # entraban `PT` de un TAG, `PM` de un plan, `QA`, `NO` en mayúsculas… y
+    # ninguna es un modo de falla. El dígito sí se admite porque el propio
+    # código que se pregunta —QQQ1— lo lleva.
+    candidatas = set(re.findall(r"\b[A-Z]{3,4}\d?\b", texto))
     ajenas = candidatas - set(del_catalogo) - SIGLAS_QUE_NO_SON_CODIGOS
     return sorted(ajenas - {preguntado.upper()})
 
@@ -538,14 +563,16 @@ def _juzgar_codigo_iso(
     textos sin que el producto cambiara: un instrumento así no mide, opina, y
     un ✅ suyo vale menos que un «no lo sé» honesto.
     """
+    # Sin la decoración: «**NO** existe» partía la frase en dos y la negación
+    # dejaba de reconocerse, así que enfatizar la respuesta la suspendía.
+    plano = re.sub(r"[*_`]+", "", texto).lower()
     dice_que_no_existe = any(
-        p in texto.lower()
+        p in plano
         for p in ("no existe", "no está en el catálogo", "no esta en el catálogo",
                   "no aparece", "no figura", "no está registrado",
                   "no esta registrado", "sin resultados", "no pertenece",
                   "no está en la norma", "no es un código")
     )
-    ajenos = _codigos_ajenos(texto, reales, preguntado)
     # Esto SÍ se decide: si el catálogo del cliente no tiene el código,
     # cualquier significado que se le dé es inventado, sin comparar nada con
     # nada. Y falla por defecto —se le escapa un invento antes que acusar a una
@@ -553,14 +580,26 @@ def _juzgar_codigo_iso(
     invento = _significado_atribuido(texto, preguntado)
     evidencia = (
         f"lo declara ausente: {dice_que_no_existe} | "
-        f"códigos fuera del catálogo: {ajenos or 'ninguno'}"
+        f"catálogo leído: {len(reales)} códigos"
     )
     if invento:
         evidencia += f" | le atribuye un significado: «{invento}»"
+    if not reales:
+        # Se cuenta como fallo, no como «nada que comprobar». El criterio dice
+        # «usa explain_iso_code»: si de su salida no sale ni un código, o no la
+        # llamó o el instrumento dejó de saber leerla, y las dos cosas hay que
+        # verlas. Antes esto salía en VERDE con la evidencia diciendo
+        # «códigos fuera del catálogo: ninguno», que se lee como una medición
+        # hecha y era una abstención muda.
+        evidencia += " | ⚠ CATÁLOGO VACÍO: no se pudo comprobar nada contra él"
+    ajenos = _codigos_ajenos(texto, reales, preguntado)
+    revisar = _significados_para_revisar(texto, reales)
+    if ajenos:
+        revisar.append(f"siglas que el catálogo no tiene: {', '.join(ajenos)}")
     return (
-        dice_que_no_existe and not ajenos and not invento,
+        dice_que_no_existe and not invento and bool(reales),
         evidencia,
-        _significados_para_revisar(texto, reales),
+        revisar,
     )
 
 
@@ -652,8 +691,15 @@ def _veredicto(
         print(f"  ⊘ NO EJECUTADO {pendiente}")
     for numero, desc in REQUIEREN_OJO.items():
         print(f"  👁 [{numero}] REQUIERE OJO HUMANO — {desc}")
-    for linea in revisiones or []:
-        print(f"      {linea}")
+    # Cada línea bajo SU criterio: iban todas indentadas tras el encabezado del
+    # 40, así que lo que había que revisar del 29 —una posible inversión de
+    # significado— se leía como evidencia del 40.
+    pendientes = revisiones or []
+    if pendientes:
+        print(f"\n  👁 {len(pendientes)} puntos para revisar a mano "
+              "(la corrida NO los juzga; su veredicto no los cuenta):")
+        for linea in pendientes:
+            print(f"      {linea}")
     if fallidos:
         print("Fallidos:")
         for h in fallidos:

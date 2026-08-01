@@ -339,8 +339,14 @@ Once criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26, 27,
 
     uv run --env-file .env python scripts/verificar_en_produccion.py
 
-Última corrida completa: **9/9 en verde, salida 0**. Tres casos no cuentan como
-aprobado ni como fallo, y es deliberado:
+Última corrida completa con la técnica anterior: 9/9 en verde. **Ese número ya
+no se puede reproducir y no debe citarse**: se midió con la forma de evaluar el
+criterio 29 que este propio guion repudia —ponía en rojo 129 de 380 respuestas
+correctas según qué conector hubiera usado el modelo— y el 40 salió de
+`ESPERADOS`, así que el script imprime sobre **7**, no sobre 9. La cifra buena
+saldrá de la primera corrida con saldo.
+
+Tres casos no cuentan como aprobado ni como fallo, y es deliberado:
 
 - **[8] mide, no aprueba.** Depende de ALTA-2, que está documentada y aceptada
   más abajo. Hacer fallar el script por una limitación conocida dejaba su código
