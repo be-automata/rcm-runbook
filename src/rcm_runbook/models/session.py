@@ -404,12 +404,6 @@ class RCMSession(BaseModel):
         self._require("modo de falla", failure_mode_id, self.failure_modes)
         effect = Effect(failure_mode_id=failure_mode_id, **kwargs)
         self.effects[failure_mode_id] = effect
-        if not effect.is_hidden:
-            # Un FFI solo tiene sentido en fallas ocultas. Si el efecto se
-            # corrige a evidente, el intervalo calculado antes deja de aplicar y
-            # nadie lo retiraba: viajaba al entregable con «NINGUNA TAREA
-            # MARCADA» mientras la compuerta saltaba ese modo por no ser oculto.
-            self.ffi_por_modo.pop(failure_mode_id, None)
         return effect
 
     def add_control(self, failure_mode_id: str, **kwargs: Any) -> Control:

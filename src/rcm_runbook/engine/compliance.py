@@ -200,8 +200,11 @@ def export_blockers(session: RCMSession) -> list[str]:
     return issues
 
 
-def _sigue_necesitando_busqueda_de_fallas(session: RCMSession, fmid: str) -> bool:
+def sigue_necesitando_busqueda_de_fallas(session: RCMSession, fmid: str) -> bool:
     """¿Este modo sigue requiriendo una tarea de búsqueda de fallas?
+
+    Público a propósito: el entregable filtra con el MISMO criterio, para que no
+    haya dos reglas que puedan divergir.
 
     El FFI se calcula para modos ocultos de dispositivos de protección. Si
     después el efecto se corrige y deja de ser oculto, si la política pasa a
@@ -246,13 +249,15 @@ def tareas_mas_lentas_que_el_ffi(session: RCMSession) -> list[str]:
     """
     problemas: list[str] = []
     for fmid, ffi in session.ffi_por_modo.items():
-        if not _sigue_necesitando_busqueda_de_fallas(session, fmid):
+        if not sigue_necesitando_busqueda_de_fallas(session, fmid):
             # Un FFI que dejó de tener sentido no puede bloquear para siempre.
-            # `ffi_por_modo` es solo escritura —no hay herramienta que lo quite—
-            # así que si el modo deja de ser oculto, pasa a OHF o se descarta
-            # por no creíble, el intervalo viejo bloqueaba el entregable sin
-            # salida. Y peor: `_gate_p6` salta esos mismos modos a propósito, o
-            # sea que export_blockers se contradecía consigo mismo.
+            # Nada quita entradas de `ffi_por_modo`: se intentó borrarlas al
+            # corregir el efecto y eso dejaba a esta compuerta sin nada que
+            # visitar, apagando la excepción de política BF. Si el modo deja de
+            # ser oculto, pasa a OHF o se descarta por no creíble, el intervalo
+            # viejo bloqueaba el entregable sin salida. Y peor: `_gate_p6`
+            # salta esos mismos modos a propósito, o sea que export_blockers se
+            # contradecía consigo mismo.
             continue
         tareas = session.tasks.get(fmid, [])
         marcadas = [t for t in tareas if t.es_busqueda_de_fallas]

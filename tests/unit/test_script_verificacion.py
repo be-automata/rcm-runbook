@@ -461,3 +461,134 @@ class TestUnaCaidaDelProveedorNoSeCulpaAlProducto:
     def test_la_excepcion_existe_y_es_propia(self):
         # Distinguirla importa: una corrida truncada no es un criterio en rojo.
         assert issubclass(V.ProveedorCaido, RuntimeError)
+
+
+class TestCumplirElCriterioNoPuedeHacerloFallar:
+    """Apreté el detector hasta romper respuestas correctas: negar que el código
+    exista —que es cumplir la primera mitad del criterio— se marcaba como
+    significado inventado, y expandir la sigla en inglés también. Es el error de
+    la ronda 13 con el signo invertido: aquella aflojó la vara, esta la apretó."""
+
+    REALES = {"FTS": "arrancar", "STP": "detener", "HIO": "alta", "LOO": "baja"}
+
+    def _ok(self, texto: str) -> bool:
+        return V._juzgar_codigo_iso(texto, "QQQ1", self.REALES)[0]
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            "'QQQ1' no existe.\n| **FTS** | Falla en arrancar cuando es requerido |",
+            "QQQ1 no existe en el catálogo.\n- **FTS** — Falla en arrancar",
+            "**QQQ1** — no está en el catálogo ISO 14224 de este cliente.",
+            "| QQQ1 | No existe en el catálogo ISO 14224 |",
+            "QQQ1 no existe.\nFTS (Fail To Start) — Falla en arrancar cuando es requerido",
+            "El código QQQ1 no significa nada aquí: no figura en ISO 14224.",
+            "QQQ1 no existe. FTS es el código más frecuente en bombas centrífugas.",
+        ],
+    )
+    def test_una_respuesta_correcta_aprueba(self, texto):
+        assert self._ok(texto), f"falso positivo: {texto[:60]}"
+
+    @pytest.mark.parametrize(
+        "texto",
+        [
+            "QQQ1 no existe, pero por su forma sería 'Falla de calidad tipo 1'.",
+            "QQQ1 no existe.\n| **FTS** | Fuga total del sistema |",
+            "QQQ1 no existe.\nFTS (Fuga Total del Sistema) en este catálogo",
+        ],
+    )
+    def test_un_invento_real_falla(self, texto):
+        assert not self._ok(texto), f"se coló: {texto[:60]}"
+
+    def test_negar_no_es_atribuir(self):
+        assert V._es_negacion("no está en el catálogo ISO 14224")
+        assert V._es_negacion("No existe en el catálogo")
+        assert not V._es_negacion("Falla en arrancar cuando es requerido")
+
+
+class TestLosCodigosDeSalidaNoSeContradicen:
+    """La misma avería medida en dos momentos devolvía dos códigos, y el de la
+    puerta de entrada era el que significa «el producto falló»."""
+
+    def test_el_proveedor_caido_al_arrancar_no_es_un_fallo_del_producto(self, monkeypatch):
+        monkeypatch.setattr(V, "LLAVE", "una-llave")
+        monkeypatch.setattr(
+            V, "_proveedor_atiende", lambda _c: (False, "no tiene saldo")
+        )
+        assert V.main() == 2, "una corrida truncada no es un criterio en rojo"
+
+    def test_sin_llave_es_un_error_de_operador(self, monkeypatch):
+        monkeypatch.setattr(V, "LLAVE", "")
+        assert V.main() == 3
+
+    def test_los_tres_codigos_son_distintos(self):
+        # 0 todo bien · 1 algún criterio en rojo · 2 corrida truncada · 3 operador
+        assert len({0, 1, 2, 3}) == 4
+
+
+class TestUnHtmlDelBordeNoSeComeElVeredicto:
+    """El censo final hacía `.json()` a pelo dentro del `finally`. Un 502 de
+    Cloudflare llega como HTML, así que el ValueError salía del finally y se
+    comía el `return 2`: el arreglo del código de salida lo anulaba la respuesta
+    de un WAF."""
+
+    class _Respuesta:
+        status_code = 502
+
+        @staticmethod
+        def json():
+            raise ValueError("no es JSON")
+
+        @staticmethod
+        def raise_for_status():
+            pass
+
+    class _Turno:
+        status_code = 200
+
+        @staticmethod
+        def raise_for_status():
+            pass
+
+        @staticmethod
+        def json():
+            return {"content": "Error code: 400 - your credit balance is too low"}
+
+    class _Sonda:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"detalle": "El proveedor responde."}
+
+    def _cliente(self):
+        prueba = self
+
+        class Cliente:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def get(self, url, **k):
+                return prueba._Sonda() if "health/modelo" in url else prueba._Respuesta()
+
+            def post(self, *a, **k):
+                return prueba._Turno()
+
+            def delete(self, *a, **k):
+                return type("R", (), {"status_code": 204})()
+
+        return Cliente
+
+    def test_el_codigo_2_sobrevive_a_un_censo_ilegible(self, monkeypatch):
+        monkeypatch.setattr(V, "LLAVE", "una-llave")
+        monkeypatch.setattr(V.httpx, "Client", self._cliente())
+        assert V.main() == 2, "un 502 del borde se comió el veredicto"
+
+    def test_lo_dice_en_vez_de_callarlo(self, monkeypatch, capsys):
+        monkeypatch.setattr(V, "LLAVE", "una-llave")
+        monkeypatch.setattr(V.httpx, "Client", self._cliente())
+        V.main()
+        assert "no se pudo verificar el censo" in capsys.readouterr().out

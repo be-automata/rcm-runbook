@@ -1339,7 +1339,9 @@ class TestElEntregableLlevaLoQueLasCompuertasExigen:
         from tests.unit.test_compliance import full_session
 
         s = full_session()
-        fm = next(iter(s.failure_modes))
+        # El modo OCULTO: el entregable filtra el FFI de los modos que ya no lo
+        # necesitan, con el mismo criterio que la compuerta.
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
         s.ffi_por_modo[fm] = FFIRegistro(
             horas=4380.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
         )
@@ -1904,7 +1906,9 @@ class TestElValorDelFfiEstaFijado:
         from tests.unit.test_compliance import full_session
 
         s = full_session()
-        fm = next(iter(s.failure_modes))
+        # El modo OCULTO: el entregable filtra el FFI de los modos que ya no lo
+        # necesitan, con el mismo criterio que la compuerta.
+        fm = next(f for f in s.failure_modes if s.effects[f].is_hidden)
         s.ffi_por_modo[fm] = FFIRegistro(
             horas=1752.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
         )
@@ -2829,21 +2833,54 @@ class TestElFfiNoSobreviveASuModo:
         assert "no tiene efectos registrados" in salida
         assert "sale en el entregable" not in salida
 
-    def test_corregir_el_efecto_a_evidente_retira_el_ffi(self):
+    def test_corregir_el_efecto_a_evidente_saca_el_ffi_del_entregable(self):
+        # NO se borra el dato: borrarlo dejaba a la compuerta sin nada que
+        # visitar y desactivaba la excepción de política BF, así que un modo de
+        # seguridad sin tarea que lo ejecute salía limpio. Se filtra al exportar,
+        # con el mismo criterio que usa la compuerta.
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
         from rcm_runbook.models.session import RCMSession
 
         ctx, fm = self._ctx()
         self._calcular(ctx, fm)
         sesion = RCMSession.model_validate(ctx.session_state["rcm"])
-        assert fm in sesion.ffi_por_modo, "no llegó a registrarse"
+        sesion.decisions.pop(fm, None)  # reevaluada tras corregir el efecto
         sesion.set_effect(
             fm, local="Se detiene la bomba sin aviso previo",
             system="Pérdida de caudal en la línea", plant="Parada de la unidad",
             is_hidden=False, operational=True,
         )
-        assert fm not in sesion.ffi_por_modo, (
-            "el intervalo sobrevivió a la falla oculta que lo justificaba"
+        assert fm in sesion.ffi_por_modo, "el dato no se tira, solo deja de aplicar"
+        with tempfile.TemporaryDirectory() as tmp:
+            hoja = load_workbook(export_xlsx(sesion, tmp))["AUDITORIA RCM"]
+        texto = " | ".join(
+            str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None
         )
+        assert "Ejecutado por" not in texto, "el FFI que ya no aplica salió al Excel"
+
+    def test_si_la_politica_sigue_siendo_busqueda_de_fallas_la_compuerta_no_se_apaga(self):
+        # El caso que rompía el borrado: efecto corregido a evidente pero la
+        # decisión sigue siendo BF. Es una contradicción del análisis y no puede
+        # saltarse una compuerta de seguridad.
+        from rcm_runbook.engine import compliance
+        from rcm_runbook.models.session import RCMSession
+
+        ctx, fm = self._ctx()
+        self._calcular(ctx, fm)
+        sesion = RCMSession.model_validate(ctx.session_state["rcm"])
+        sesion.set_effect(
+            fm, local="Se detiene la bomba sin aviso previo",
+            system="Pérdida de caudal en la línea", plant="Parada de la unidad",
+            is_hidden=False, operational=True,
+        )
+        bloqueos = [
+            b for b in compliance.export_blockers(sesion) if "búsqueda de fallas" in b
+        ]
+        assert bloqueos, "un modo con política BF y sin tarea salió sin bloquear"
 
     def test_corregir_el_efecto_manteniendolo_oculto_lo_conserva(self):
         # El contrapeso: reformular el efecto sin cambiar su naturaleza no puede

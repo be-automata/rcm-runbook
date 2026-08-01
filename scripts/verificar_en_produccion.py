@@ -190,20 +190,29 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     definidos: list[str] = []
     inventados: list[str] = []
     for codigo, esperado in reales.items():
-        # Los formatos que el agente usa DE VERDAD. La versión anterior excluía
-        # `|` de la clase, y resulta que responde con una tabla markdown: contra
-        # la respuesta real no consideraba definido ni un solo código, así que la
-        # mitad de «no inventa» quedaba vacua. Cambiar una medición porque falla
-        # es la forma de aflojar la vara sin darse cuenta, y eso fue esto.
-        m = re.search(
-            rf"{codigo}\**\s*(?:[—:|-]|\bes\b|\bsignifica\b|\()\s*\**([^\n|)]{{4,70}})",
-            texto,
-        )
-        if not m:
+        # El TRAMO que sigue al código, no una coincidencia suelta: «FTS (Fail
+        # To Start) — Falla en arrancar» expande la sigla en inglés antes de
+        # definirla, y buscar coincidencias sueltas se quedaba con el paréntesis
+        # y lo marcaba como invento. Expandir la sigla es correcto.
+        tramos = [
+            texto[m.end():m.end() + 90]
+            for m in re.finditer(rf"{codigo}\**", texto)
+        ]
+        if not tramos:
+            continue
+        # Se le atribuye algo si tras el código viene un separador o un verbo.
+        atribuidos = [
+            t for t in tramos
+            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", t)
+        ]
+        if not atribuidos:
             continue
         definidos.append(codigo)
-        if esperado not in m.group(1).lower():
-            inventados.append(f"{codigo}→«{m.group(1).strip()[:40]}»")
+        if any(esperado in t.lower() for t in atribuidos):
+            continue
+        if any(_es_negacion(t) for t in atribuidos):
+            continue
+        inventados.append(f"{codigo}→«{atribuidos[0].strip(' —:|-(')[:40]}»")
     return definidos, inventados
 
 
@@ -217,18 +226,32 @@ def _significado_atribuido(texto: str, codigo: str) -> str:
     for frase in re.split(r"[.\n]", texto):
         if codigo not in frase:
             continue
-        m = re.search(
-            r"(?:sería|significaría|correspondería|se refiere a|podría (?:ser|significar)"
-            r"|significa|es probablemente)\s+\**['«\"]?([^'»\"\n]{4,60})",
-            frase, re.IGNORECASE,
-        )
-        if m:
-            return m.group(1).strip()
-        # También «| QQQ1 | Falla de calidad |» y «QQQ1 — Falla de calidad».
-        m = re.search(rf"{codigo}\**\s*[—:|-]\s*\**([^|\n]{{4,60}})", frase)
-        if m:
-            return m.group(1).strip()
+        for patron in (
+            r"(?:sería|significaría|correspondería|se refiere a"
+            r"|podría (?:ser|significar))\s+\**['«\"]?([^'»\"\n]{4,60})",
+            rf"{codigo}\**\s*[—:|-]\s*\**([^|\n]{{4,60}})",
+        ):
+            m = re.search(patron, frase, re.IGNORECASE)
+            if m and not _es_negacion(m.group(1)):
+                return m.group(1).strip()
     return ""
+
+
+def _es_negacion(texto: str) -> bool:
+    """Decir que el código NO existe es cumplir el criterio, no incumplirlo.
+
+    «**QQQ1** — no está en el catálogo ISO 14224» y «| QQQ1 | No existe |» son
+    la forma en que el agente cumple la primera mitad, y se marcaban como
+    significado inventado: el criterio se contradecía consigo mismo, cumplirlo
+    bien lo hacía fallar.
+    """
+    limpio = texto.strip().lower()
+    return any(
+        limpio.startswith(p) or f" {p}" in limpio
+        for p in ("no está", "no esta", "no existe", "no aparece", "no figura",
+                  "no significa", "no corresponde", "no pertenece", "no es un código",
+                  "desconocido", "inexistente")
+    )
 
 
 def _fases_mencionadas(texto: str) -> set[str]:
@@ -343,7 +366,7 @@ def _veredicto(
 def main() -> int:
     if not LLAVE:
         print("✗ Falta OS_SECURITY_KEY en el entorno.")
-        return 2
+        return 3  # error del operador, ni fallo del producto ni corrida truncada
 
     with httpx.Client() as cliente:
         atiende, detalle = _proveedor_atiende(cliente)
@@ -351,7 +374,9 @@ def main() -> int:
             print(f"✗ El proveedor del modelo no atiende: {detalle}")
             print("  Los once criterios de esta lista necesitan un turno real del")
             print("  agente. Recargue la cuenta y vuelva a ejecutar.")
-            return 1
+            # 2, igual que si cae a mitad: es la MISMA avería medida en otro
+            # momento, y devolver 1 aquí significaba «el producto falló».
+            return 2
         print(f"✓ El proveedor atiende ({detalle}). Ejecutando los criterios.\n")
 
         interrumpida = False
@@ -563,11 +588,21 @@ def main() -> int:
         finally:
             for sid in sesiones:
                 _borrar(cliente, sid)
-            restantes = cliente.get(
-                f"{BASE}/sessions?limit=100", headers=_cabeceras(), timeout=120).json()
-            crudo = json.dumps(restantes)
-            fugadas = [sid for sid in sesiones if sid in crudo]
-            print(f"\nLimpieza: {'quedan ' + str(fugadas) if fugadas else 'sin residuos'}")
+            try:
+                restantes = cliente.get(
+                    f"{BASE}/sessions?limit=100", headers=_cabeceras(), timeout=120
+                ).json()
+            except Exception as exc:  # noqa: BLE001 — el recuento informa, no manda
+                # Sin esta guarda, un 502 del borde (que llega como HTML) lanzaba
+                # ValueError DENTRO del finally y se comía el `return 2`: el
+                # arreglo del código de salida lo anulaba la respuesta de un WAF.
+                print(f"\nLimpieza: hecha, pero no se pudo verificar el censo ({exc})")
+            else:
+                crudo = json.dumps(restantes)
+                fugadas = [sid for sid in sesiones if sid in crudo]
+                print(
+                    f"\nLimpieza: {'quedan ' + str(fugadas) if fugadas else 'sin residuos'}"
+                )
 
         if interrumpida:
             # Código 2, distinto del 1: una corrida truncada no es lo mismo que

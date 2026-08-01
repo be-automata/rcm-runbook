@@ -17,6 +17,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rcm_runbook.engine.compliance import sigue_necesitando_busqueda_de_fallas
 from rcm_runbook.export.rows import (
     amef_headers,
     plan_headers,
@@ -251,6 +252,12 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ).alignment = WRAP
         row += 1
     for fmid, ffi in session.ffi_por_modo.items():
+        if not sigue_necesitando_busqueda_de_fallas(session, fmid):
+            # El mismo criterio que usa la compuerta. Borrar la entrada al
+            # corregir el efecto —lo que se intentó antes— dejaba a la compuerta
+            # sin nada que visitar y desactivaba la excepción de política BF:
+            # un modo de seguridad sin tarea que lo ejecute salía limpio.
+            continue
         ws.cell(row=row, column=1, value=fmid)
         ws.cell(row=row, column=2, value=round(ffi.horas, 1))
         ws.cell(row=row, column=3, value=f"{ffi.horas / 730.0:.1f} meses")
