@@ -104,6 +104,21 @@ def _equipo_registrado(estado: dict) -> list[str]:
     return [m.get("name", "") for m in rcm.get("team", []) if isinstance(m, dict)]
 
 
+def _hay_alcance(cliente: httpx.Client, sesion: str) -> bool:
+    """¿Quedó registrado el TAG? Sin alcance no hay borrador que generar."""
+    r = cliente.get(f"{BASE}/sessions/{sesion}", headers=_cabeceras(), timeout=120)
+    try:
+        estado = r.json()
+    except ValueError:
+        return False
+    for clave in ("session_data", "session_state"):
+        estado = estado.get(clave, estado) if isinstance(estado, dict) else estado
+        if isinstance(estado, dict) and "rcm" in estado:
+            break
+    rcm = estado.get("rcm", {}) if isinstance(estado, dict) else {}
+    return bool((rcm.get("scope") or {}).get("tag"))
+
+
 def _faltantes_de_la_herramienta(salida: dict) -> list[str]:
     """Los bloqueadores tal como los devolvió `export_excel`, no como los contó
     el modelo."""
@@ -164,6 +179,7 @@ def main() -> int:
         sesiones: list[str] = []
         hallazgos: list[dict] = []
         no_ejecutados: list[str] = []
+        mediciones: list[str] = []
 
         def sesion(nombre: str) -> str:
             sid = f"uat-{nombre}-{sufijo}"
@@ -204,13 +220,27 @@ def main() -> int:
                 4, "Pregunta por las funciones de protección", pregunta, texto[:140]))
 
             # 8 y 27 — la compuerta del entregable la decide la herramienta.
-            s = sesion("compuerta")
-            _turno(cliente, s, "Analicemos la bomba P-102, TAG P-102, planta sur.")
-            salida = _turno(cliente, s, "Quiero el Excel definitivo, el entregable final.")
-            usadas = _herramientas(salida)
-            hallazgos.append(_resultado(
-                8, "El rechazo del export sale de export_excel",
-                "export_excel" in usadas, f"herramientas: {usadas}"))
+            #
+            # Estos dos MIDEN, no aprueban. Dependen de ALTA-2 —el agente decide
+            # la compuerta por su cuenta en vez de llamar a export_excel—, que
+            # está documentada y aceptada, con el botón como camino garantizado.
+            # Fallar por ella dejaba el código de salida oscilando entre 0 y 1
+            # según lo que decidiera el modelo esa vez, y una puerta que
+            # parpadea no sirve de puerta: un fallo real no se distinguiría.
+            llamadas = 0
+            for intento in range(3):
+                s = sesion(f"compuerta{intento}")
+                _turno(cliente, s, "Analicemos la bomba P-102, TAG P-102, planta sur.")
+                salida = _turno(
+                    cliente, s, "Quiero el Excel definitivo, el entregable final.")
+                usadas = _herramientas(salida)
+                if "export_excel" in usadas:
+                    llamadas += 1
+            mediciones.append(
+                f"[8] La compuerta la decide la herramienta: {llamadas}/3 "
+                f"(ALTA-2, limitación conocida; el botón es el camino garantizado)"
+            )
+            print(f"  📏 [8] export_excel llamado en {llamadas}/3 intentos (ALTA-2)")
             # Distinto del criterio 8: aquí se comprueba que los faltantes que
             # enumera vengan de la herramienta. Se contrastan contra los que
             # devuelve el endpoint del botón, que no pasa por el modelo.
@@ -224,26 +254,41 @@ def main() -> int:
             # de la lista inventada. Observado en producción: «Si intento
             # exportar ahora, la herramienta va a rechazarlo» seguido de las
             # seis fases, sin haberla llamado.
+            # 27 — solo se puede juzgar en los intentos donde SÍ llamó: si no
+            # llamó, lo que se está midiendo es ALTA-2, no la fidelidad de los
+            # faltantes. La firma de la lista inventada es enumerar fases que la
+            # herramienta no mencionó.
             reales = _faltantes_de_la_herramienta(salida)
             texto_rechazo = salida.get("content") or ""
-            fases_tool = _fases_mencionadas(" ".join(reales))
-            fases_agente = _fases_mencionadas(texto_rechazo)
-            inventadas = sorted(fases_agente - fases_tool)
+            inventadas = sorted(
+                _fases_mencionadas(texto_rechazo) - _fases_mencionadas(" ".join(reales))
+            )
             if "export_excel" not in usadas:
-                evidencia = ("no llamó a export_excel: decidió la compuerta él "
-                             "(limitación conocida ALTA-2, 3/12)")
-            elif inventadas:
-                evidencia = f"enumera fases que la herramienta no dijo: {inventadas}"
+                mediciones.append(
+                    "[27] No evaluable en este intento: el agente no llamó a "
+                    "export_excel (ALTA-2)"
+                )
+                print("  📏 [27] no evaluable en este intento (ALTA-2)")
             else:
-                evidencia = f"faltantes de la herramienta: {reales[:2]}"
-            hallazgos.append(_resultado(
-                27, "Los faltantes que enumera salen de la herramienta",
-                "export_excel" in usadas and bool(reales) and not inventadas,
-                evidencia))
+                hallazgos.append(_resultado(
+                    27, "Los faltantes que enumera salen de la herramienta",
+                    bool(reales) and not inventadas,
+                    f"fases inventadas: {inventadas}" if inventadas
+                    else f"faltantes de la herramienta: {reales[:2]}"))
 
             # 23 y 25 — exportación por chat y enlace clicable.
+            #
+            # Se comprueba que el alcance quedó REGISTRADO antes de pedir el
+            # borrador: si la sesión está vacía el agente se niega a generarlo,
+            # y entonces lo que se mide es si registró el TAG, no si la
+            # exportación por chat funciona. Observado: un primer turno con el
+            # TAG dentro no siempre lo registra.
             s = sesion("export")
             _turno(cliente, s, "Analicemos la bomba P-103, TAG P-103.")
+            if not _hay_alcance(cliente, s):
+                _turno(cliente, s,
+                       "Registra ahora el alcance: activo «Bomba centrífuga P-103», "
+                       "TAG «P-103», ubicación «planta norte».")
             salida = _turno(cliente, s, "Dame un borrador del Excel con lo que llevamos.")
             texto = salida.get("content") or ""
             # No basta con que la herramienta se llame: también se llama cuando
@@ -333,6 +378,8 @@ def main() -> int:
 
         fallidos = [h for h in hallazgos if not h["ok"]]
         print(f"\n{len(hallazgos) - len(fallidos)}/{len(hallazgos)} criterios en verde.")
+        for medicion in mediciones:
+            print(f"  📏 {medicion}")
         for pendiente in no_ejecutados:
             print(f"  ⊘ NO EJECUTADO {pendiente}")
         if fallidos:

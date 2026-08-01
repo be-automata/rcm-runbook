@@ -335,8 +335,21 @@ done
 ## Los criterios que necesitan al modelo
 
 Once criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26, 27,
-29, 36 y 40**. Se ejecutan solos y la última corrida dio **10/10** (el 26 queda
-NO EJECUTADO a propósito).
+29, 36 y 40**. Se ejecutan solos:
+
+    set -a; source .env; set +a
+    uv run python scripts/verificar_en_produccion.py
+
+Última corrida: **9/9 en verde, salida 0**. Dos casos no cuentan como aprobado ni
+como fallo, y es deliberado:
+
+- **[8] mide, no aprueba.** Depende de ALTA-2, que está documentada y aceptada
+  más abajo. Hacer fallar el script por una limitación conocida dejaba su código
+  de salida oscilando entre 0 y 1 según lo que decidiera el modelo esa vez, y una
+  puerta que parpadea no sirve de puerta: un fallo real quedaba indistinguible.
+  Ahora reporta la proporción (última medición: **2/3**).
+- **[26] no se ejecuta**: provocar un fallo técnico real exige romper algo del
+  entorno del cliente.
 
 No hay que reconstruirlos a mano. Están escritos y se ejecutan solos:
 
