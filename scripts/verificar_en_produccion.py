@@ -56,9 +56,47 @@ def _resultado(numero: int, criterio: str, ok: bool, evidencia: str) -> dict:
     return {"criterio": numero, "descripcion": criterio, "ok": ok, "evidencia": evidencia}
 
 
+def _equipo_registrado(estado: dict) -> list[str]:
+    """Los nombres del equipo tal como quedaron en el ESTADO del análisis.
+
+    No vale mirar el JSON entero de la sesión: incluye el historial de mensajes,
+    o sea el texto que este script acaba de enviar. Y «Analicemos», con la que
+    se abre la sesión, contiene «Ana».
+    """
+    for clave in ("session_data", "session_state"):
+        estado = estado.get(clave, estado) if isinstance(estado, dict) else estado
+        if isinstance(estado, dict) and "rcm" in estado:
+            break
+    rcm = estado.get("rcm", {}) if isinstance(estado, dict) else {}
+    return [m.get("name", "") for m in rcm.get("team", []) if isinstance(m, dict)]
+
+
+def _faltantes_del_boton(cliente: httpx.Client, sesion: str) -> list[str]:
+    """Los bloqueadores reales, pedidos por el camino que no pasa por el modelo."""
+    r = cliente.get(f"{BASE}/exports/{sesion}", headers=_cabeceras(), timeout=120)
+    if r.status_code == 200:
+        return []
+    try:
+        detalle = r.json().get("detail", "")
+    except ValueError:
+        return []
+    return [linea.strip("- ").strip() for linea in str(detalle).splitlines() if "-" in linea]
+
+
+def _nucleo(faltante: str) -> str:
+    """La parte del faltante que se puede buscar en la respuesta del agente."""
+    limpio = faltante.split("]")[-1].strip().lower()
+    return limpio[:28]
+
+
 def _proveedor_atiende(cliente: httpx.Client) -> tuple[bool, str]:
     r = cliente.get(f"{BASE}/health/modelo", headers=_cabeceras(), timeout=120)
-    cuerpo = r.json()
+    try:
+        cuerpo = r.json()
+    except ValueError:
+        # Un 502 de Cloudflare llega como HTML: reventar aquí con un
+        # JSONDecodeError contradice justo lo que esta función promete.
+        return False, f"respuesta no-JSON del borde (HTTP {r.status_code})"
     return r.status_code == 200, cuerpo.get("detalle", "")
 
 
@@ -79,6 +117,7 @@ def main() -> int:
         sufijo = uuid.uuid4().hex[:8]
         sesiones: list[str] = []
         hallazgos: list[dict] = []
+        no_ejecutados: list[str] = []
 
         def sesion(nombre: str) -> str:
             sid = f"uat-{nombre}-{sufijo}"
@@ -90,10 +129,17 @@ def main() -> int:
             s = sesion("idioma")
             salida = _turno(cliente, s, "Buenas, quiero analizar la bomba P-101.")
             texto = salida.get("content") or ""
+            # Una respuesta vacía pasaba, y una íntegramente en inglés que no
+            # usara las cuatro cadenas de la lista negra también.
+            palabras_es = ("el ", "la ", "que ", "para ", "con ", "de ")
+            hay_respuesta = len(texto.strip()) > 40
+            parece_espanol = sum(p in texto.lower() for p in palabras_es) >= 3
             sin_ingles = not any(
                 p in texto for p in ("Error code", "Please", "the following", "Sorry")
             )
-            hallazgos.append(_resultado(1, "Responde en español", sin_ingles, texto[:120]))
+            hallazgos.append(_resultado(
+                1, "Responde en español y con contenido",
+                hay_respuesta and parece_espanol and sin_ingles, texto[:120]))
 
             # 4 — pregunta por funciones de protección (ahí viven las ocultas).
             s = sesion("oculta")
@@ -119,18 +165,30 @@ def main() -> int:
             hallazgos.append(_resultado(
                 8, "El rechazo del export sale de export_excel",
                 "export_excel" in usadas, f"herramientas: {usadas}"))
+            # Distinto del criterio 8: aquí se comprueba que los faltantes que
+            # enumera vengan de la herramienta. Se contrastan contra los que
+            # devuelve el endpoint del botón, que no pasa por el modelo.
+            reales = _faltantes_del_boton(cliente, s)
+            texto_rechazo = salida.get("content") or ""
+            coincide = bool(reales) and any(
+                _nucleo(f) and _nucleo(f) in texto_rechazo.lower() for f in reales
+            )
             hallazgos.append(_resultado(
                 27, "Los faltantes son los reales, no una lista inventada",
-                "export_excel" in usadas, f"herramientas: {usadas}"))
+                "export_excel" in usadas and coincide,
+                f"faltantes reales: {reales[:2]}"))
 
             # 23 y 25 — exportación por chat y enlace clicable.
             s = sesion("export")
             _turno(cliente, s, "Analicemos la bomba P-103, TAG P-103.")
             salida = _turno(cliente, s, "Dame un borrador del Excel con lo que llevamos.")
             texto = salida.get("content") or ""
+            # No basta con que la herramienta se llame: también se llama cuando
+            # RECHAZA. Tiene que salir un enlace de descarga.
             hallazgos.append(_resultado(
-                23, "La exportación por chat funciona",
-                "export_excel" in _herramientas(salida), texto[:120]))
+                23, "La exportación por chat entrega algo descargable",
+                "export_excel" in _herramientas(salida) and "](/exports/" in texto,
+                texto[:140]))
             hallazgos.append(_resultado(
                 25, "Entrega el enlace /exports/… clicable, sin ?key=",
                 "](/exports/" in texto and "?key=" not in texto, texto[:160]))
@@ -146,9 +204,12 @@ def main() -> int:
                 k for k, v in reales.items()
                 if k in texto and v not in texto[texto.index(k):texto.index(k) + 90].lower()
             ]
+            mencionados = [k for k in reales if k in texto]
             hallazgos.append(_resultado(
                 29, "No inventa el significado de los códigos ISO",
-                not inventados, f"inventados: {inventados or 'ninguno'}"))
+                bool(mencionados) and not inventados,
+                f"mencionados: {mencionados or 'NINGUNO (aserción vacua)'} | "
+                f"inventados: {inventados or 'ninguno'}"))
 
             # 40 — siglas preguntadas a pelo, sin ejecutar herramientas.
             s = sesion("siglas")
@@ -171,10 +232,17 @@ def main() -> int:
                    "operaciones. Regístralos a los dos.")
             estado = cliente.get(
                 f"{BASE}/sessions/{s}", headers=_cabeceras(), timeout=120).json()
-            crudo = json.dumps(estado)
+            # Contra el estado del análisis, NO contra el JSON entero: ese
+            # incluye el historial de mensajes, o sea el texto que este mismo
+            # script acaba de enviar. Peor: «Analicemos», con la que se abre la
+            # sesión, contiene «Ana». Probado — la aserción vieja daba True con
+            # el equipo vacío.
+            equipo = _equipo_registrado(estado)
+            nombres = " ".join(equipo).lower()
             hallazgos.append(_resultado(
                 36, "Nada se pierde en un turno con varias herramientas",
-                "Ana" in crudo and "Luis" in crudo, "ambos integrantes en /sessions"))
+                "ana" in nombres and "luis" in nombres,
+                f"equipo en session_state: {equipo or 'VACÍO'}"))
 
             # 10 — la sesión se reanuda con su estado.
             salida = _turno(cliente, s, "¿Cómo vamos? ¿Qué falta?")
@@ -184,9 +252,12 @@ def main() -> int:
                 "P-104" in texto or "Ana" in texto, texto[:140]))
 
             # 26 — ante un fallo técnico cita el error y no inventa la causa.
-            hallazgos.append(_resultado(
-                26, "Ante un fallo técnico cita el error (requiere provocar uno real)",
-                False, "NO EJECUTADO: provocarlo exige romper algo del entorno"))
+            # NO EJECUTADO, y no cuenta como fallo: codificarlo a False dejaba
+            # el script permanentemente en rojo, así que un fallo real de los
+            # otros diez no se distinguía del estado normal.
+            no_ejecutados.append(
+                "[26] Ante un fallo técnico cita el error — provocarlo exige romper "
+                "algo del entorno del cliente")
 
         finally:
             for sid in sesiones:
@@ -203,10 +274,16 @@ def main() -> int:
 
         fallidos = [h for h in hallazgos if not h["ok"]]
         print(f"\n{len(hallazgos) - len(fallidos)}/{len(hallazgos)} criterios en verde.")
+        for pendiente in no_ejecutados:
+            print(f"  ⊘ NO EJECUTADO {pendiente}")
         if fallidos:
-            print("Pendientes:")
+            print("Fallidos:")
             for h in fallidos:
                 print(f"  ❌ [{h['criterio']}] {h['descripcion']} — {h['evidencia'][:90]}")
+        # Sale 0 si no hay fallos. Antes el criterio 26 estaba codificado a
+        # False, así que el script nunca podía salir 0 y como puerta de CI
+        # estaba permanentemente en rojo: un fallo real no se distinguía del
+        # estado normal.
         return 1 if fallidos else 0
 
 

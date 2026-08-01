@@ -201,32 +201,57 @@ def export_blockers(session: RCMSession) -> list[str]:
 
 
 def tareas_mas_lentas_que_el_ffi(session: RCMSession) -> list[str]:
-    """El FFI calculado tiene que gobernar la frecuencia que ejecuta el CMMS.
+    """¿Hay ALGUNA tarea que cumpla el intervalo de búsqueda de fallas?
 
     El entregable salía con los dos números contradiciéndose y ningún aviso:
     AUDITORIA decía «FFI = 1752 h» para el presostato y el PLAN decía
-    «Semestral» (4380 h). El ✔ del FFI era literalmente cierto —el número
-    llegaba a una celda— y a la vez engañoso, porque no mandaba sobre la única
-    columna que alguien ejecuta. Es un dispositivo de protección con
-    consecuencia de seguridad: probarlo 2,5 veces menos seguido de lo calculado
-    no es un detalle de formato.
+    «Semestral» (4380 h). Un dispositivo de protección con consecuencia de
+    seguridad probado 2,5 veces menos seguido de lo calculado.
 
-    Solo se bloquea cuando la tarea es MÁS LENTA que el intervalo calculado.
-    Probar más seguido de lo necesario es conservador y decisión del cliente.
+    La primera versión de esto comparaba TAREA A TAREA, y eso estaba mal por
+    los dos lados:
+
+    - Rechazaba planes correctos. Un modo puede llevar varias tareas —la prueba
+      funcional bimestral y la calibración anual del transmisor— y la
+      calibración disparaba el bloqueo llamándose a sí misma «búsqueda de
+      fallas» en el mensaje. `MaintenanceTask` no tiene campo de política, así
+      que no hay forma de saber cuál es cuál.
+    - Y dejaba pasar lo peor. `Parada de Planta`, `Arranque` y `Según sea el
+      caso` no tienen equivalencia en horas, y un `continue` las saltaba en
+      silencio: un presostato con la prueba puesta en `Parada de Planta` —en la
+      práctica de 2 a 6 años— cruzaba la compuerta con un ✔.
+
+    La pregunta correcta no es «¿esta tarea cumple?» sino «¿cumple alguna?».
+    Así una calibración anual no molesta mientras exista la prueba funcional, y
+    un plan cuyas únicas tareas son de frecuencia indeterminada no pasa.
     """
     problemas: list[str] = []
     for fmid, ffi in session.ffi_por_modo.items():
-        for tarea in session.tasks.get(fmid, []):
-            horas = FRECUENCIA_EN_HORAS.get(tarea.frequency)
-            if horas is None:
-                continue  # frecuencia sin equivalencia fiable (p. ej. 'Quinquenal')
-            if horas > ffi.horas:
-                problemas.append(
-                    f"[Plan] La búsqueda de fallas de {fmid} está calculada cada "
-                    f"{ffi.horas:.0f} h, pero la tarea '{tarea.description}' se "
-                    f"ejecuta '{tarea.frequency}' ({horas:.0f} h) — más espaciada que "
-                    "el intervalo calculado. Ajuste la frecuencia o recalcule el FFI."
-                )
+        tareas = session.tasks.get(fmid, [])
+        if not tareas:
+            continue  # la compuerta de la fase 6 ya exige que existan
+        alguna_cumple = any(
+            (horas := FRECUENCIA_EN_HORAS.get(t.frequency)) is not None
+            and horas <= ffi.horas
+            for t in tareas
+        )
+        if alguna_cumple:
+            continue
+        detalle = "; ".join(
+            f"'{t.description}' cada {t.frequency}"
+            + (
+                f" ({FRECUENCIA_EN_HORAS[t.frequency]:.0f} h)"
+                if t.frequency in FRECUENCIA_EN_HORAS
+                else " (sin equivalencia en horas: no se puede comprobar)"
+            )
+            for t in tareas
+        )
+        problemas.append(
+            f"[Plan] La búsqueda de fallas de {fmid} está calculada cada "
+            f"{ffi.horas:.0f} h y ninguna de sus tareas se ejecuta con esa "
+            f"frecuencia o más seguido — {detalle}. Ajuste la frecuencia de la "
+            "prueba, o recalcule el FFI."
+        )
     return problemas
 
 

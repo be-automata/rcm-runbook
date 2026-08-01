@@ -24,6 +24,7 @@ from rcm_runbook.export.rows import (
     to_plan_rows,
 )
 from rcm_runbook.models.catalogs import (
+    METODOS_FFI_ES,
     SAE_DETECTION_ES,
     SAE_OCCURRENCE_ES,
     SAE_SEVERITY_ES,
@@ -225,15 +226,19 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ws.cell(row=row, column=1, value="Nomenclatura:")
         ws.cell(
             row=row, column=2,
-            value="Mtive = TPEF del dispositivo de protección · Mted = TPEF de la "
-                  "función protegida · Mmf = TPEF tolerado de la falla múltiple",
+            value="TPEF = Tiempo Promedio Entre Fallas · Mtive = TPEF del "
+                  "dispositivo de protección · Mted = TPEF de la función protegida · "
+                  "Mmf = TPEF tolerado de la falla múltiple",
         ).alignment = WRAP
         row += 1
     for fmid, ffi in session.ffi_por_modo.items():
         ws.cell(row=row, column=1, value=fmid)
         ws.cell(row=row, column=2, value=round(ffi.horas, 1))
         ws.cell(row=row, column=3, value=f"{ffi.horas / 730.0:.1f} meses")
-        ws.cell(row=row, column=4, value=ffi.metodo)
+        # Con su significado: `single_single` crudo y en inglés es una sigla
+        # pelada más, y estaba justo debajo de la fila que existe para
+        # definirlas.
+        ws.cell(row=row, column=4, value=METODOS_FFI_ES.get(ffi.metodo, ffi.metodo))
         ws.cell(row=row, column=5, value=ffi.formula)
         ws.cell(row=row, column=6, value="; ".join(ffi.avisos)).alignment = WRAP
         row += 1

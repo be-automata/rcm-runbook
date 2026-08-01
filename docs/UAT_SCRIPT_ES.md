@@ -133,8 +133,9 @@ controles actuales de cada modo.
    - [ ] Rechaza el definitivo listando faltantes de la Fase 6 (ofrece borrador).
    - [ ] Con ese mismo estado, el botón **Descargar Excel** entrega `BORRADOR_`:
      el chat y la interfaz aplican la misma compuerta, no divergen.
-2. Complete la Fase 6: tareas para el CMMS (frecuencia del catálogo — p.ej.
-   Mensual/Semestral —, duración, disciplina, ¿requiere paro?), KPIs (MTBF,
+2. Complete la Fase 6: tareas para el CMMS (frecuencia del catálogo — para la prueba funcional del presostato,
+   **Bimestral**: el FFI calculado son 1752 h y `Semestral` (4380 h) lo
+   contradice, así que el entregable se bloquea —, duración, disciplina, ¿requiere paro?), KPIs (MTBF,
    disponibilidad, cumplimiento del plan), disparadores de revisión y la
    validación con operaciones y mantenimiento.
 3. Pida el export definitivo.
@@ -332,8 +333,8 @@ done
 
 ## Los criterios que necesitan al modelo
 
-Once criterios exigen un turno real del agente y no se pueden verificar con el
-proveedor caído: **1, 4, 8, 10, 23, 25, 26, 27, 29, 36 y 40**.
+Once criterios exigen un turno real del agente: **1, 4, 8, 10, 23, 25, 26, 27,
+29, 36 y 40**. Se ejecutan solos.
 
 No hay que reconstruirlos a mano. Están escritos y se ejecutan solos:
 

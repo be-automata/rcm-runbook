@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from rcm_runbook.errors import ReglaDeNegocio
-from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+from rcm_runbook.models.catalogs import KIND_LABELS_ES, POLICY_LABELS_ES
 from rcm_runbook.models.domain import (
     Control,
     DecisionResult,
@@ -551,7 +551,8 @@ class RCMSession(BaseModel):
             # Sin abreviar el tipo: `[prot]` es una sigla pelada más, y esta es
             # la superficie que el modelo lee en todos los turnos.
             lines.append("Funciones: " + "; ".join(
-                f"{f.id} ({f.kind.value}) {f.verb} {f.object}"
+                f"{f.id} ({KIND_LABELS_ES.get(f.kind, f.kind.value)}) "
+                f"{f.verb} {f.object}"
                 for f in self.functions.values()
             ))
         if self.functional_failures:

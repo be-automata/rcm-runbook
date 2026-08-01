@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -141,7 +142,13 @@ def _nota_de_avance(run_context: Any) -> str:
     avanzadas = _ULTIMO_AVANCE.pop(str(getattr(run_context, "session_id", "") or ""), None)
     if not avanzadas:
         return ""
-    return "\n➜ Fase completa. El análisis avanzó a la fase " + avanzadas[-1] + "."
+    # Sin el número cuando es COMPLETADO: solo hay 6 fases, y el arreglo de la
+    # ronda 9 corrigió el digest —lo que lee el modelo— dejando intactos los dos
+    # mensajes que lee la persona.
+    ultima = avanzadas[-1]
+    if ultima.startswith(f"{Phase.COMPLETADO.value} "):
+        return "\n➜ Fase completa. El análisis queda COMPLETADO."
+    return "\n➜ Fase completa. El análisis avanzó a la fase " + ultima + "."
 
 
 _RANGOS_EN_ESPANOL = (
@@ -157,18 +164,27 @@ _RANGOS_EN_ESPANOL = (
 
 
 def _aviso_en_espanol(aviso: str) -> str:
-    """Traduce los avisos del motor de FFI, que son ingleses a propósito."""
-    if "exceeds the protective device MTBF" in aviso:
-        import re as _re
+    """Traduce los avisos del motor de FFI, que son ingleses a propósito.
 
-        numeros = _re.findall(r"[\d.]+", aviso)
-        calculado = numeros[0] if numeros else "?"
+    El motor emite EXACTAMENTE dos (engine/ffi.py:_build_result). La primera
+    versión de esto traducía uno y tenía una tercera rama —«not a hidden
+    failure»— que no corresponde a ningún texto del motor: código muerto que
+    disfrazaba el hueco. El que faltaba salía crudo al chat y a la celda F de
+    AUDITORIA, en la misma hoja que el arreglo decía haber limpiado.
+    """
+    numeros = re.findall(r"[\d.]+", aviso)
+    calculado = numeros[0] if numeros else "?"
+    if "exceeds the protective device MTBF" in aviso:
         return (
             f"El FFI calculado ({calculado} h) supera el TPEF del propio dispositivo "
             "de protección: el intervalo no es fiable, revise los datos de entrada."
         )
-    if "not a hidden failure" in aviso.lower():
-        return "El FFI solo aplica a modos de falla ocultos de dispositivos de protección."
+    if "is shorter than 24 h" in aviso:
+        return (
+            f"El FFI calculado ({calculado} h) es de menos de 24 horas: una búsqueda "
+            "de fallas tan frecuente no suele ser practicable. Considere rediseñar el "
+            "dispositivo de protección."
+        )
     return aviso
 
 
@@ -900,6 +916,8 @@ def advance_phase(run_context: Any) -> str:
         return "El análisis ya está completado."
     session.phase = Phase(session.phase + 1)
     _save(run_context, session)
+    if session.phase == Phase.COMPLETADO:
+        return "✔ El análisis queda COMPLETADO: las seis fases están cerradas."
     return (
         f"✔ Avanzó a la fase {session.phase.value}: {PHASE_NAMES_ES[session.phase]}."
     )

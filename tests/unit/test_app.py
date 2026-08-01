@@ -1338,7 +1338,10 @@ class TestElEntregableLlevaLoQueLasCompuertasExigen:
         )
         texto = self._texto_auditoria(s)
         assert "4380" in texto, "el FFI no llega a ninguna celda"
-        assert "single_single" in texto
+        # El método en español: `single_single` crudo era una sigla pelada más,
+        # justo debajo de la fila que existe para definirlas.
+        assert "una función protegida, un dispositivo" in texto
+        assert "single_single" not in texto
         assert fm in texto
 
     def test_las_acciones_recomendadas_llegan(self):
@@ -1785,14 +1788,83 @@ class TestElFfiGobiernaLaFrecuenciaDelCmms:
         s, _ = self._sesion_con_ffi("Mensual")
         assert not self._bloqueos(s)
 
-    def test_una_frecuencia_sin_equivalencia_fiable_no_inventa_una(self):
-        # 'Quinquenal' es ambigua por un factor de 120; adivinarla aquí sería
-        # meter esa ambigüedad en una comparación de seguridad.
+    def test_una_frecuencia_sin_equivalencia_bloquea_en_vez_de_colarse(self):
+        # Antes se saltaban con un `continue` silencioso. Un presostato con la
+        # prueba puesta en 'Parada de Planta' —de 2 a 6 años en la práctica—
+        # cruzaba la compuerta con un ✔ contra un FFI de 1752 h.
         from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS
 
-        assert "Quinquenal" not in FRECUENCIA_EN_HORAS
-        s, _ = self._sesion_con_ffi("Quinquenal")
-        assert not self._bloqueos(s)
+        for frecuencia in ("Quinquenal", "Parada de Planta", "Arranque",
+                           "Según sea el caso"):
+            assert frecuencia not in FRECUENCIA_EN_HORAS
+            s, _ = self._sesion_con_ffi(frecuencia)
+            bloqueos = self._bloqueos(s)
+            assert bloqueos, f"'{frecuencia}' se coló sin comprobar"
+            assert "sin equivalencia en horas" in bloqueos[0]
+
+    def test_una_calibracion_anual_no_estorba_si_la_prueba_cumple(self):
+        # `MaintenanceTask` no tiene campo de política, así que comparar tarea a
+        # tarea llamaba «búsqueda de fallas» a una calibración y dejaba sin
+        # entregable un plan correcto. La pregunta es si cumple ALGUNA.
+        from rcm_runbook.models.domain import MaintenanceTask
+
+        s, fm = self._sesion_con_ffi("Bimestral")  # 1460 h ≤ 1752
+        s.tasks[fm].append(MaintenanceTask(
+            failure_mode_id=fm, description="Calibración del transmisor",
+            frequency="Anual", duration_hours=2.0, discipline="Instrumentista",
+        ))
+        assert not self._bloqueos(s), "rechazó un plan correcto"
+
+    def test_si_ninguna_tarea_cumple_bloquea_aunque_haya_varias(self):
+        from rcm_runbook.models.domain import MaintenanceTask
+
+        s, fm = self._sesion_con_ffi("Semestral")  # 4380 h > 1752
+        s.tasks[fm].append(MaintenanceTask(
+            failure_mode_id=fm, description="Calibración del transmisor",
+            frequency="Anual", duration_hours=2.0, discipline="Instrumentista",
+        ))
+        bloqueos = self._bloqueos(s)
+        assert bloqueos
+        assert "ninguna de sus tareas" in bloqueos[0]
+
+    def test_el_mensaje_no_llama_busqueda_de_fallas_a_otra_tarea(self):
+        s, _ = self._sesion_con_ffi("Semestral")
+        bloqueos = self._bloqueos(s)
+        assert "Prueba funcional del disparo' cada Semestral" in bloqueos[0].replace("'", "'")
+
+    def test_los_valores_del_catalogo_estan_fijados(self):
+        # De los 13 valores solo dos estaban sujetos por una prueba: los otros
+        # once podían valer cualquier cosa. 'Bi-Anual' son DOS AÑOS —lo dice la
+        # ordenación creciente del catálogo, entre Anual y Tri-Anual—, no dos
+        # veces al año.
+        from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS
+
+        esperado = {
+            "Diario": 24, "Semanal": 168, "Catorcenal": 336, "Mensual": 730,
+            "Bimestral": 1460, "Trimestral": 2190, "Tetramestral": 2920,
+            "Semestral": 4380, "Anual": 8760, "Bi-Anual": 17520,
+            "Tri-Anual": 26280, "Tetra-Anual": 35040, "Quinque-Annual": 43800,
+        }
+        assert FRECUENCIA_EN_HORAS == esperado
+
+    def test_el_catalogo_de_horas_esta_ordenado_como_el_del_cliente(self):
+        # La ordenación creciente es lo que resuelve 'Bi-Anual', y sería lo que
+        # resolvería 'Quinquenal' si el cliente lo confirma.
+        from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, fixture
+
+        del_catalogo = [f for f in fixture().menu.frequencies if f in FRECUENCIA_EN_HORAS]
+        horas = [FRECUENCIA_EN_HORAS[f] for f in del_catalogo]
+        pares = list(zip(del_catalogo, horas, strict=True))
+        assert horas == sorted(horas), f"el orden no crece: {pares}"
+
+    def test_el_umbral_es_el_intervalo_calculado_no_un_multiplo(self):
+        # El umbral toleraba un error de 2,4×: `horas > ffi * 2` pasaba con las
+        # 410 en verde. Es el número que decide si un dispositivo de seguridad
+        # se prueba a tiempo.
+        s, _ = self._sesion_con_ffi("Trimestral", horas_ffi=2000.0)  # 2190 > 2000
+        assert self._bloqueos(s), "una tarea apenas más lenta que el FFI se coló"
+        s, _ = self._sesion_con_ffi("Trimestral", horas_ffi=2190.0)  # exacto
+        assert not self._bloqueos(s), "el intervalo exacto debe aceptarse"
 
 
 class TestElValorDelFfiEstaFijado:
@@ -1986,7 +2058,11 @@ class TestNadaEnInglesLlegaAlClienteNiAlModelo:
 
         texto = full_session().digest_es()
         assert "[prot]" not in texto and "[prim]" not in texto
-        assert "(proteccion)" in texto
+        # «de protección», no «(proteccion)»: al quitar la abreviatura quedó el
+        # identificador del enum, sin tilde — una abreviatura cambiada por un
+        # identificador mal escrito.
+        assert "(de protección)" in texto
+        assert "(proteccion)" not in texto
 
     def test_un_analisis_completado_no_dice_fase_7_de_6(self):
         from rcm_runbook.models.session import Phase
@@ -2036,3 +2112,127 @@ class TestLasPruebasCorrenEnUnEntornoLimpio:
         # Bearer) y mata los enlaces `?key=`. Es un defecto que ya llegó a
         # producción, y al escribir la fixture lo reintroduje sin darme cuenta.
         assert client.get("/sessions", params={"key": con_llave}).status_code != 401
+
+
+class TestLoQueLaRonda10DestapoSinCobertura:
+    """Seis mutaciones sobrevivían a las 416: el KPI sin meta, la fila de
+    nomenclatura entera, la glosa del digest aceptando cualquier etiqueta, el
+    aviso traducido sin su número, el segundo aviso del motor sin traducir, y el
+    anuncio de «fase 7 de 6»."""
+
+    def _auditoria(self, sesion) -> str:
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hoja = load_workbook(export_xlsx(sesion, tmp))["AUDITORIA RCM"]
+        return " | ".join(
+            str(c.value) for f in hoja.iter_rows() for c in f if c.value is not None
+        )
+
+    def test_el_kpi_llega_con_su_meta_no_solo_con_su_nombre(self):
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        assert s.kpis and s.kpis[0].target, "el escenario no tiene meta que comprobar"
+        texto = self._auditoria(s)
+        assert s.kpis[0].name in texto
+        assert s.kpis[0].target in texto, "el KPI llegó sin su meta"
+
+    def test_la_nomenclatura_define_las_siglas_del_ffi(self):
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        s.ffi_por_modo[next(iter(s.failure_modes))] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        texto = self._auditoria(s)
+        # TPEF aparecía tres veces en la propia fila que existe para glosar
+        # siglas, sin glosarse.
+        assert "TPEF = Tiempo Promedio Entre Fallas" in texto
+        for sigla in ("Mtive =", "Mted =", "Mmf ="):
+            assert sigla in texto, f"{sigla} no está definido en el entregable"
+
+    def test_la_glosa_del_digest_corresponde_a_su_politica(self):
+        # `any(n in texto for n in POLICY_LABELS_ES.values())` aceptaba cualquier
+        # etiqueta: poner siempre la de MBC pasaba.
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        texto = s.digest_es()
+        for fmid, decision in s.decisions.items():
+            nombre = POLICY_LABELS_ES[decision.policy]
+            assert f"{decision.policy.value} ({nombre})" in texto, (
+                f"{fmid} lleva la glosa de otra política"
+            )
+
+    def test_los_dos_avisos_del_motor_se_traducen(self):
+        # El motor emite exactamente dos. La primera versión traducía uno y
+        # tenía una tercera rama que no corresponde a ningún texto del motor:
+        # código muerto que disfrazaba el hueco.
+        import inspect
+
+        from rcm_runbook.agent.tools import _aviso_en_espanol
+        from rcm_runbook.engine import ffi as motor
+
+        fuente = inspect.getsource(motor._build_result)
+        emitidos = [linea for linea in fuente.splitlines() if "Computed FFI" in linea]
+        assert len(emitidos) == 2, f"el motor cambió de avisos: {emitidos}"
+
+        for crudo in (
+            "Computed FFI (200000.0 h) exceeds the protective device MTBF "
+            "(Mtive=1.0 h); the interval is suspect - review inputs.",
+            "Computed FFI (0.0 h) is shorter than 24 h; failure finding this "
+            "frequent is usually impractical - consider redesign.",
+        ):
+            traducido = _aviso_en_espanol(crudo)
+            assert "Computed" not in traducido, f"sin traducir: {traducido[:60]}"
+            assert "FFI calculado" in traducido
+
+    def test_el_aviso_traducido_conserva_el_numero(self):
+        from rcm_runbook.agent.tools import _aviso_en_espanol
+
+        traducido = _aviso_en_espanol(
+            "Computed FFI (0.0 h) is shorter than 24 h; failure finding this "
+            "frequent is usually impractical - consider redesign."
+        )
+        assert "0.0" in traducido, "perdió el valor calculado, que es el dato útil"
+
+    def test_al_completar_no_se_anuncia_una_septima_fase(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import Phase, RCMSession
+
+        sesion = RCMSession()
+        sesion.phase = Phase.P6_PLAN
+        avanzadas = tools_mod._avanzar_si_la_compuerta_esta_verde(sesion)
+        if not avanzadas:  # la compuerta P6 no está verde en una sesión vacía
+            avanzadas = ["7 (Análisis completado)"]
+        tools_mod._ULTIMO_AVANCE["s-fin"] = avanzadas
+
+        class Ctx:
+            session_id = "s-fin"
+
+        nota = tools_mod._nota_de_avance(Ctx())
+        assert "fase 7" not in nota, "anuncia una séptima fase de seis"
+        assert "COMPLETADO" in nota
+
+    def test_advance_phase_tampoco_anuncia_la_fase_7(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        from rcm_runbook.models.session import Phase
+
+        sesion.phase = Phase.P6_PLAN
+
+        class Ctx:
+            session_id = "s-adv"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        salida = tools_mod.advance_phase.entrypoint(Ctx())
+        assert "fase 7" not in salida, salida

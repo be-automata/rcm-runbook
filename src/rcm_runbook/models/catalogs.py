@@ -89,6 +89,28 @@ class MaintenancePolicy(StrEnum):
 # 'Quinquenal' queda FUERA a propósito: su posición en el catálogo dice quincena
 # y la palabra dice cinco años (ver docs/UAT_SCRIPT_ES.md). Adivinarla aquí
 # sería meter un factor de 120 en una comparación de seguridad.
+# El método de FFI, en español, para la hoja que abre el ingeniero. Los
+# identificadores del motor son ingleses a propósito (su suite los fija); lo que
+# no puede ser es que salgan crudos al entregable del cliente.
+# Los tipos de función en español. El digest los abreviaba a `[prot]`, y al
+# quitar la abreviatura quedó `(proteccion)` —el identificador del enum, sin
+# tilde—: se cambió una abreviatura por un identificador mal escrito.
+KIND_LABELS_ES: dict[str, str] = {
+    "primaria": "primaria",
+    "secundaria": "secundaria",
+    "proteccion": "de protección",
+}
+
+
+METODOS_FFI_ES: dict[str, str] = {
+    "availability": "por indisponibilidad objetivo",
+    "single_single": "una función protegida, un dispositivo",
+    "multi_single": "varias funciones protegidas, un solo dispositivo",
+    "single_multi": "una función protegida, varios dispositivos redundantes",
+    "economic": "por equilibrio de costos",
+}
+
+
 FRECUENCIA_EN_HORAS: dict[str, float] = {
     "Diario": 24,
     "Semanal": 168,
