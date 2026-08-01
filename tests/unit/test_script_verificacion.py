@@ -12,6 +12,7 @@ se ejecuta de verdad, y su salida se lee.
 from __future__ import annotations
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -975,30 +976,106 @@ class TestElCaminoRealDeLaHerramientaAlDetector:
         assert not inventados, f"acusó la cita literal de la herramienta: {inventados}"
 
     def test_y_aun_asi_caza_una_inversion_en_esa_misma_lista(self):
+        # La inversión se construye DESDE el catálogo leído, no desde una
+        # cadena literal: un `.replace()` con el texto del fixture escrito a
+        # mano se vuelve un no-op silencioso en cuanto el cliente corrija una
+        # mayúscula, y el test se pone rojo sin que el detector haya empeorado.
         salida = self._salida_de_la_herramienta()
         catalogo = V._definiciones_de_la_herramienta(salida)
-        texto = str(salida["tools"][0]["result"]).replace(
-            "- HIO — Alta Salida", "- HIO — Baja salida"
+        texto = str(salida["tools"][0]["result"])
+        victima, ladron = sorted(catalogo)[0], sorted(catalogo)[1]
+        texto = re.sub(
+            rf"({victima}\s*—\s*)[^\n]+", rf"\1{catalogo[ladron]}", texto, count=1
         )
         _, inventados = V._codigos_definidos(texto, catalogo)
         assert inventados, "la inversión dentro de la lista pasó desapercibida"
 
-    def test_el_tramo_se_corta_por_linea_no_por_letras(self):
-        # Cortar por caracteres se tragaba la entrada siguiente, y las palabras
-        # coladas eran exactamente las del vecino: el vecino ganaba siempre.
-        texto = "- UST — Falsa Parada\n- BRD — Averia o Ruptura: Daño Grave"
-        tramo = V._tramo_tras(texto, texto.index("UST") + 3)
-        assert "BRD" not in tramo and "Ruptura" not in tramo
+    def test_dos_codigos_en_la_misma_linea_no_se_acusan(self):
+        # El corte por fin de línea suponía «una línea, un código». En una fila
+        # de tabla o un párrafo corrido el vecino vuelve a colarse, y como las
+        # palabras coladas son las suyas, el vecino gana igual que en la r19.
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        codigos = sorted(catalogo)
+        for a, b in zip(codigos, codigos[1:], strict=False):
+            for plantilla in (
+                "**{a}** — {da}. **{b}** — {db}.",
+                "| {a} | {da} | {b} | {db} |",
+                "{a} significa {da} y {b} significa {db}",
+            ):
+                texto = plantilla.format(a=a, b=b, da=catalogo[a], db=catalogo[b])
+                _, inventados = V._codigos_definidos(texto, catalogo)
+                assert not inventados, f"acusó el eco literal de {a} y {b}: {inventados}"
 
+    def test_el_catalogo_entero_en_un_solo_parrafo_no_se_acusa(self):
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        texto = " ".join(f"{c} — {d}." for c, d in catalogo.items())
+        _, inventados = V._codigos_definidos(texto, catalogo)
+        assert not inventados, f"acusó el catálogo entero en un párrafo: {inventados}"
+
+    def test_una_definicion_envuelta_al_renglon_siguiente_se_juzga(self):
+        # Con el corte por línea el tramo quedaba en «—»: pasaba el filtro de
+        # separador, así que se listaba como definido, pero no había núcleo que
+        # comparar y la inversión no se comprobaba. Un descarte silencioso.
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        victima, ladron = sorted(catalogo)[0], sorted(catalogo)[1]
+        texto = f"- {victima} —\n  {catalogo[ladron]}"
+        definidos, inventados = V._codigos_definidos(texto, catalogo)
+        assert inventados, f"la inversión envuelta no se cazó (definidos: {definidos})"
+
+    def test_un_codigo_sin_nada_detras_no_se_cuenta_como_juzgado(self):
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        victima = sorted(catalogo)[0]
+        definidos, _ = V._codigos_definidos(f"- {victima} —\n", catalogo)
+        assert victima not in definidos, "dijo haber juzgado un código sin definición"
+
+    def test_un_solo_codigo_no_se_lleva_el_discurso_que_le_sigue(self):
+        # Sin tope por arriba, un código mencionado una vez y seguido de un
+        # párrafo largo se queda con el párrafo entero como «lo que atribuyó»:
+        # basta que el agente hable después de otra cosa para que el detector
+        # encuentre ahí las palabras de otro código y acuse.
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        victima, ajeno = sorted(catalogo)[0], sorted(catalogo)[1]
+        texto = (
+            f"- {victima} — {catalogo[victima]}\n\n"
+            + "Conviene revisar el histórico del equipo antes de decidir. " * 4
+            + catalogo[ajeno]
+        )
+        _, inventados = V._codigos_definidos(texto, catalogo)
+        assert not inventados, f"se llevó el discurso posterior: {inventados}"
+
+    def test_una_palabra_que_contiene_un_codigo_no_corta_el_tramo(self):
+        # `AIR` vive dentro de «AIRE» y `SER` dentro de «SERVICIO», dos palabras
+        # que aparecen en mayúsculas en cualquier texto de mantenimiento. Sin
+        # frontera de palabra el tramo se corta ahí, la atribución queda
+        # mutilada y una inversión real deja de compararse.
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        victima = sorted(catalogo)[0]
+        texto = f"- {victima} — falla del compresor de AIRE de instrumentos SERVICIO"
+        tramo = V._tramo_tras(texto, texto.index(victima) + len(victima), catalogo)
+        assert tramo.strip().endswith("SERVICIO"), f"el tramo llegó cortado: «{tramo}»"
+
+    def test_el_tope_del_tramo_deja_holgura_sobre_el_catalogo_del_cliente(self):
+        # El tope es un dial y el catálogo es del cliente: va a crecer. Sin este
+        # test, «sin tope» y «el largo exacto de hoy» sobreviven los dos.
+        catalogo = V._definiciones_de_la_herramienta(self._salida_de_la_herramienta())
+        mas_larga = max(catalogo.values(), key=len)
+        holgado = f"{sorted(catalogo)[0]} — {mas_larga} {'x' * 20}"
+        tramo = V._tramo_tras(holgado, holgado.index(" "), catalogo)
+        assert tramo.endswith("x" * 20), (
+            f"una entrada 20 caracteres más larga que la de hoy se trunca: «{tramo}»"
+        )
 
 class TestLosDialesDeLaNegacion:
     """Al quitar la ventana inerte quedó sin fijar el criterio: recortar a 20
     caracteres convierte una abstención legítima en acusación."""
 
-    def test_una_abstencion_larga_sigue_reconociendose(self):
-        assert V._es_negacion(
-            "consultado con explain_iso_code, sin resultados en el catálogo"
-        )
+    def test_una_abstencion_en_el_limite_del_tramo_se_reconoce(self):
+        # 60 caracteres es lo máximo que capturan los patrones de
+        # `_significado_atribuido`, el único llamador. La marca de negación al
+        # final de ese máximo es el peor caso real, y es lo que fija el dial.
+        texto = "explain_iso_code consultado y revisado, sin resultados"
+        assert len(texto) <= 60 and texto.index("sin resultados") > 30
+        assert V._es_negacion(texto)
 
     def test_y_una_corta_tambien(self):
         assert V._es_negacion("no existe")
@@ -1011,12 +1088,49 @@ class TestLosDialesDeLaNegacion:
         # del catálogo y las deja sin las palabras que las distinguen.
         from rcm_runbook.models.catalogs import fixture
 
-        mas_larga = max(
-            fixture().menu.iso14224_failure_mode_codes,
-            key=lambda c: len(f"{c.definition}: {c.description}"),
-        )
+        codigos = fixture().menu.iso14224_failure_mode_codes
+        mas_larga = max(codigos, key=lambda c: len(f"{c.definition}: {c.description}"))
+        reales = {c.code: f"{c.definition}: {c.description}" for c in codigos}
         linea = f"- {mas_larga.code} — {mas_larga.definition}: {mas_larga.description}"
-        tramo = V._tramo_tras(linea, linea.index(mas_larga.code) + len(mas_larga.code))
+        tramo = V._tramo_tras(
+            linea, linea.index(mas_larga.code) + len(mas_larga.code), reales
+        )
         assert mas_larga.description[-12:] in tramo, (
             f"la definición más larga del catálogo llega cortada: «{tramo}»"
         )
+
+
+class TestLaVaraDelCriterio40:
+    """Dos varas flojas, las dos a favor del producto: aprobaba con 3 de 4, y
+    «operacional» se acreditaba con «no operacional», que es otra letra. Un
+    texto que no menciona ExEd en absoluto puntuaba 3/4 y aprobaba."""
+
+    BUENA = ("A: seguridad, B: ambiente, C: operacional, D: no operacional. "
+             "CC es control de calidad y ExEd exploración de edad.")
+
+    def test_una_respuesta_completa_pasa(self):
+        assert V._conceptos_que_faltan(self.BUENA) == []
+
+    def test_sin_tildes_tambien_pasa(self):
+        # Medir la ortografía en vez del concepto castiga la variante correcta.
+        assert V._conceptos_que_faltan(
+            "seguridad, operacional, no operacional, control de calidad, "
+            "exploracion de edad"
+        ) == []
+
+    def test_faltar_un_solo_concepto_ya_no_aprueba(self):
+        assert V._conceptos_que_faltan(
+            "A: seguridad, C: operacional, CC es control de calidad; ExEd no lo sé"
+        ) == ["exploracion de edad"]
+
+    def test_la_letra_d_no_acredita_a_la_c(self):
+        assert V._conceptos_que_faltan(
+            "seguridad, no operacional, control de calidad, exploración de edad"
+        ) == ["operacional"]
+
+    def test_una_respuesta_vacia_no_acierta_nada(self):
+        # Contra la constante el test es circular: si alguien quita un concepto
+        # de la lista, se ajusta solo. Los cuatro se enumeran aquí a propósito.
+        assert V._conceptos_que_faltan("") == [
+            "seguridad", "operacional", "control de calidad", "exploracion de edad",
+        ]

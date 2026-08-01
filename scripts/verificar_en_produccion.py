@@ -294,6 +294,39 @@ def _nucleo(texto: str) -> set[str]:
     return palabras
 
 
+CONCEPTOS_DE_LAS_SIGLAS = ("seguridad", "operacional", "control de calidad",
+                           "exploracion de edad")
+
+
+def _conceptos_que_faltan(texto: str) -> list[str]:
+    """Los conceptos del criterio 40 que la respuesta NO trae.
+
+    Dos varas flojas, las dos a favor del producto:
+
+    - `4 aciertos, aprueba con 3`: un texto que no menciona ExEd en absoluto
+      puntuaba 3/4 y aprobaba. La vara la fija el criterio, que dice «acierta
+      las letras», no «acierta casi todas».
+    - `"operacional" in texto`: es subcadena de «no operacional», que es OTRA
+      letra de la ruta. La D acreditaba a la C sola. Se exige una aparición
+      que no venga precedida de «no».
+
+    Y se compara sin tildes: «exploración» bien escrita y «exploracion» dicen
+    lo mismo, y penalizar la variante correcta es medir la ortografía, no el
+    concepto.
+    """
+    plano = unicodedata.normalize("NFKD", texto.lower())
+    plano = "".join(c for c in plano if not unicodedata.combining(c))
+    faltan = []
+    for concepto in CONCEPTOS_DE_LAS_SIGLAS:
+        if concepto == "operacional":
+            presente = bool(re.search(r"(?<!\bno )\boperacional", plano))
+        else:
+            presente = concepto in plano
+        if not presente:
+            faltan.append(concepto)
+    return faltan
+
+
 def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], list[str]]:
     """Códigos a los que el agente atribuye un significado, y cuáles contradicen
     al catálogo.
@@ -314,8 +347,15 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     inventados: list[str] = []
     for codigo in reales:
         atribuidos = [
-            t for t in (_tramo_tras(texto, m.end()) for m in re.finditer(rf"{codigo}\**", texto))
-            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", t)
+            t
+            for t in (
+                _tramo_tras(texto, m.end(), reales)
+                for m in re.finditer(rf"{codigo}\**", texto)
+            )
+            # Con núcleo: si el tramo queda en «—» porque la definición se
+            # envolvió al renglón siguiente, no hay nada que juzgar y contarlo
+            # como «definido» era decir que se juzgó cuando no.
+            if re.match(r"\s*(?:[—:|-]|\(|\s*significa)", t) and _nucleo(t)
         ]
         if not atribuidos:
             continue
@@ -331,17 +371,31 @@ def _codigos_definidos(texto: str, reales: dict[str, str]) -> tuple[list[str], l
     return definidos, inventados
 
 
-def _tramo_tras(texto: str, desde: int) -> str:
-    """Lo que el agente atribuye a un código: hasta el fin de LÍNEA, no 90 letras.
+def _tramo_tras(texto: str, desde: int, reales: dict[str, str]) -> str:
+    """Lo que el agente atribuye a un código: hasta que aparece el SIGUIENTE.
 
-    Cortar por caracteres se tragaba el comienzo de la entrada siguiente del
-    catálogo, y como las palabras coladas eran exactamente las del código
-    vecino, el vecino ganaba la comparación siempre. Se acusaba a UST de
-    describir a BRD citando literalmente lo que la herramienta acababa de
-    devolver. En una lista, la unidad es la línea.
+    Tercer criterio de corte, y los dos anteriores fallaron por elegir una
+    unidad que no era la buena:
+
+    - Por 90 caracteres: se tragaba el comienzo de la entrada siguiente, y como
+      las palabras coladas eran las del vecino, el vecino ganaba siempre.
+    - Por fin de línea: arreglaba la lista y rompía todo lo demás. Con dos
+      códigos en la misma línea —una fila de tabla, un párrafo corrido— el
+      vecino volvía a colarse; y con la definición envuelta al renglón
+      siguiente, el tramo quedaba en «—» y la inversión dejaba de comprobarse
+      mientras la evidencia decía que el código se había juzgado.
+
+    La unidad no es el carácter ni la línea: es «hasta el siguiente código del
+    catálogo». Cortar por `|` tampoco vale — es uno de los separadores válidos
+    que abre una atribución.
     """
-    linea = texto[desde:].split("\n", 1)[0]
-    return linea[:120]
+    resto = texto[desde:]
+    fin = len(resto)
+    for otro in reales:
+        m = re.search(rf"\b{otro}\b", resto)
+        if m and m.start() < fin:
+            fin = m.start()
+    return resto[:fin][:120]
 
 
 def _describe_mejor_a_otro(tramo: str, codigo: str, reales: dict[str, str]) -> str:
@@ -684,12 +738,12 @@ def main() -> int:
                 cliente, s,
                 "En mi Excel veo la columna «Falla Evidente (ABCD)». ¿Qué significa "
                 "cada letra, y qué significan CC y ExEd?")
-            texto = (salida.get("content") or "").lower()
-            aciertos = sum(x in texto for x in (
-                "seguridad", "operacional", "control de calidad", "exploración de edad"))
+            faltan = _conceptos_que_faltan(salida.get("content") or "")
             hallazgos.append(_resultado(
                 40, "Acierta las letras de ruta y las siglas de política",
-                aciertos >= 3, f"{aciertos}/4 conceptos correctos"))
+                not faltan,
+                f"{4 - len(faltan)}/4 conceptos correctos"
+                + (f" — falta: {', '.join(faltan)}" if faltan else "")))
 
             # 36 — lo que el agente dice haber registrado está en la sesión.
             s = sesion("estado")
