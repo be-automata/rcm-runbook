@@ -6,7 +6,7 @@ stakeholders when `advance_phase` or `export_excel` refuses.
 
 from __future__ import annotations
 
-from rcm_runbook.models.catalogs import MaintenancePolicy
+from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, MaintenancePolicy
 from rcm_runbook.models.domain import FunctionKind
 from rcm_runbook.models.session import Phase, RCMSession
 
@@ -196,7 +196,38 @@ def export_blockers(session: RCMSession) -> list[str]:
         for issue in check_gate(session, phase):
             issues.append(f"[Fase {phase.value}] {issue}")
     issues.extend(tareas_contradictorias(session))
+    issues.extend(tareas_mas_lentas_que_el_ffi(session))
     return issues
+
+
+def tareas_mas_lentas_que_el_ffi(session: RCMSession) -> list[str]:
+    """El FFI calculado tiene que gobernar la frecuencia que ejecuta el CMMS.
+
+    El entregable salía con los dos números contradiciéndose y ningún aviso:
+    AUDITORIA decía «FFI = 1752 h» para el presostato y el PLAN decía
+    «Semestral» (4380 h). El ✔ del FFI era literalmente cierto —el número
+    llegaba a una celda— y a la vez engañoso, porque no mandaba sobre la única
+    columna que alguien ejecuta. Es un dispositivo de protección con
+    consecuencia de seguridad: probarlo 2,5 veces menos seguido de lo calculado
+    no es un detalle de formato.
+
+    Solo se bloquea cuando la tarea es MÁS LENTA que el intervalo calculado.
+    Probar más seguido de lo necesario es conservador y decisión del cliente.
+    """
+    problemas: list[str] = []
+    for fmid, ffi in session.ffi_por_modo.items():
+        for tarea in session.tasks.get(fmid, []):
+            horas = FRECUENCIA_EN_HORAS.get(tarea.frequency)
+            if horas is None:
+                continue  # frecuencia sin equivalencia fiable (p. ej. 'Quinquenal')
+            if horas > ffi.horas:
+                problemas.append(
+                    f"[Plan] La búsqueda de fallas de {fmid} está calculada cada "
+                    f"{ffi.horas:.0f} h, pero la tarea '{tarea.description}' se "
+                    f"ejecuta '{tarea.frequency}' ({horas:.0f} h) — más espaciada que "
+                    "el intervalo calculado. Ajuste la frecuencia o recalcule el FFI."
+                )
+    return problemas
 
 
 def tareas_contradictorias(session: RCMSession) -> list[str]:

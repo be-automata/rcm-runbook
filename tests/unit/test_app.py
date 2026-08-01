@@ -9,15 +9,15 @@ from tests.unit.test_compliance import full_session
 
 
 class TestApp:
-    def test_agentos_routes_mounted(self, client):
-        # AgentOS exposes an OpenAPI schema with its runtime endpoints
-        # (el esquema exige llave: describe toda la superficie de la API)
-        params = {"key": settings.os_security_key} if settings.os_security_key else {}
-        schema = client.get("/openapi.json", params=params).json()
+    def test_agentos_routes_mounted(self, client, con_llave):
+        # Con `con_llave` y no con «la llave si la hay»: en un entorno sin .env
+        # el test pasaba sin ejercer el cierre de la API, que es justo lo que
+        # dice comprobar.
+        schema = client.get("/openapi.json", params={"key": con_llave}).json()
         paths = list(schema["paths"])
         assert any("agent" in p or "run" in p or "session" in p for p in paths), paths
 
-    def test_download_serves_golden_export(self, client, monkeypatch):
+    def test_download_serves_golden_export(self, client, con_llave, monkeypatch):
         # El definitivo exige que la sesión exista y esté completa: el archivo en
         # disco es una foto, el estado de la sesión es la verdad.
         from rcm_runbook import app as app_module
@@ -29,19 +29,16 @@ class TestApp:
         )
         path = export_xlsx(sesion, settings.exports_dir, session_id="any-session")
         url = f"/exports/any-session/{path.name}"
-        if settings.os_security_key:
-            assert client.get(url).status_code == 401  # sin llave → rechazado
-            resp = client.get(url, params={"key": settings.os_security_key})
-        else:
-            resp = client.get(url)
+        assert client.get(url).status_code == 401  # sin llave → rechazado
+        resp = client.get(url, params={"key": con_llave})
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith(
             "application/vnd.openxmlformats-officedocument"
         )
         assert len(resp.content) > 5000
 
-    def test_download_rejects_traversal(self, client):
-        params = {"key": settings.os_security_key} if settings.os_security_key else {}
+    def test_download_rejects_traversal(self, client, con_llave):
+        params = {"key": con_llave}
         traversal = client.get("/exports/s/..%2F..%2Fetc%2Fpasswd", params=params)
         assert traversal.status_code in (400, 404)
         assert client.get("/exports/s/no-existe.xlsx", params=params).status_code == 404
@@ -1740,3 +1737,263 @@ class TestLaSondaDistingueVivoDeFuncionando:
         ok, detalle = sondear_modelo(settings)
         assert ok is False, "un fallo desconocido se reportó como servicio sano"
         assert "no respondió" in detalle
+
+
+class TestElFfiGobiernaLaFrecuenciaDelCmms:
+    """El entregable salía con los dos números contradiciéndose y ningún aviso:
+    AUDITORIA decía «FFI = 1752 h» para el presostato y el PLAN decía
+    «Semestral» (4380 h). El ✔ era literalmente cierto —el número llegaba a una
+    celda— y a la vez engañoso, porque no mandaba sobre la única columna que
+    alguien ejecuta. Es un dispositivo de protección con consecuencia de
+    seguridad."""
+
+    def _sesion_con_ffi(self, frecuencia: str, horas_ffi: float = 1752.0):
+        from rcm_runbook.models.domain import MaintenanceTask
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=horas_ffi, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        s.tasks[fm] = [MaintenanceTask(
+            failure_mode_id=fm, description="Prueba funcional del disparo",
+            frequency=frecuencia, duration_hours=4.0, discipline="Instrumentista",
+            requires_shutdown=True,
+        )]
+        return s, fm
+
+    def _bloqueos(self, s):
+        from rcm_runbook.engine import compliance
+
+        return [b for b in compliance.export_blockers(s) if "búsqueda de fallas" in b]
+
+    def test_una_tarea_mas_espaciada_que_el_ffi_bloquea_el_entregable(self):
+        s, fm = self._sesion_con_ffi("Semestral")  # 4380 h contra 1752 calculadas
+        bloqueos = self._bloqueos(s)
+        assert bloqueos, "el CMMS recibe una frecuencia que contradice el FFI"
+        assert fm in bloqueos[0]
+        assert "1752" in bloqueos[0] and "Semestral" in bloqueos[0]
+
+    def test_una_tarea_dentro_del_intervalo_no_bloquea(self):
+        s, _ = self._sesion_con_ffi("Bimestral")  # 1460 h ≤ 1752
+        assert not self._bloqueos(s)
+
+    def test_probar_mas_seguido_de_lo_calculado_es_aceptable(self):
+        # Conservador, y decisión del cliente: no se bloquea.
+        s, _ = self._sesion_con_ffi("Mensual")
+        assert not self._bloqueos(s)
+
+    def test_una_frecuencia_sin_equivalencia_fiable_no_inventa_una(self):
+        # 'Quinquenal' es ambigua por un factor de 120; adivinarla aquí sería
+        # meter esa ambigüedad en una comparación de seguridad.
+        from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS
+
+        assert "Quinquenal" not in FRECUENCIA_EN_HORAS
+        s, _ = self._sesion_con_ffi("Quinquenal")
+        assert not self._bloqueos(s)
+
+
+class TestElValorDelFfiEstaFijado:
+    """Ninguna aserción miraba el VALOR: duplicar el FFI persistido pasaba con
+    las 391 en verde, y es el número que fija cada cuánto se prueba un
+    dispositivo de seguridad."""
+
+    def test_el_numero_guardado_es_el_que_calcula_el_motor(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.engine.ffi import ffi_single_single
+        from rcm_runbook.models.session import RCMSession
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(iter(sesion.failure_modes))
+
+        class Ctx:
+            session_id = "s-valor"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        ctx = Ctx()
+        tools_mod.calculate_ffi.entrypoint(
+            ctx, method="single_single", mtive_hours=43800, mted_hours=17520,
+            mmf_hours=876000, failure_mode_id=fm,
+        )
+        esperado = ffi_single_single(mtive=43800, mted=17520, mmf=876000).ffi_hours
+        guardado = RCMSession.model_validate(ctx.session_state["rcm"]).ffi_por_modo[fm]
+        assert guardado.horas == esperado, f"guardó {guardado.horas}, el motor dice {esperado}"
+        assert guardado.metodo == "single_single"
+
+    def test_el_numero_del_entregable_es_el_guardado(self):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from rcm_runbook.models.session import FFIRegistro
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        fm = next(iter(s.failure_modes))
+        s.ffi_por_modo[fm] = FFIRegistro(
+            horas=1752.0, metodo="single_single", formula="FFI = 2 * Mtive * Mted / Mmf"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            aud = load_workbook(export_xlsx(s, tmp))["AUDITORIA RCM"]
+        numeros = [c.value for f in aud.iter_rows() for c in f if isinstance(c.value, int | float)]
+        assert 1752.0 in numeros, f"el FFI del entregable no es el calculado: {numeros}"
+
+
+class TestLosHuecosQueDestapoLaMutacion:
+    """Cinco mutaciones sobrevivían a las 391 pruebas. No son casos raros: son
+    ramas de rechazo sin cobertura y un contrapeso que faltaba."""
+
+    def _sesion(self):
+        from rcm_runbook.models.session import RCMSession
+
+        s = RCMSession()
+        s.add_function(kind="primaria", verb="bombear", object="crudo",
+                       performance_standard="850 GPM a 150 psi")
+        s.add_functional_failure("F-001", "No alcanza el caudal requerido")
+        s.add_failure_mode(
+            "FF-001", description="Cavitación por NPSH por debajo del requerido",
+            mechanism="Cavitación", iso_code="LOO",
+            cause="Operación fuera de las condiciones de diseño",
+            root_cause="Filtro de succión obstruido", failure_pattern="Aleatoria",
+        )
+        return s
+
+    def test_reemplazar_una_funcion_inexistente_no_la_crea(self):
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+
+        s = self._sesion()
+        with pytest.raises(ReglaDeNegocio, match="no hay ninguna función"):
+            s.add_function(kind="primaria", verb="comprimir", object="gas",
+                           performance_standard="500 m³/h", reemplazar=True)
+        assert len(s.functions) == 1, "creó una función creyendo corregir"
+
+    def test_reemplazar_una_tarea_inexistente_no_la_crea(self):
+        import pytest
+
+        from rcm_runbook.errors import ReglaDeNegocio
+        from rcm_runbook.models.domain import MaintenanceTask
+
+        s = self._sesion()
+        tarea = MaintenanceTask(
+            failure_mode_id="FM-001", description="Termografía del tablero",
+            frequency="Mensual", duration_hours=1.0, discipline="Predictivo",
+        )
+        with pytest.raises(ReglaDeNegocio, match="no hay ninguna tarea parecida"):
+            s.add_task(tarea, reemplazar=True)
+        assert not s.tasks.get("FM-001"), "añadió una tarea creyendo corregir"
+
+    def test_dos_controles_distintos_conviven(self):
+        # El contrapeso de la guarda de idempotencia: si fusionara de más, el
+        # análisis perdería controles reales del activo.
+        s = self._sesion()
+        s.add_control("FM-001", description="Inspección visual mensual", kind="detectivo")
+        s.add_control("FM-001", description="Alarma de vibración en DCS", kind="detectivo")
+        assert len(s.controls["FM-001"]) == 2
+
+    def test_los_kpis_no_salen_como_repr_de_python(self):
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from rcm_runbook.export.excel import export_xlsx
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        with tempfile.TemporaryDirectory() as tmp:
+            aud = load_workbook(export_xlsx(s, tmp))["AUDITORIA RCM"]
+        texto = " | ".join(str(c.value) for f in aud.iter_rows() for c in f if c.value)
+        assert s.kpis, "el escenario de prueba no tiene KPIs que comprobar"
+        assert "name=" not in texto, "el KPI salió como repr de Python"
+        assert s.kpis[0].name in texto, "el KPI no llegó al entregable"
+
+    def test_los_temporales_se_limpian_donde_de_verdad_se_crean(self):
+        # El test anterior miraba /tmp/rcm-export-*, y en macOS mkdtemp cae en
+        # $TMPDIR: los dos conjuntos eran siempre vacíos y `set() <= set()`
+        # siempre cierto.
+        import tempfile
+        from pathlib import Path
+
+        raiz = Path(tempfile.gettempdir())
+        antes = set(raiz.glob("rcm-export-*"))
+        from rcm_runbook.export.excel import export_xlsx
+        from tests.unit.test_compliance import full_session
+
+        with tempfile.TemporaryDirectory() as tmp:
+            export_xlsx(full_session(), tmp)
+        assert set(raiz.glob("rcm-export-*")) == antes
+
+
+class TestNadaEnInglesLlegaAlClienteNiAlModelo:
+    """Criterio 1: la conversación es 100% en español. Los avisos del motor de
+    FFI salían crudos al chat Y a la columna F del entregable —`_en_espanol`
+    envolvía excepciones, no resultados— y el digest que el modelo lee en cada
+    turno repetía las siglas peladas mientras el criterio 40 medía si las
+    acertaba."""
+
+    def test_el_aviso_del_motor_de_ffi_llega_en_espanol(self):
+        from rcm_runbook.agent import tools as tools_mod
+
+        class Ctx:
+            session_id = "s-aviso"
+            session_state: dict = {}
+
+        salida = tools_mod.calculate_ffi.entrypoint(
+            Ctx(), method="single_single", mtive_hours=1, mted_hours=100000, mmf_hours=1
+        )
+        assert "exceeds the protective device" not in salida
+        assert "supera el TPEF del propio dispositivo" in salida
+
+    def test_el_aviso_guardado_en_el_entregable_tambien(self):
+        from rcm_runbook.agent import tools as tools_mod
+        from rcm_runbook.models.session import RCMSession
+        from tests.unit.test_compliance import full_session
+
+        sesion = full_session()
+        fm = next(iter(sesion.failure_modes))
+
+        class Ctx:
+            session_id = "s-aviso2"
+            session_state = {"rcm": sesion.model_dump(mode="json")}
+
+        ctx = Ctx()
+        tools_mod.calculate_ffi.entrypoint(
+            ctx, method="single_single", mtive_hours=1, mted_hours=100000,
+            mmf_hours=1, failure_mode_id=fm,
+        )
+        guardado = RCMSession.model_validate(ctx.session_state["rcm"]).ffi_por_modo[fm]
+        assert guardado.avisos, "se perdieron los avisos"
+        assert not any("exceeds" in a for a in guardado.avisos), (
+            "el entregable lleva el aviso del motor en inglés"
+        )
+
+    def test_el_digest_glosa_la_politica(self):
+        from rcm_runbook.models.catalogs import POLICY_LABELS_ES
+        from tests.unit.test_compliance import full_session
+
+        texto = full_session().digest_es()
+        assert any(n in texto for n in POLICY_LABELS_ES.values()), (
+            "el digest repite las siglas peladas en cada turno"
+        )
+
+    def test_el_digest_no_abrevia_el_tipo_de_funcion(self):
+        from tests.unit.test_compliance import full_session
+
+        texto = full_session().digest_es()
+        assert "[prot]" not in texto and "[prim]" not in texto
+        assert "(proteccion)" in texto
+
+    def test_un_analisis_completado_no_dice_fase_7_de_6(self):
+        from rcm_runbook.models.session import Phase
+        from tests.unit.test_compliance import full_session
+
+        s = full_session()
+        s.phase = Phase.COMPLETADO
+        texto = s.digest_es()
+        assert "7/6" not in texto, "el modelo lee «fase 7 de 6» al cerrar el análisis"
+        assert texto.splitlines()[0] == "FASE ACTUAL: Análisis completado"

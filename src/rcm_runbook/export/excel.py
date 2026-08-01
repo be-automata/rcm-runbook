@@ -218,6 +218,17 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         Font(bold=True)
     )
     row += 1
+    if session.ffi_por_modo:
+        # Quien abre esta hoja es el ingeniero de mantenimiento, no el modelo:
+        # `Mtive`/`Mted`/`Mmf` estaban definidos con esmero en el docstring de la
+        # herramienta y en el motor, y en ninguna parte del entregable.
+        ws.cell(row=row, column=1, value="Nomenclatura:")
+        ws.cell(
+            row=row, column=2,
+            value="Mtive = TPEF del dispositivo de protección · Mted = TPEF de la "
+                  "función protegida · Mmf = TPEF tolerado de la falla múltiple",
+        ).alignment = WRAP
+        row += 1
     for fmid, ffi in session.ffi_por_modo.items():
         ws.cell(row=row, column=1, value=fmid)
         ws.cell(row=row, column=2, value=round(ffi.horas, 1))
@@ -252,8 +263,12 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
     ws.cell(row=row, column=1, value="Gobernanza del plan").font = Font(bold=True)
     row += 1
     for kpi in session.kpis:
+        # `str(kpi)` sobre un BaseModel escribe el repr de Python en la celda del
+        # cliente: «name='MTBF' target='> 17.520 h'». Era el único de los cinco
+        # elementos de gobernanza sin formatear, y el único sin test.
         ws.cell(row=row, column=1, value="KPI")
-        ws.cell(row=row, column=3, value=str(kpi)).alignment = WRAP
+        ws.cell(row=row, column=2, value=kpi.name)
+        ws.cell(row=row, column=3, value=kpi.target).alignment = WRAP
         row += 1
     for disparador in session.review_triggers:
         ws.cell(row=row, column=1, value="Disparador de revisión")

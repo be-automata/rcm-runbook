@@ -78,6 +78,34 @@ class MaintenancePolicy(StrEnum):
     CC = "CC"  # Control de Calidad (quality control)
 
 
+# Cuántas horas dura cada frecuencia del catálogo del cliente.
+#
+# Sin esto no había forma de comparar el FFI calculado con la frecuencia que se
+# le manda al CMMS, y el entregable salía con los dos números contradiciéndose:
+# FFI = 1752 h para el presostato, y la tarea diciendo «Semestral» (4380 h). Un
+# dispositivo de seguridad probado 2,5 veces menos seguido de lo calculado, con
+# un ✔ en cada paso.
+#
+# 'Quinquenal' queda FUERA a propósito: su posición en el catálogo dice quincena
+# y la palabra dice cinco años (ver docs/UAT_SCRIPT_ES.md). Adivinarla aquí
+# sería meter un factor de 120 en una comparación de seguridad.
+FRECUENCIA_EN_HORAS: dict[str, float] = {
+    "Diario": 24,
+    "Semanal": 168,
+    "Catorcenal": 336,
+    "Mensual": 730,
+    "Bimestral": 1460,
+    "Trimestral": 2190,
+    "Tetramestral": 2920,
+    "Semestral": 4380,
+    "Anual": 8760,
+    "Bi-Anual": 17520,
+    "Tri-Anual": 26280,
+    "Tetra-Anual": 35040,
+    "Quinque-Annual": 43800,
+}
+
+
 POLICY_LABELS_ES: dict[MaintenancePolicy, str] = {
     MaintenancePolicy.MBC: "Mantenimiento basado en Condición",
     MaintenancePolicy.MBT: "Mantenimiento basado en Tiempo",

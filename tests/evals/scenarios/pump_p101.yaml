@@ -200,7 +200,11 @@ tasks:
     requires_shutdown: true
   - failure_mode_ref: FM-003
     description: Prueba funcional del disparo por baja presión de succión (PSL-101)
-    frequency: Semestral
+    # Bimestral (1460 h) y no Semestral (4380 h): el FFI calculado de este modo
+    # es 1752 h. El dato de referencia llevaba la contradicción dentro —el
+    # entregable salía con «FFI = 1752 h» en una hoja y «Semestral» en otra— y
+    # por eso el escenario no la detectaba.
+    frequency: Bimestral
     duration_hours: 4.0
     discipline: Instrumentista
     requires_shutdown: true

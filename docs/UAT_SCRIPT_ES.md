@@ -327,6 +327,8 @@ done
 | 45 | La fase avanza al completarse su compuerta, sin depender de que el agente lo pida, y el agente lo anuncia | ☐ |
 | 46 | El agente no repregunta datos que el interesado ya dio (ve el estado sin tener que consultarlo) | ☐ |
 | 47 | `GET /health/modelo` (con llave) distingue «el proceso vive» de «el producto funciona», y responde 503 cuando el proveedor está caído | ☐ |
+| 48 | El intervalo de búsqueda de fallas calculado gobierna la frecuencia que va al CMMS (no salen dos números incompatibles) | ☐ |
+| 49 | Nada en inglés llega al cliente ni al modelo: avisos del motor, digest, siglas del entregable | ☐ |
 
 ## Vigilancia — qué mirar para enterarse de una caída
 

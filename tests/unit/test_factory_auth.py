@@ -36,9 +36,13 @@ class TestSubscriptionAuth:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api-key-mode")
         cfg = Settings(claude_code_oauth_token="")
         model = build_model(cfg)
-        # agno default path: no injected client; api_key resolved from env at call time
-        assert model.client is None or isinstance(model.client, object)
+        # `model.client is None or isinstance(model.client, object)` era una
+        # tautología: la segunda rama es cierta para todo objeto de Python.
+        # Lo que importa de este modo es que NO se inyecta un cliente con token
+        # y que la clave se resuelve del entorno al llamar.
         assert not getattr(model, "auth_token", None)
+        assert getattr(model, "default_headers", None) in (None, {})
+        assert model.id == cfg.model_id
 
 
 class TestSettingsAlias:

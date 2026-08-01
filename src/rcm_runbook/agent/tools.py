@@ -156,6 +156,22 @@ _RANGOS_EN_ESPANOL = (
 )
 
 
+def _aviso_en_espanol(aviso: str) -> str:
+    """Traduce los avisos del motor de FFI, que son ingleses a propósito."""
+    if "exceeds the protective device MTBF" in aviso:
+        import re as _re
+
+        numeros = _re.findall(r"[\d.]+", aviso)
+        calculado = numeros[0] if numeros else "?"
+        return (
+            f"El FFI calculado ({calculado} h) supera el TPEF del propio dispositivo "
+            "de protección: el intervalo no es fiable, revise los datos de entrada."
+        )
+    if "not a hidden failure" in aviso.lower():
+        return "El FFI solo aplica a modos de falla ocultos de dispositivos de protección."
+    return aviso
+
+
 def _en_espanol(mensaje: str) -> str:
     """Traduce los rechazos de rango del motor, que es inglés a propósito."""
     for ingles, espanol in _RANGOS_EN_ESPANOL:
@@ -702,7 +718,12 @@ def calculate_ffi(
             f"Los datos no permiten calcular el FFI con el método '{method}'. "
             + _en_espanol(str(exc))
         ) from exc
-    warn = ("\n⚠ " + "\n⚠ ".join(result.warnings)) if result.warnings else ""
+    # Los avisos del motor también vienen en inglés, y salían tal cual al chat y
+    # a la hoja del entregable: `_en_espanol` envolvía excepciones, no
+    # resultados. «Computed FFI (200000.0 h) exceeds the protective device MTBF»
+    # en una conversación en español, y en la columna F de AUDITORIA.
+    avisos = [_aviso_en_espanol(a) for a in result.warnings]
+    warn = ("\n⚠ " + "\n⚠ ".join(avisos)) if avisos else ""
     guardado = ""
     if failure_mode_id:
         session = _load(run_context)
@@ -713,7 +734,7 @@ def calculate_ffi(
             )
         session.ffi_por_modo[failure_mode_id] = FFIRegistro(
             horas=result.ffi_hours, metodo=method, formula=result.formula,
-            avisos=list(result.warnings),
+            avisos=avisos,
         )
         _save(run_context, session)
         guardado = f" Queda registrado para {failure_mode_id} y sale en el entregable."

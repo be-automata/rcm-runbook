@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from rcm_runbook.errors import ReglaDeNegocio
+from rcm_runbook.models.catalogs import POLICY_LABELS_ES
 from rcm_runbook.models.domain import (
     Control,
     DecisionResult,
@@ -538,13 +539,20 @@ class RCMSession(BaseModel):
 
     def digest_es(self) -> str:
         lines = [
-            f"FASE ACTUAL: {self.phase.value}/6 — {PHASE_NAMES_ES[self.phase]}",
+            (
+                f"FASE ACTUAL: {PHASE_NAMES_ES[self.phase]}"
+                if self.phase == Phase.COMPLETADO
+                else f"FASE ACTUAL: {self.phase.value}/6 — {PHASE_NAMES_ES[self.phase]}"
+            ),
             f"Activo: {self.scope.equipment_description or '—'} (TAG: {self.scope.tag or '—'})",
             f"Equipo de trabajo: {len(self.team)} integrantes",
         ]
         if self.functions:
+            # Sin abreviar el tipo: `[prot]` es una sigla pelada más, y esta es
+            # la superficie que el modelo lee en todos los turnos.
             lines.append("Funciones: " + "; ".join(
-                f"{f.id}[{f.kind.value[:4]}] {f.verb} {f.object}" for f in self.functions.values()
+                f"{f.id} ({f.kind.value}) {f.verb} {f.object}"
+                for f in self.functions.values()
             ))
         if self.functional_failures:
             lines.append("Fallas funcionales: " + "; ".join(
@@ -559,7 +567,11 @@ class RCMSession(BaseModel):
                 if score:
                     extra += f" RPN={score.rpn}"
                 if dec:
-                    extra += f" →{dec.policy.value}"
+                    # Con el nombre de la política: el digest se las repetía
+                    # peladas en cada turno mientras el criterio 40 medía si el
+                    # agente las acertaba.
+                    nombre = POLICY_LABELS_ES.get(dec.policy, "")
+                    extra += f" →{dec.policy.value}" + (f" ({nombre})" if nombre else "")
                 if not fm.credible:
                     extra += " [descartado: no creíble]"
                 parts.append(f"{fm.id} {fm.description[:44]}{extra}")
