@@ -20,6 +20,49 @@ Un `test` verde dice que el código hace lo que su autor creía; no dice que el
 sistema desplegado se comporte así delante de una persona. La distinción es la
 diferencia entre este documento y una lista de deseos.
 
+## Corrida con saldo — 2 de agosto de 2026
+
+`uv run --env-file .env python scripts/verificar_en_produccion.py`, contra la
+versión `7ed1782c` y con `/health/modelo` en `{"estado":"ok"}`.
+
+**7/7 criterios obligatorios en verde**, «Limpieza: sin residuos», salida 0.
+Censo posterior: 4 sesiones, las 4 `demo-*` del cliente, cero `uat-*`.
+
+| # | criterio | evidencia |
+|---|---|---|
+| 1 | Responde en español y con contenido | «¡Buenas! Excelente, empezaremos un análisis RCM de la bomba P-101…» |
+| 4 | Pregunta por las funciones de protección | «además de bombear crudo, hay dos tipos de funciones que…» |
+| 10 | Reanuda sabiendo lo ya registrado | «### ✅ Completado — Equipo multidisciplinario: **2 integrantes**…» |
+| 23 | La exportación por chat entrega algo descargable | «Aquí está tu borrador: [Descargar el Excel](/exports/uat-…)» |
+| 25 | Enlace `/exports/…` clicable y sin `?key=` | el mismo enlace, sin la llave |
+| 29 | Consulta `explain_iso_code` y su catálogo se lee entero | catálogo leído: 20 códigos |
+| 36 | Nada se pierde en un turno con varias herramientas | equipo en `session_state`: `['Ana Pérez', 'Luis Gómez']` |
+
+**Los dos de ojo humano, revisados y en verde:**
+
+- **[40]** — las cuatro letras correctas (A seguridad/ambiente, B operacional,
+  C no operacional, D tolerable), `CC` = Control de Calidad, `ExEd` =
+  Exploración de Edad, y las ocho políticas con su significado.
+- **[29], su otra mitad** — declara que `QQQ1` no existe y no le inventa
+  significado. Los tres «posibles inventos» que imprimió el script eran falsos
+  positivos del detector retirado; uno de ellos daba como significado
+  atribuido el propio código, `«QQQ1»`. Es exactamente por lo que ese detector
+  dejó de votar.
+
+**Los tres que no cierran, y por qué:**
+
+- **[8]** medido **2/3**: en un intento de cada tres el agente no llamó a
+  `export_excel` por su cuenta. Es ALTA-2, documentada y aceptada; el botón es
+  el camino garantizado. Que no sea 3/3 no es una regresión: mide una
+  limitación conocida.
+- **[27]** no evaluable en esta corrida, por lo mismo: depende de que el
+  agente llame a la herramienta.
+- **[26]** no ejecutado: provocar un fallo técnico real exige romper el
+  entorno del cliente.
+
+Queda **[46]**, que necesita leer una conversación real y ver que el agente no
+repregunta lo ya dicho.
+
 ## Los 12 bloqueados por saldo
 
 **1, 4, 8, 10, 23, 25, 26, 27, 29, 36, 40, 46.**
@@ -95,11 +138,13 @@ Dos salvedades que no son verdes enteros:
 
 | | |
 |---|---|
-| ✅ producción | 9 |
+| ✅ producción | 9 + **9 de la corrida con saldo** (1, 4, 10, 23, 25, 29, 36, 40, y el 29 en su mitad humana) |
 | ✅ navegador | 8 |
 | ✅ solo test | 21 |
 | ❌ | 0 |
-| bloqueado por saldo | 12 |
+| medido sin aprobar | 2 (el 8 en 2/3 y el 27, los dos por ALTA-2) |
+| sin ejecutar | 1 (el 26) |
+| pendiente de observar | 1 (el 46) |
 | **total** | **50** |
 
 ## Cómo se actualiza

@@ -343,7 +343,12 @@ no se observa sin turno. Los otros once se ejecutan solos:
 
     uv run --env-file .env python scripts/verificar_en_produccion.py
 
-Última corrida completa con la técnica anterior: 9/9 en verde. **Ese número ya
+**Última corrida: 2 de agosto de 2026, 7/7 obligatorios en verde y salida 0**,
+más el [40] y la otra mitad del [29] revisados a mano y también en verde. El
+detalle está en `UAT_LIBRO_MAYOR_ES.md`. El [8] midió 2/3 (ALTA-2).
+
+Lo que sigue es historia, y se conserva porque explica el número que ya no se
+puede citar: la corrida anterior con la técnica vieja daba 9/9 en verde. **Ese número ya
 no se puede reproducir y no debe citarse**: se midió con la forma de evaluar el
 criterio 29 que este propio guion repudia —ponía en rojo 129 de 380 respuestas
 correctas según qué conector hubiera usado el modelo— y el 40 salió de
