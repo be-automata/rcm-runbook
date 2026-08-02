@@ -14,7 +14,7 @@ verificación y su evidencia.
 | `producción` | Observado contra `rcm-demo.beautomata.com`, con la respuesta literal. |
 | `navegador` | Visto renderizado en Chrome, midiendo el DOM que dibuja el producto. |
 | `test` | Solo lo cubre la suite automática. **No es lo mismo que un UAT verde.** |
-| `bloqueado` | Necesita un turno real del agente, y la cuenta del proveedor no tiene saldo. |
+| `bloqueado` | Necesitaba un turno real del agente. **Ya no hay ninguno: la cuenta se recargó el 2 de agosto de 2026 y se corrieron todos.** |
 
 Un `test` verde dice que el código hace lo que su autor creía; no dice que el
 sistema desplegado se comporte así delante de una persona. La distinción es la
@@ -60,18 +60,29 @@ Censo posterior: 4 sesiones, las 4 `demo-*` del cliente, cero `uat-*`.
 - **[26]** no ejecutado: provocar un fallo técnico real exige romper el
   entorno del cliente.
 
-Queda **[46]**, que necesita leer una conversación real y ver que el agente no
-repregunta lo ya dicho.
+**[46] verificado aparte, y en verde.** Se le dio todo de una vez —TAG,
+ubicación, equipo, límites, objetivo— y en el turno siguiente respondió «Tengo
+registrado el TAG, la ubicación, los límites y el equipo» y pidió solo lo que
+faltaba de verdad (tipo de fluido, capacidad, contexto operacional). Cero
+repreguntas de lo ya dado, comprobado contra once formas de repreguntarlo.
 
-## Los 12 bloqueados por saldo
+### Los doce que necesitaban modelo, cerrados
 
-**1, 4, 8, 10, 23, 25, 26, 27, 29, 36, 40, 46.**
+| resultado | criterios |
+|---|---|
+| ✅ verde | **1, 4, 10, 23, 25, 29, 36, 40, 46** — nueve |
+| 📏 medido sin aprobar | **8** (2/3) y **27**, los dos por ALTA-2 |
+| ⊘ sin ejecutar | **26**, exige romper el entorno del cliente |
+
+## Los 12 que necesitaban un turno del modelo
+
+**1, 4, 8, 10, 23, 25, 26, 27, 29, 36, 40, 46.** Ya corridos, arriba.
 
 Eran once hasta que la validación encontró que el **46** —«el agente no
-repregunta datos que el interesado ya dio»— tiene probado su mecanismo pero no
+repregunta datos que el interesado ya dio»— tenía probado su mecanismo pero no
 su enunciado: que no repregunte es conducta del modelo. Los cubre
 `scripts/verificar_en_produccion.py` salvo el 26 (exige romper el entorno del
-cliente), el 40 (pasó a revisión humana) y el 46.
+cliente), el 40 (revisión humana) y el 46 (conversación leída a mano).
 
 El **29** conserva veredicto solo en su mitad medible —que llame a
 `explain_iso_code` y que su catálogo se lea—; si declara ausente el código y si
@@ -138,14 +149,16 @@ Dos salvedades que no son verdes enteros:
 
 | | |
 |---|---|
-| ✅ producción | 9 + **9 de la corrida con saldo** (1, 4, 10, 23, 25, 29, 36, 40, y el 29 en su mitad humana) |
+| ✅ producción | **18** — 9 de las rondas 37/41 más 9 de la corrida con saldo (1, 4, 10, 23, 25, 29, 36, 40, 46) |
 | ✅ navegador | 8 |
 | ✅ solo test | 21 |
-| ❌ | 0 |
-| medido sin aprobar | 2 (el 8 en 2/3 y el 27, los dos por ALTA-2) |
-| sin ejecutar | 1 (el 26) |
-| pendiente de observar | 1 (el 46) |
+| ❌ | **0** |
+| 📏 medido sin aprobar | 2 — el **8** en 2/3 y el **27**, los dos por ALTA-2 |
+| ⊘ sin ejecutar | 1 — el **26** |
 | **total** | **50** |
+
+Ningún criterio en rojo. Lo que queda por observar son los 21 que solo tienen
+un test detrás, y los dos que miden ALTA-2 en vez de aprobarla.
 
 ## Cómo se actualiza
 
