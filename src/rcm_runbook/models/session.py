@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from rcm_runbook.errors import ReglaDeNegocio
+from rcm_runbook.errors import ReglaDeNegocio, eco_del_modelo
 from rcm_runbook.models.catalogs import KIND_LABELS_ES, POLICY_LABELS_ES
 from rcm_runbook.models.domain import (
     Control,
@@ -154,8 +154,13 @@ class RCMSession(BaseModel):
     def _require(self, entity: str, key: str, collection: dict[str, Any]) -> None:
         if key not in collection:
             known = ", ".join(sorted(collection)) or "ninguno registrado"
+            # El id se aplana: es el sitio del que salen TODOS los «no existe
+            # X con id Y» del dominio, y ese eco acaba en la respuesta que lee
+            # el agente. Sin esto, un salto de línea dentro del id escribe una
+            # línea entera de la respuesta.
             raise ReferentialIntegrityError(
-                f"No existe {entity} con id '{key}'. Registrados: {known}."
+                f"No existe {entity} con id '{eco_del_modelo(key)}'. "
+                f"Registrados: {known}."
             )
 
     # ------------------------------------------------------------------

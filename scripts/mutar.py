@@ -21,7 +21,11 @@ que compilar, y cada corrida borra el `__pycache__` y desactiva su escritura.
 
     uv run python scripts/mutar.py mutaciones.json
 
-El fichero es una lista de `{"nombre", "fichero", "antes", "despues", "suite"}`.
+El fichero es una lista de `{"nombre", "fichero", "antes", "despues", "suite"}`,
+y opcionalmente `"tope"` en segundos para la corrida de esa mutación (600 por
+defecto). Sirve para probar un mutante que cuelga la suite sin esperar diez
+minutos —y esa espera es la razón de que el tope existiera sin test durante dos
+rondas—.
 Devuelve 0 si mueren todas, 1 si sobrevive alguna, 2 si alguna es inválida: un
 mutante vivo es un hueco de test, y uno inválido es una medición que no ocurrió.
 """

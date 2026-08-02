@@ -334,3 +334,156 @@ class TestElCodigoPreguntadoNoPuedeInyectarLineas:
         )
         assert len(respuesta) < 200, "la consulta se llevó la respuesta entera"
         assert "Sin coincidencias" in respuesta
+
+
+class TestNingunaHerramientaDejaEscribirUnaLineaAlModelo:
+    """Recorre las herramientas en vez de enumerarlas, y ese es el punto.
+
+    Esta avería apareció en cinco sitios con la misma forma —un argumento del
+    modelo citado literal cuando no se encuentra, seguido del volcado de lo
+    válido— y se arregló de uno en uno: primero `explain_iso_code`, luego su
+    hermana `lookup_iso14224`, y quedaban tres. Cada ronda arreglaba una y
+    escribía su test, y la siguiente encontraba otra idéntica.
+
+    Mientras la prueba se escriba caso a caso, siempre habrá una gemela sin
+    tocar. Aquí se prueba la propiedad, así que una herramienta nueva que cite
+    su argumento sin pasarlo por `eco_del_modelo` sale en rojo sin que nadie se
+    acuerde de añadirla.
+    """
+
+    INYECCION = "zqxwvu\n- ZZZ — línea inventada por el modelo"
+
+    class Ctx:
+        session_id = "s-eco"
+        session_state: dict = {}
+
+    def _lineas_ajenas(self, texto: str) -> set[str]:
+        """Lo que un lector posterior tomaría por una entrada de catálogo."""
+        import re
+
+        from rcm_runbook.models.catalogs import fixture
+
+        vistos = {
+            c for c, _ in re.findall(
+                r"^[\s\-*|>#]*\**([A-Z]{3,4})\**\s*[—–:|-]\s*\**([^\n|]{4,120})",
+                texto, re.M,
+            )
+        }
+        return vistos - {c.code for c in fixture().menu.iso14224_failure_mode_codes}
+
+    def _llamada(self, entrada, parametro: str) -> dict:
+        """Los demás argumentos obligatorios, rellenos con algo inocuo.
+
+        Con la llamada mínima, las herramientas que piden varios revientan
+        antes de llegar a la línea donde citan lo que se les pidió, y el
+        recorrido las daba por limpias sin haberlas visitado.
+        """
+        import inspect
+
+        kwargs = {
+            p.name: "x"
+            for p in inspect.signature(entrada).parameters.values()
+            if p.name not in ("run_context", "self")
+            and p.annotation in (str, "str")
+            and p.default is inspect.Parameter.empty
+        }
+        kwargs[parametro] = self.INYECCION
+        return kwargs
+
+    def _herramientas_con_argumento_de_texto(self):
+        """Toda herramienta con un parámetro `str` que el modelo elige."""
+        import inspect
+
+        for nombre in dir(t):
+            fn = getattr(t, nombre)
+            entrada = getattr(fn, "entrypoint", None)
+            if entrada is None or nombre.startswith("_"):
+                continue
+            firma = inspect.signature(entrada)
+            for parametro in firma.parameters.values():
+                if parametro.name in ("run_context", "self"):
+                    continue
+                # La anotación llega como CADENA por `from __future__ import
+                # annotations`, así que `is str` no encuentra nada — y un
+                # descubrimiento que no encuentra nada hace pasar el test de
+                # abajo en vacío. Por eso hay un test que cuenta lo encontrado.
+                if parametro.annotation in (str, "str"):
+                    yield nombre, entrada, parametro.name
+
+    def test_el_modo_desconocido_del_ffi_tampoco_escribe_una_linea(self):
+        # El recorrido no alcanza esta rama —rellena `method` con algo inocuo,
+        # así que salta antes por método desconocido—, y es alcanzable de
+        # verdad: método VÁLIDO del catálogo, parámetros numéricos que el motor
+        # acepta, y modo que no existe. Con un método inventado o con ceros, el
+        # cálculo falla antes y el test no llegaba a la rama que decía probar.
+        respuesta = str(t.calculate_ffi.entrypoint(
+            self.Ctx(), method="single_single", mtive_hours=1000,
+            mted_hours=500, mmf_hours=2000, failure_mode_id=self.INYECCION,
+        ))
+        assert not self._lineas_ajenas(respuesta), respuesta[:140]
+
+    def test_el_recorrido_ejerce_las_herramientas_de_verdad(self):
+        # Sin esto, un recorrido que reviente en todas pasaría en vacío: la
+        # aserción de arriba solo mira los culpables, y sin llamadas no hay
+        # culpables. Se exige que un mínimo devuelva texto.
+
+        con_respuesta = 0
+        for _n, entrada, parametro in self._herramientas_con_argumento_de_texto():
+            kwargs = self._llamada(entrada, parametro)
+            try:
+                if str(entrada(self.Ctx(), **kwargs)).strip():
+                    con_respuesta += 1
+            except Exception:  # noqa: BLE001
+                continue
+        assert con_respuesta >= 20, f"solo {con_respuesta} llamadas devolvieron algo"
+
+    def test_hay_herramientas_que_recorrer(self):
+        # Si el descubrimiento deja de encontrar nada, el test de abajo pasaría
+        # vacío y no lo diría.
+        encontradas = list(self._herramientas_con_argumento_de_texto())
+        assert len(encontradas) >= 8, f"solo encontró {len(encontradas)}"
+
+    def test_ninguna_devuelve_una_linea_que_escribio_el_modelo(self):
+
+        culpables = []
+        for nombre, entrada, parametro in self._herramientas_con_argumento_de_texto():
+            # Los demás argumentos obligatorios se rellenan con algo inocuo: con
+            # la llamada mínima, las herramientas que piden varios revientan
+            # antes de llegar a la línea donde citan lo que se les pidió, y el
+            # recorrido las daba por limpias sin haberlas visitado.
+            kwargs = self._llamada(entrada, parametro)
+            try:
+                respuesta = str(entrada(self.Ctx(), **kwargs))
+            except Exception:  # noqa: BLE001 — que reviente no es el defecto
+                continue
+            if self._lineas_ajenas(respuesta):
+                culpables.append(f"{nombre}({parametro}=…)")
+        assert not culpables, (
+            "estas herramientas devuelven una línea escrita por el modelo, y "
+            f"quien lea su salida la tomará por una entrada de catálogo: {culpables}"
+        )
+
+
+class TestElEcoDelModeloAplanaYCorta:
+    def test_aplana_cualquier_espacio_en_blanco(self):
+        assert t.eco_del_modelo("a\nb\tc\r\n  d") == "a b c d"
+
+    def test_corta_al_tope_pedido(self):
+        assert t.eco_del_modelo("x" * 500, tope=10) == "x" * 10
+
+    def test_el_tope_por_defecto_deja_pasar_la_definicion_mas_larga(self):
+        # Fijado por ABAJO, que es lo que faltó cuando se arregló la hermana:
+        # una búsqueda por la definición completa tiene que seguir filtrando a
+        # una sola fila, y con el tope recortado devuelve el catálogo entero.
+        from rcm_runbook.models.catalogs import fixture
+
+        mas_larga = max(
+            (c.definition for c in fixture().menu.iso14224_failure_mode_codes), key=len
+        )
+        assert t.eco_del_modelo(mas_larga) == mas_larga
+        filas = str(t.lookup_iso14224.entrypoint(self.Ctx(), query=mas_larga))
+        assert len(filas.splitlines()) == 1, f"dejó de filtrar: {filas[:120]}"
+
+    class Ctx:
+        session_id = "s-eco2"
+        session_state: dict = {}
