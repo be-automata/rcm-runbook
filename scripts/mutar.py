@@ -106,7 +106,7 @@ def mutar(mutaciones: list[dict]) -> int:
         try:
             _limpiar_cache()
             ruta.write_text(mutado)
-            codigo = _correr(m.get("suite", "tests"))
+            codigo = _correr(m.get("suite", "tests"), m.get("tope", 600))
         finally:
             _limpiar_cache()
             ruta.write_text(original)

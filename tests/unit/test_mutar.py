@@ -150,6 +150,27 @@ class TestElArnesNoFirmaLoQueNoMidio:
             f"un tope agotado se contó como corrida válida: {codigo}"
         )
 
+    def test_un_mutante_que_cuelga_la_suite_sube_como_invalida(self, tmp_path):
+        """La ronda anterior probó el tope en la línea base, no en el mutante.
+
+        Con `codigo not in (0, 1, -1)` el tope agotado deja de subir como
+        INVÁLIDA: cae en `codigo == 0 → False` y se imprime MUERTO. El arnés
+        firmaría haber matado algo que nunca llegó a medir.
+        """
+        modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)
+        try:
+            r = _correr([{
+                "nombre": "el mutante cuelga la suite",
+                "fichero": str(modulo.relative_to(RAIZ)),
+                "antes": "def doble() -> int:",
+                "despues": "import time\n\ntime.sleep(30)\n\n\ndef doble() -> int:",
+                "suite": self._suite(modulo), "tope": 2,
+            }], tmp_path)
+        finally:
+            self._limpiar(modulo)
+        assert "MUERTO" not in r.stdout, "declaró muerto lo que nunca corrió"
+        assert r.returncode == 2 and "INVÁLIDA" in r.stdout
+
     def test_deja_el_fichero_como_estaba(self, tmp_path):
         modulo, _ = _proyecto(tmp_path, self.MODULO, self.PRUEBA)
         antes = modulo.read_text()

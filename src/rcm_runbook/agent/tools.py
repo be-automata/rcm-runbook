@@ -504,6 +504,12 @@ def lookup_iso14224(run_context: Any, query: str = "") -> str:
     cliente). Sin query lista todos; con query filtra por código o descripción."""
     fx = fixture()
     rows = []
+    # Aplanado, igual que en `explain_iso_code` y por lo mismo: la consulta se
+    # devuelve literal cuando no hay coincidencias, así que un salto de línea
+    # dentro de ella mete una línea entera bajo control de quien escribe el
+    # turno, en la salida de la herramienta que ES el catálogo del cliente.
+    # Eran dos hermanas idénticas y la ronda anterior arregló solo una.
+    query = " ".join(query.split())[:60]
     q = query.strip().upper()
     for c in fx.menu.iso14224_failure_mode_codes:
         if not q or q in c.code or q.lower() in c.definition.lower():
@@ -1006,7 +1012,8 @@ def explain_iso_code(run_context: Any, code: str) -> str:
     """Explica un código ISO 14224 del catálogo del cliente (definición y descripción)."""
     from rcm_runbook.models.catalogs import fixture
 
-    # El código se aplana a una línea antes de tocarlo. Se interpola literal en
+    # El código se aplana a una línea antes de tocarlo. Lo mismo hace
+    # `lookup_iso14224`, por la misma razón. Se interpola literal en
     # el mensaje de respuesta, así que un salto de línea dentro de `code` mete
     # una línea entera bajo control de quien escribe el turno: quien la lea
     # después —el propio agente, o el arnés que verifica el criterio 29— la ve

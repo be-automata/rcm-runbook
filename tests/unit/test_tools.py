@@ -279,9 +279,58 @@ class TestElCodigoPreguntadoNoPuedeInyectarLineas:
         assert self._codigos_leidos(respuesta) == self.DEL_CLIENTE
 
     def test_y_un_codigo_normal_sigue_funcionando(self):
-        assert "Falla en arrancar" in str(
-            t.explain_iso_code.entrypoint(self.Ctx(), code="FTS")
+        # Contra la rama que corresponde, no contra el texto. El mensaje de
+        # «no encontrado» vuelca los veinte códigos CON sus definiciones, así
+        # que «Falla en arrancar in respuesta» lo satisfacen las dos ramas:
+        # truncar el código a dos letras dejaba este test en verde.
+        hallado = str(t.explain_iso_code.entrypoint(self.Ctx(), code="FTS"))
+        assert "no está en el catálogo" not in hallado, "cayó al volcado"
+        assert "Falla en arrancar" in hallado
+
+        ausente = str(t.explain_iso_code.entrypoint(self.Ctx(), code="QQQ1"))
+        assert "no está en el catálogo" in ausente
+
+    def test_un_codigo_de_cuatro_letras_no_se_trunca(self):
+        # El tope `[:40]` no está fijado por abajo: hoy los veinte códigos del
+        # cliente miden tres, pero si añade uno más largo y el tope se recorta,
+        # se trunca en silencio y cae al volcado sin que nada avise.
+        from rcm_runbook.models import catalogs
+
+        largo = "FTSX"
+        respuesta = str(t.explain_iso_code.entrypoint(self.Ctx(), code=largo))
+        assert largo in respuesta, f"perdió letras del código: {respuesta[:80]}"
+        assert len(catalogs.fixture().menu.iso14224_failure_mode_codes) == 20
+
+    @pytest.mark.parametrize(
+        "consulta",
+        [
+            "FTS\n- ZZZ — linea inventada por el modelo",
+            "a\nAAA: uno\nBBB: dos",
+            "nada\r\nWWW | otra cosa | mas",
+        ],
+    )
+    def test_la_consulta_del_catalogo_tampoco_inyecta_lineas(self, consulta):
+        """`lookup_iso14224` tenía la misma inyección y es la hermana peor: su
+        salida ES el catálogo del cliente. La ronda anterior arregló solo una de
+        las dos idénticas."""
+        import re
+
+        from rcm_runbook.models.catalogs import fixture
+
+        respuesta = str(t.lookup_iso14224.entrypoint(self.Ctx(), query=consulta))
+        vistos = {
+            c for c, _ in re.findall(
+                r"^[\s\-*|>#]*\**([A-Z]{3,4})\**\s*[—–:|-]\s*\**([^\n|]{4,120})",
+                respuesta, re.M,
+            )
+        }
+        assert not vistos - {c.code for c in fixture().menu.iso14224_failure_mode_codes}
+
+    def test_una_consulta_larguisima_no_se_devuelve_entera(self):
+        # Sin tope, la consulta sin coincidencias se devuelve completa: el
+        # modelo escribe la respuesta de la herramienta.
+        respuesta = str(
+            t.lookup_iso14224.entrypoint(self.Ctx(), query="Z" * 5000)
         )
-        assert "no está en el catálogo" in str(
-            t.explain_iso_code.entrypoint(self.Ctx(), code="QQQ1")
-        )
+        assert len(respuesta) < 200, "la consulta se llevó la respuesta entera"
+        assert "Sin coincidencias" in respuesta
