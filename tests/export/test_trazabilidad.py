@@ -27,6 +27,7 @@ from rcm_runbook.export.excel import (
     export_xlsx,
 )
 from rcm_runbook.export.rows import (
+    DECISION_SIN_RUTA,
     RUTA_INCONSISTENTE,
     SIN_DECISION,
     amef_rows_with_ids,
@@ -45,8 +46,12 @@ def sesion() -> RCMSession:
 
 
 @pytest.fixture(scope="module")
-def libro(sesion, tmp_path_factory):
-    ruta = export_xlsx(sesion, tmp_path_factory.mktemp("uat"), draft=True)
+def libro(tmp_path_factory):
+    # Recarga propia y no la `sesion` compartida: esa es mutable y de ámbito
+    # módulo, así que el libro dependería de qué test la tocó primero. Hoy
+    # ninguno la muta en sitio, pero el aislamiento sería accidental.
+    propia = RCMSession.model_validate(json.loads(FIXTURE_UAT.read_text("utf-8")))
+    ruta = export_xlsx(propia, tmp_path_factory.mktemp("uat"), draft=True)
     return load_workbook(ruta)
 
 
@@ -168,17 +173,22 @@ class TestCriterio3SinCeldasMudas:
         assert guardada != contraste
         assert guardada == "evidente:A" and contraste == "oculta:A"
 
-    def test_decision_sin_ninguna_ruta_tambien_lleva_centinela(self, sesion):
-        """El criterio 3 exige cubrir los dos casos, no sólo «sin decisión»:
-        `DecisionResult` deja ambas rutas opcionales, así que un estado
-        histórico puede traer decisión y ninguna letra."""
+    def test_decision_sin_ninguna_ruta_no_dice_sin_decision(self, sesion):
+        """`DecisionResult` deja ambas rutas opcionales, así que un estado
+        histórico puede traer decisión y ninguna letra. Esa fila muestra su
+        política, su tarea y su ejecutor: etiquetarla «sin decisión RCM» la
+        contradice con sus propias columnas. Y tiene que dejar rastro en
+        AUDITORIA, que es lo que antes se perdía por un `continue`."""
         muda = sesion.model_copy(deep=True)
         fmid = next(f for f, d in muda.decisions.items() if d.evident_route or d.hidden_route)
         muda.decisions[fmid] = muda.decisions[fmid].model_copy(
             update={"evident_route": None, "hidden_route": None}
         )
         fila = dict(amef_rows_with_ids(muda))[fmid]
-        assert SIN_DECISION in (fila.evidente, fila.oculta)
+        assert DECISION_SIN_RUTA in (fila.evidente, fila.oculta)
+        assert SIN_DECISION not in (fila.evidente, fila.oculta)
+        assert fila.estrategia, "la fila sí tiene política: por eso la etiqueta importa"
+        assert fmid in {d[0] for d in rutas_inconsistentes(muda)}
 
     def test_ruta_sin_efecto_no_se_imprime(self, sesion):
         """Sin efecto no hay con qué recalcular: la letra no es reproducible."""
@@ -191,6 +201,21 @@ class TestCriterio3SinCeldasMudas:
         fila = dict(amef_rows_with_ids(sin_efecto))[fmid]
         assert RUTA_INCONSISTENTE in (fila.evidente, fila.oculta)
         assert fmid in {d[0] for d in rutas_inconsistentes(sin_efecto)}
+
+    def test_sin_efecto_la_visibilidad_sale_de_la_decision(self, sesion):
+        """Sin `Effect` la visibilidad no se pierde: `consequence_class` es
+        obligatorio. Antes el centinela caía siempre en la columna de falla
+        evidente, así que el libro clasificaba como evidente una falla que la
+        propia decisión guardada declara oculta."""
+        sin_efecto = sesion.model_copy(deep=True)
+        fmid = next(
+            f for f, d in sin_efecto.decisions.items()
+            if d.hidden_route and sin_efecto.failure_modes[f].credible
+        )
+        del sin_efecto.effects[fmid]
+        fila = dict(amef_rows_with_ids(sin_efecto))[fmid]
+        assert fila.oculta == RUTA_INCONSISTENTE, "el centinela cayó en la columna equivocada"
+        assert fila.evidente == ""
 
 
 class TestCriterio4SinDesaparicionesSilenciosas:
