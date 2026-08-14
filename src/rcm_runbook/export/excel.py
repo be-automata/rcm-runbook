@@ -25,9 +25,10 @@ from openpyxl.worksheet.worksheet import Worksheet
 from rcm_runbook.engine.compliance import sigue_necesitando_busqueda_de_fallas
 from rcm_runbook.export.rows import (
     amef_headers,
+    amef_rows_with_ids,
     plan_headers,
-    to_amef_rows,
-    to_plan_rows,
+    plan_rows_with_ids,
+    rutas_inconsistentes,
 )
 from rcm_runbook.models.catalogs import (
     METODOS_FFI_ES,
@@ -53,8 +54,42 @@ PLAN_HEADER_ROW = fixture().plan.header_row_excel
 LOOKUPS_SHEET = "LOOKUPS"
 
 
-def _write_title_block(ws: Worksheet, session: RCMSession, title: str) -> None:
+ID_HEADER = "ID"
+DRAFT_STAMP = "BORRADOR — NO APTO PARA EJECUCIÓN"
+
+
+def _write_id_column(ws: Worksheet, ids: list[str], header_row: int) -> None:
+    """El `FM-id` en la columna A, que queda fuera del rango del benchmark.
+
+    No puede ir como campo del modelo de fila (rompería el contrato verbatim de
+    encabezados), y no hay otra columna libre. La A además queda fija por
+    `freeze_panes`, así que el identificador acompaña al lector mientras recorre
+    las 27 columnas — que es justo lo que hace falta para cruzar el libro con la
+    conversación, donde el agente cita los modos por su código.
+    """
+    cell = ws.cell(row=header_row, column=1, value=ID_HEADER)
+    cell.fill = HEADER_FILL
+    cell.font = HEADER_FONT
+    cell.border = BORDER
+    cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    ws.column_dimensions["A"].width = 12
+    for r, fmid in enumerate(ids, start=header_row + 1):
+        id_cell = ws.cell(row=r, column=1, value=fmid)
+        id_cell.border = BORDER
+        id_cell.alignment = Alignment(vertical="top")
+
+
+def _write_title_block(
+    ws: Worksheet, session: RCMSession, title: str, draft: bool = False
+) -> None:
     ws.cell(row=2, column=2, value=title).font = TITLE_FONT
+    if draft:
+        # El prefijo BORRADOR_ del nombre del fichero no viaja con la captura de
+        # pantalla, ni con la fila pegada en un correo, ni con la hoja impresa.
+        # El interesado revisó un borrador creyéndolo terminado; el sello va
+        # dentro del libro.
+        sello = ws.cell(row=2, column=5, value=DRAFT_STAMP)
+        sello.font = Font(bold=True, size=12, color="C00000")
     meta = [
         ("CAMPO:", session.scope.location),
         ("APLICACION:", session.scope.normal_conditions),
@@ -177,11 +212,46 @@ def _write_sae_sheet(wb: Workbook) -> None:
     ws.column_dimensions["C"].width = 90
 
 
-def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
+def _write_audit_sheet(
+    wb: Workbook, session: RCMSession, blockers: list[str] | None = None
+) -> None:
     """JA1011 audit trail: discards, HITL ledger, decision justifications, residual risk."""
     ws = wb.create_sheet("AUDITORIA RCM")
     ws.cell(row=1, column=1, value="Registro de auditoría JA1011").font = TITLE_FONT
     row = 3
+
+    # Los defectos viajan CON el entregable. Antes el borrador se llevaba el
+    # estado y dejaba los bloqueadores atrás, así que un análisis a medias salía
+    # con cara de terminado. El FM-id va en su propia celda para que se pueda
+    # localizar la fila —y para que un test lo pueda afirmar sin leer prosa.
+    if blockers:
+        ws.cell(row=row, column=1, value="Defectos que impiden el entregable definitivo").font = (
+            Font(bold=True)
+        )
+        row += 1
+        for blocker in blockers:
+            marca = re.search(r"\b(FM-\d+|FF-\d+)\b", blocker)
+            ws.cell(row=row, column=1, value=marca.group(1) if marca else "")
+            ws.cell(row=row, column=2, value=blocker).alignment = WRAP
+            row += 1
+        row += 1
+
+    desacuerdos = rutas_inconsistentes(session)
+    if desacuerdos:
+        ws.cell(
+            row=row, column=1,
+            value="Rutas guardadas que no coinciden con la lógica de decisión",
+        ).font = Font(bold=True)
+        row += 1
+        for fmid, guardada, calculada in desacuerdos:
+            ws.cell(row=row, column=1, value=fmid)
+            ws.cell(
+                row=row, column=2,
+                value=f"guardada: {guardada} — recalculada: {calculada}. "
+                      "No se imprime ninguna en la fila; hay que rehacer la decisión.",
+            ).alignment = WRAP
+            row += 1
+        row += 1
     ws.cell(row=row, column=1, value="Modos descartados por no credibilidad").font = Font(bold=True)
     row += 1
     for fm in session.failure_modes.values():
@@ -350,17 +420,23 @@ def _write_audit_sheet(wb: Workbook, session: RCMSession) -> None:
         ws.column_dimensions[col].width = width
 
 
-def build_workbook(session: RCMSession) -> Workbook:
+def build_workbook(
+    session: RCMSession, draft: bool = False, blockers: list[str] | None = None
+) -> Workbook:
     wb = Workbook()
     amef_ws = wb.active
     amef_ws.title = "AMEF"
     plan_ws = wb.create_sheet("PLAN DE MANTENIMIENTO")
     ranges = _write_lookups(wb)
 
-    _write_title_block(amef_ws, session, "ANALISIS DE MODOS Y EFECTOS DE FALLAS")
+    _write_title_block(
+        amef_ws, session, "ANALISIS DE MODOS Y EFECTOS DE FALLAS", draft=draft
+    )
     headers_a = amef_headers()
     _write_headers(amef_ws, headers_a, AMEF_HEADER_ROW)
-    amef_rows = to_amef_rows(session)
+    amef_pairs = amef_rows_with_ids(session)
+    amef_rows = [row for _, row in amef_pairs]
+    _write_id_column(amef_ws, [fmid for fmid, _ in amef_pairs], AMEF_HEADER_ROW)
     for r, row_model in enumerate(amef_rows, start=AMEF_HEADER_ROW + 1):
         for c, value in enumerate(row_model.model_dump(by_alias=True).values(), start=2):
             cell = amef_ws.cell(row=r, column=c, value=value)
@@ -369,10 +445,12 @@ def build_workbook(session: RCMSession) -> Workbook:
     _add_validation(amef_ws, headers_a, AMEF_HEADER_ROW, ranges, AMEF_COLUMN_VOCAB,
                     AMEF_HEADER_ROW + len(amef_rows))
 
-    _write_title_block(plan_ws, session, "PLAN DE MANTENIMIENTO")
+    _write_title_block(plan_ws, session, "PLAN DE MANTENIMIENTO", draft=draft)
     headers_p = plan_headers()
     _write_headers(plan_ws, headers_p, PLAN_HEADER_ROW)
-    plan_rows = to_plan_rows(session)
+    plan_pairs = plan_rows_with_ids(session)
+    plan_rows = [row for _, row in plan_pairs]
+    _write_id_column(plan_ws, [fmid for fmid, _ in plan_pairs], PLAN_HEADER_ROW)
     for r, plan_model in enumerate(plan_rows, start=PLAN_HEADER_ROW + 1):
         for c, value in enumerate(plan_model.model_dump(by_alias=True).values(), start=2):
             cell = plan_ws.cell(row=r, column=c, value=value)
@@ -405,7 +483,7 @@ def build_workbook(session: RCMSession) -> Workbook:
         r += 1
 
     _write_sae_sheet(wb)
-    _write_audit_sheet(wb, session)
+    _write_audit_sheet(wb, session, blockers=blockers)
     return wb
 
 
@@ -416,12 +494,21 @@ def safe_export_name(tag: str) -> str:
 
 
 def export_xlsx(
-    session: RCMSession, output_dir: str | Path, session_id: str = "", draft: bool = False
+    session: RCMSession,
+    output_dir: str | Path,
+    session_id: str = "",
+    draft: bool = False,
+    blockers: list[str] | None = None,
 ) -> Path:
     """Write the deliverable under a per-session subdirectory (no cross-session
     overwrites; the download route scopes by session_id). Drafts are visually
-    distinct: `BORRADOR_` filename prefix — a borrador must never pass for el
-    entregable definitivo."""
+    distinct in three places: the `BORRADOR_` filename prefix, a stamp in the
+    title block of both sheets, and the list of blockers on AUDITORIA RCM — a
+    borrador must never pass for el entregable definitivo.
+
+    `blockers` se calcula acá si no lo pasan, para que ningún camino de
+    exportación pueda producir un borrador sin sus defectos adjuntos.
+    """
     out_dir = Path(output_dir)
     if session_id:
         out_dir = out_dir / safe_export_name(session_id)
@@ -429,5 +516,9 @@ def export_xlsx(
     tag = safe_export_name(session.scope.tag or "SIN-TAG")
     prefix = "BORRADOR_AMEF" if draft else "AMEF"
     path = out_dir / f"{prefix}_{tag}.xlsx"
-    build_workbook(session).save(path)
+    if draft and blockers is None:
+        from rcm_runbook.engine.compliance import export_blockers
+
+        blockers = export_blockers(session)
+    build_workbook(session, draft=draft, blockers=blockers).save(path)
     return path
