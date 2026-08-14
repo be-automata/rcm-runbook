@@ -311,14 +311,14 @@ pasarán en verde sobre un caso que nunca falla.
 
 ## 5. Tareas
 
-1. [ ] Extraer de `to_amef_rows` / `to_plan_rows` un generador interno que
+1. [x] Extraer de `to_amef_rows` / `to_plan_rows` un generador interno que
        emita `(fmid, row)`, dejando las dos funciones públicas como
        proyecciones. Sin cambio de comportamiento; `test_golden.py` pasa igual.
-2. [ ] Escribir el ID del modo en la columna A de ambas hojas desde
+2. [x] Escribir el ID del modo en la columna A de ambas hojas desde
        `excel.py`, con su encabezado en la misma fila que el resto. Verificar
        que los dos tests de cabecera verbatim siguen pasando.
-3. [ ] Prefijar el código `FF-xxx` en la celda "Falla Funcional" de AMEF.
-4. [ ] Eliminar el fallback a `Effect.*_route` de `rows.py:151` y `:155`, y
+3. [x] Prefijar el código `FF-xxx` en la celda "Falla Funcional" de AMEF.
+4. [x] Eliminar el fallback a `Effect.*_route` de `rows.py:151` y `:155`, y
        escribir el centinela `PENDIENTE — sin decisión RCM` en la columna que
        marque `effect.is_hidden`, dejando la otra vacía. Cubrir los dos casos:
        sin decisión, y con decisión pero sin ninguna de las dos rutas.
@@ -327,7 +327,7 @@ pasarán en verde sobre un caso que nunca falla.
        ruta. Ojo: ese mismo fixture escribe rutas en el `Effect`
        (`test_compliance.py:73-85`), así que al quitar el fallback hay que
        comprobar que ningún test dependiera de esa ruta indirecta.
-4b. [ ] **Contrastar la ruta guardada contra `derive_route` antes de
+4b. [x] **Contrastar la ruta guardada contra `derive_route` antes de
        imprimirla** — es lo que hace verificable el criterio 3. Regla: si
        coinciden, se imprime la letra; si no coinciden, **no se imprime
        ninguna** — va el centinela y el desacuerdo queda registrado en
@@ -338,13 +338,13 @@ pasarán en verde sobre un caso que nunca falla.
        sesión de UAT no cambia nada —las 32 decisiones reproducen su letra
        32/32—, así que el efecto se ve sólo en estados históricos o construidos
        a mano, que es justamente el agujero que cierra.
-5. [ ] Quitar el `continue` de `rows.py:185-186` (el de `decision is None`, no
+5. [x] Quitar el `continue` de `rows.py:185-186` (el de `decision is None`, no
        el de credibilidad de `:183-184`): un modo creíble sin decisión
        emite su fila en el PLAN, con las columnas de estrategia vacías y el
        mismo centinela. Desaparecer no es una opción en un entregable
        auditable — hoy se pierden 8 de las 11 fallas ocultas de la sesión y
        todas las de seguridad sin decidir.
-6. [ ] Borrador honesto. **No es una edición local: hay que cablear el dato
+6. [x] Borrador honesto. **No es una edición local: hay que cablear el dato
        hasta donde se escribe.** Hoy `draft` sólo llega a `export_xlsx`
        (`excel.py:419`) y se usa para el prefijo del nombre (`:430`);
        `build_workbook(session)` (`excel.py:353`) ni siquiera lo recibe. Y
@@ -355,7 +355,7 @@ pasarán en verde sobre un caso que nunca falla.
        (`excel.py:56-67`), y volcar los bloqueadores en AUDITORIA RCM. Definir
        en la implementación si los bloqueadores se calculan dentro de
        `export_xlsx` o se le pasan ya calculados.
-7. [ ] Congelar el estado de la sesión de UAT como fixture versionado dentro
+7. [x] Congelar el estado de la sesión de UAT como fixture versionado dentro
        del repo (junto a `src/rcm_runbook/data/benchmark_fixture.json`, que es
        el precedente del patrón) y añadir sobre él los tests de los criterios
        1, 3 y 4. A partir de esta tarea la spec se verifica sin acceso a Neon.

@@ -22,7 +22,10 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rcm_runbook.engine.compliance import sigue_necesitando_busqueda_de_fallas
+from rcm_runbook.engine.compliance import (
+    export_blockers,
+    sigue_necesitando_busqueda_de_fallas,
+)
 from rcm_runbook.export.rows import (
     amef_headers,
     amef_rows_with_ids,
@@ -58,7 +61,10 @@ ID_HEADER = "ID"
 DRAFT_STAMP = "BORRADOR — NO APTO PARA EJECUCIÓN"
 
 
-def _write_id_column(ws: Worksheet, ids: list[str], header_row: int) -> None:
+HEADER_ALIGN = Alignment(wrap_text=True, vertical="center", horizontal="center")
+
+
+def _write_id_header(ws: Worksheet, header_row: int) -> None:
     """El `FM-id` en la columna A, que queda fuera del rango del benchmark.
 
     No puede ir como campo del modelo de fila (rompería el contrato verbatim de
@@ -71,12 +77,21 @@ def _write_id_column(ws: Worksheet, ids: list[str], header_row: int) -> None:
     cell.fill = HEADER_FILL
     cell.font = HEADER_FONT
     cell.border = BORDER
-    cell.alignment = Alignment(wrap_text=True, vertical="center", horizontal="center")
+    cell.alignment = HEADER_ALIGN
     ws.column_dimensions["A"].width = 12
-    for r, fmid in enumerate(ids, start=header_row + 1):
-        id_cell = ws.cell(row=r, column=1, value=fmid)
-        id_cell.border = BORDER
-        id_cell.alignment = Alignment(vertical="top")
+
+
+def _write_id_cell(ws: Worksheet, row: int, fmid: str) -> None:
+    """El id se escribe DENTRO del bucle de datos, no en una pasada aparte.
+
+    Dos bucles sobre las mismas filas con la misma aritmética se desincronizan
+    en silencio: bastaría cambiar un `start` para que cada id quedara junto a la
+    fila del modo siguiente, y un entregable que miente sobre qué fila es cuál
+    es peor que uno sin identificadores.
+    """
+    cell = ws.cell(row=row, column=1, value=fmid)
+    cell.border = BORDER
+    cell.alignment = Alignment(vertical="top")
 
 
 def _write_title_block(
@@ -247,7 +262,7 @@ def _write_audit_sheet(
             ws.cell(row=row, column=1, value=fmid)
             ws.cell(
                 row=row, column=2,
-                value=f"guardada: {guardada} — recalculada: {calculada}. "
+                value=f"guardada: {guardada} — contraste: {calculada}. "
                       "No se imprime ninguna en la fila; hay que rehacer la decisión.",
             ).alignment = WRAP
             row += 1
@@ -435,29 +450,29 @@ def build_workbook(
     headers_a = amef_headers()
     _write_headers(amef_ws, headers_a, AMEF_HEADER_ROW)
     amef_pairs = amef_rows_with_ids(session)
-    amef_rows = [row for _, row in amef_pairs]
-    _write_id_column(amef_ws, [fmid for fmid, _ in amef_pairs], AMEF_HEADER_ROW)
-    for r, row_model in enumerate(amef_rows, start=AMEF_HEADER_ROW + 1):
+    _write_id_header(amef_ws, AMEF_HEADER_ROW)
+    for r, (fmid, row_model) in enumerate(amef_pairs, start=AMEF_HEADER_ROW + 1):
+        _write_id_cell(amef_ws, r, fmid)
         for c, value in enumerate(row_model.model_dump(by_alias=True).values(), start=2):
             cell = amef_ws.cell(row=r, column=c, value=value)
             cell.border = BORDER
             cell.alignment = WRAP
     _add_validation(amef_ws, headers_a, AMEF_HEADER_ROW, ranges, AMEF_COLUMN_VOCAB,
-                    AMEF_HEADER_ROW + len(amef_rows))
+                    AMEF_HEADER_ROW + len(amef_pairs))
 
     _write_title_block(plan_ws, session, "PLAN DE MANTENIMIENTO", draft=draft)
     headers_p = plan_headers()
     _write_headers(plan_ws, headers_p, PLAN_HEADER_ROW)
     plan_pairs = plan_rows_with_ids(session)
-    plan_rows = [row for _, row in plan_pairs]
-    _write_id_column(plan_ws, [fmid for fmid, _ in plan_pairs], PLAN_HEADER_ROW)
-    for r, plan_model in enumerate(plan_rows, start=PLAN_HEADER_ROW + 1):
+    _write_id_header(plan_ws, PLAN_HEADER_ROW)
+    for r, (fmid, plan_model) in enumerate(plan_pairs, start=PLAN_HEADER_ROW + 1):
+        _write_id_cell(plan_ws, r, fmid)
         for c, value in enumerate(plan_model.model_dump(by_alias=True).values(), start=2):
             cell = plan_ws.cell(row=r, column=c, value=value)
             cell.border = BORDER
             cell.alignment = WRAP
     _add_validation(plan_ws, headers_p, PLAN_HEADER_ROW, ranges, PLAN_COLUMN_VOCAB,
-                    PLAN_HEADER_ROW + len(plan_rows))
+                    PLAN_HEADER_ROW + len(plan_pairs))
 
     # TPEF / frequency-of-failure block on PLAN title area (benchmark layout).
     # Bounded strictly above the header row — the full table lives in AUDITORIA RCM.
@@ -517,8 +532,6 @@ def export_xlsx(
     prefix = "BORRADOR_AMEF" if draft else "AMEF"
     path = out_dir / f"{prefix}_{tag}.xlsx"
     if draft and blockers is None:
-        from rcm_runbook.engine.compliance import export_blockers
-
         blockers = export_blockers(session)
     build_workbook(session, draft=draft, blockers=blockers).save(path)
     return path

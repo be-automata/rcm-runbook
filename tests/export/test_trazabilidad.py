@@ -11,6 +11,7 @@ falla.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -26,9 +27,11 @@ from rcm_runbook.export.excel import (
     export_xlsx,
 )
 from rcm_runbook.export.rows import (
+    RUTA_INCONSISTENTE,
     SIN_DECISION,
     amef_rows_with_ids,
     plan_rows_with_ids,
+    rutas_inconsistentes,
 )
 from rcm_runbook.models.catalogs import MaintenancePolicy
 from rcm_runbook.models.session import RCMSession
@@ -99,15 +102,20 @@ class TestCriterio3SinCeldasMudas:
     def test_el_centinela_va_en_la_columna_de_la_visibilidad(self, sesion):
         """Oculta -> AEFG, evidente -> ABCD. Nunca en ambas: la fila sigue
         comunicando lo que el análisis sí determinó."""
+        vistos = 0
         for fmid, fila in amef_rows_with_ids(sesion):
             if SIN_DECISION not in (fila.evidente, fila.oculta):
                 continue
+            vistos += 1
             efecto = sesion.effects.get(fmid)
             assert efecto is not None
             if efecto.is_hidden:
                 assert fila.oculta == SIN_DECISION and fila.evidente == ""
             else:
                 assert fila.evidente == SIN_DECISION and fila.oculta == ""
+        # Sin esta precondición el test pasa en vacío si el fixture cambiara y
+        # todos los modos llegaran a tener decisión.
+        assert vistos > 0, "el fixture ya no ejercita el centinela"
 
     def test_toda_letra_impresa_es_reproducible(self, sesion):
         """La ruta se recalcula con `derive_route`: una letra que no se puede
@@ -115,14 +123,17 @@ class TestCriterio3SinCeldasMudas:
         DecisionResult» porque la procedencia no se puede demostrar leyendo el
         libro, y `DecisionResult` no valida coherencia."""
         letras = set("ABCDEFG")
+        vistos = 0
         for fmid, fila in amef_rows_with_ids(sesion):
             impresa = {fila.evidente, fila.oculta} & letras
             if not impresa:
                 continue
+            vistos += 1
             decision = sesion.decisions[fmid]
             efecto = sesion.effects[fmid]
             calc_e, calc_o = derive_route(efecto, MaintenancePolicy(decision.policy))
             assert (fila.evidente, fila.oculta) == (calc_e or "", calc_o or "")
+        assert vistos > 0, "el fixture ya no tiene ninguna letra que contrastar"
 
     def test_una_ruta_incoherente_no_se_imprime(self, sesion):
         """Un estado histórico con una ruta imposible no llega al papel."""
@@ -136,13 +147,39 @@ class TestCriterio3SinCeldasMudas:
             update={"evident_route": "D" if corrupta.decisions[fmid].evident_route != "D" else "C"}
         )
         fila = dict(amef_rows_with_ids(corrupta))[fmid]
-        assert fila.evidente not in ("D", "C") or fila.oculta != ""
-        assert "PENDIENTE" in (fila.evidente or fila.oculta)
+        assert RUTA_INCONSISTENTE in (fila.evidente, fila.oculta)
+        assert fmid in {d[0] for d in rutas_inconsistentes(corrupta)}
+
+    def test_decision_sin_ninguna_ruta_tambien_lleva_centinela(self, sesion):
+        """El criterio 3 exige cubrir los dos casos, no sólo «sin decisión»:
+        `DecisionResult` deja ambas rutas opcionales, así que un estado
+        histórico puede traer decisión y ninguna letra."""
+        muda = sesion.model_copy(deep=True)
+        fmid = next(f for f, d in muda.decisions.items() if d.evident_route or d.hidden_route)
+        muda.decisions[fmid] = muda.decisions[fmid].model_copy(
+            update={"evident_route": None, "hidden_route": None}
+        )
+        fila = dict(amef_rows_with_ids(muda))[fmid]
+        assert SIN_DECISION in (fila.evidente, fila.oculta)
+
+    def test_ruta_sin_efecto_no_se_imprime(self, sesion):
+        """Sin efecto no hay con qué recalcular: la letra no es reproducible."""
+        sin_efecto = sesion.model_copy(deep=True)
+        fmid = next(
+            f for f, d in sin_efecto.decisions.items()
+            if (d.evident_route or d.hidden_route) and sin_efecto.failure_modes[f].credible
+        )
+        del sin_efecto.effects[fmid]
+        fila = dict(amef_rows_with_ids(sin_efecto))[fmid]
+        assert RUTA_INCONSISTENTE in (fila.evidente, fila.oculta)
+        assert fmid in {d[0] for d in rutas_inconsistentes(sin_efecto)}
 
 
 class TestCriterio4SinDesaparicionesSilenciosas:
     def test_todo_modo_creible_sin_decision_aparece_en_el_plan(self, sesion):
         creibles = {f for f, fm in sesion.failure_modes.items() if fm.credible}
+        sin_decision = {f for f in creibles if f not in sesion.decisions}
+        assert sin_decision, "el fixture ya no tiene modos sin decisión que proteger"
         en_plan = {fmid for fmid, _ in plan_rows_with_ids(sesion)}
         assert creibles - en_plan == set()
 
@@ -167,8 +204,6 @@ class TestCriterio5BorradorHonesto:
         ids_en_hoja = {
             str(c.value) for c in ws["A"] if c.value and str(c.value).startswith("FM-")
         }
-        import re
-
         ids_con_defecto = {
             m.group(1)
             for b in export_blockers(sesion)

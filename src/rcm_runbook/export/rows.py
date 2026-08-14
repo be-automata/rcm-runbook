@@ -98,17 +98,22 @@ def _effect_text(session: RCMSession, fmid: str) -> str:
     return f"{effect.local}. {effect.system}. {effect.plant}."
 
 
-def _centinela(effect: Effect | None, texto: str) -> tuple[str, str]:
-    """El centinela va en la columna que marca la visibilidad, nunca en las dos.
+def _contraste(
+    effect: Effect | None, decision: DecisionResult | None
+) -> tuple[tuple[str, str], tuple[str, str]] | None:
+    """(ruta guardada, ruta recalculada), o `None` si no hay nada que contrastar.
 
-    La visibilidad SÍ se conoce sin decisión (`effect.is_hidden`), así que la
-    fila sigue diciendo lo que el análisis determinó —la falla es oculta— y sólo
-    declara pendiente lo que falta, que es la letra de ruta. Ponerlo en ambas
-    columnas borraría esa distinción.
+    Único sitio del módulo que invoca `derive_route`. Lo comparten la
+    proyección de las celdas y el registro de auditoría, que antes repetían la
+    misma comparación y ya habían divergido en el caso `effect is None`.
     """
-    if effect is not None and effect.is_hidden:
-        return "", texto
-    return texto, ""
+    if decision is None or effect is None:
+        return None
+    guardada = (decision.evident_route or "", decision.hidden_route or "")
+    if guardada == ("", ""):
+        return None
+    calc_e, calc_o = derive_route(effect, MaintenancePolicy(decision.policy))
+    return guardada, (calc_e or "", calc_o or "")
 
 
 def _rutas(effect: Effect | None, decision: DecisionResult | None) -> tuple[str, str]:
@@ -120,40 +125,55 @@ def _rutas(effect: Effect | None, decision: DecisionResult | None) -> tuple[str,
     `DecisionResult`. Una ruta guardada en el efecto es un dato sin procedencia
     auditable.
 
-    Y la letra guardada se contrasta contra `derive_route` antes de imprimirla:
+    La letra guardada se contrasta contra `derive_route` antes de imprimirla:
     `DecisionResult` no valida coherencia con la visibilidad ni con la política,
     así que un estado histórico puede traer una «B» donde la lógica da «A». Ante
     el desacuerdo no se imprime ninguna de las dos —reescribir en silencio
     ocultaría que el estado está corrupto— y el caso se registra en AUDITORIA.
+    Sin `Effect` tampoco se imprime: la regla es «toda letra impresa se puede
+    reproducir», no «toda letra que no pude refutar se imprime».
+
+    El centinela va en la columna que marca la visibilidad, nunca en las dos: la
+    fila sigue diciendo lo que el análisis sí determinó —la falla es oculta— y
+    declara pendiente sólo lo que falta, que es la letra.
     """
-    if decision is None:
-        return _centinela(effect, SIN_DECISION)
-    guardada = (decision.evident_route or "", decision.hidden_route or "")
-    if guardada == ("", ""):
-        return _centinela(effect, SIN_DECISION)
-    if effect is None:
-        return guardada
-    calc_e, calc_o = derive_route(effect, MaintenancePolicy(decision.policy))
-    if (calc_e or "", calc_o or "") != guardada:
-        return _centinela(effect, RUTA_INCONSISTENTE)
-    return guardada
+    guardada = (
+        (decision.evident_route or "", decision.hidden_route or "")
+        if decision is not None else ("", "")
+    )
+    contraste = _contraste(effect, decision)
+    if contraste is not None and contraste[0] == contraste[1]:
+        return contraste[0]  # la única salida que imprime letras
+    # Hay ruta guardada pero no se pudo reproducir: o discrepa del recálculo, o
+    # falta el efecto contra el cual recalcularla. Las dos son estado corrupto.
+    pendiente = RUTA_INCONSISTENTE if guardada != ("", "") else SIN_DECISION
+    return ("", pendiente) if (effect is not None and effect.is_hidden) else (pendiente, "")
 
 
 def rutas_inconsistentes(session: RCMSession) -> list[tuple[str, str, str]]:
-    """(modo, ruta guardada, ruta recalculada) para el registro de auditoría."""
+    """(modo, ruta guardada, ruta contrastada) para el registro de auditoría.
+
+    Sólo modos creíbles: los demás no tienen fila en ninguna hoja, y el renglón
+    de auditoría habla de «la fila» donde no se imprime la ruta.
+    """
     desacuerdos: list[tuple[str, str, str]] = []
     for fmid, decision in session.decisions.items():
+        fm = session.failure_modes.get(fmid)
+        if fm is None or not fm.credible:
+            continue
         effect = session.effects.get(fmid)
+        guardada_cruda = (decision.evident_route or "", decision.hidden_route or "")
+        if guardada_cruda == ("", ""):
+            continue
+        guardada = "/".join(x for x in guardada_cruda if x)
         if effect is None:
+            desacuerdos.append((fmid, guardada, "sin efecto registrado"))
             continue
-        guardada = (decision.evident_route or "", decision.hidden_route or "")
-        if guardada == ("", ""):
-            continue
-        calc_e, calc_o = derive_route(effect, MaintenancePolicy(decision.policy))
-        calculada = (calc_e or "", calc_o or "")
-        if calculada != guardada:
+        contraste = _contraste(effect, decision)
+        assert contraste is not None
+        if contraste[0] != contraste[1]:
             desacuerdos.append(
-                (fmid, "/".join(x for x in guardada if x), "/".join(x for x in calculada if x))
+                (fmid, guardada, "/".join(x for x in contraste[1] if x))
             )
     return desacuerdos
 
