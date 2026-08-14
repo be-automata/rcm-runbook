@@ -492,17 +492,22 @@ def build_workbook(
         (fmid, fm) for fmid, fm in session.failure_modes.items()
         if fm.tpef is not None and fm.credible
     ]
-    for fmid, fm in tpef_modes:
-        if r > max_tpef_row:
-            plan_ws.cell(row=max_tpef_row, column=14,
-                         value="… ver hoja AUDITORIA RCM (tabla TPEF completa)")
-            break
+    # Si no entran todos, la ÚLTIMA fila se reserva para el aviso. Antes se
+    # escribía encima de una fila ya poblada: pisaba su FM- y dejaba sus horas,
+    # años y fuente sin el modo al que pertenecen — datos huérfanos que se leen
+    # como si fueran del propio renglón «ver AUDITORIA».
+    caben = max_tpef_row - r + 1
+    visibles = tpef_modes[: caben - 1] if len(tpef_modes) > caben else tpef_modes
+    for fmid, fm in visibles:
         assert fm.tpef is not None
         plan_ws.cell(row=r, column=14, value=fmid)
         plan_ws.cell(row=r, column=15, value=f"{fm.tpef.value_hours:.0f} h")
         plan_ws.cell(row=r, column=16, value=f"{fm.tpef.value_years:.2f} años")
         plan_ws.cell(row=r, column=17, value=fm.tpef.fuente)
         r += 1
+    if len(visibles) < len(tpef_modes):
+        plan_ws.cell(row=max_tpef_row, column=14,
+                     value="… ver hoja AUDITORIA RCM (tabla TPEF completa)")
 
     _write_sae_sheet(wb)
     _write_audit_sheet(wb, session, blockers=blockers)

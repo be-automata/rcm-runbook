@@ -390,63 +390,15 @@ pasarán en verde sobre un caso que nunca falla.
   Si se decide resolverlo en la interfaz de descarga, sale del alcance de esta
   spec.
 
-## Anexo — los 20 duplicados con sucesor
+## Los duplicados: dónde viven ahora
 
-Se registran acá para que no se pierdan: esta spec **no** los usa (el
-exportador no oculta nada), pero son el insumo de la spec de migración de
-datos. Pares `viejo → sucesor`, con el criterio con que se establecieron.
+El listado de los 20 pares `viejo → sucesor`, los 8 huérfanos sin reemplazo y
+la advertencia de que en cuatro pares el sucesor **degrada** el código ISO
+respecto del original se movieron a
+[`supersesion-de-modos-de-falla.md`](supersesion-de-modos-de-falla.md), que es
+la spec que los consume. Estaban acá como depósito temporal, mientras esa spec
+no existía; mantener dos copias sólo garantiza que diverjan.
 
-Descripción normalizada idéntica (verificado mecánicamente, alta confianza):
-FM-001→FM-035, FM-002→FM-036, FM-003→FM-052, FM-004→FM-043, FM-007→FM-056,
-FM-008→FM-058, FM-017→FM-041, FM-022→FM-060, FM-023→FM-040, FM-027→FM-047,
-FM-030→FM-042, FM-032→FM-044.
-
-Descripción muy próxima (similitud ≥ 0.85, revisado a mano): FM-009→FM-053,
-FM-011→FM-055, FM-016→FM-057, FM-018→FM-039, FM-028→FM-048, FM-029→FM-038.
-
-Sólo semántico, **no** detectable por texto (similitud 0.56): FM-010→FM-046
-("Desgaste del sello mecánico" → "Fuga por sello mecánico / empaquetadura").
-
-Sucesor ambiguo, **requiere decisión humana**: FM-024 → alguno de FM-051 /
-FM-054 / FM-059.
-
-Advertencia para quien escriba la spec de migración: el sucesor **no siempre
-es mejor**. Al menos cuatro pares degradaron el código ISO 14224 respecto del
-original (FM-004 `ERO`→`HIO`, FM-017 `LOO`→`STP`, FM-024 `PDE`→`NOI`,
-FM-022 cambió a una falla funcional peor). Una regla "conservar el ID mayor"
-es sistemáticamente perjudicial en esos casos.
-
-Los 8 huérfanos sin sucesor están listados en Pre-requisitos.
-
-## Estado de verificación (ronda 47)
-
-- `spec-verifier`: CUMPLE PARCIAL en la primera pasada. Encontró que `_rutas`
-  imprimía la letra sin contrastarla cuando el modo no tenía `Effect`, y que
-  faltaba el test del caso «decisión sin ninguna ruta». Ambos corregidos.
-- `production-validator`: LISTO CON RESERVAS. Verificó los cinco criterios
-  nuevos a mano sobre la sesión real, el endpoint `/exports` con `TestClient`,
-  y descartó regresiones en anchos, `freeze_panes`, bloque TPEF y LOOKUPS.
-  Encontró un defecto vivo —el renglón de auditoría decía
-  «guardada: A — contraste: A» al aplanar la tupla de rutas— corregido con
-  `_etiqueta_ruta`. Los casos de UAT de `docs/` quedaron actualizados.
-- Revisión cruzada de la spec con un revisor externo (codex): 4 ciclos,
-  3 HIGH resueltos, salida `SIN HIGH`.
-
-### Reservas abiertas, deliberadamente fuera de esta spec
-
-- **Abrir el libro en Excel o LibreOffice real.** Ninguno de los dos existe en
-  la máquina de desarrollo; la validación fue estructural (OOXML bien formado,
-  round-trip con openpyxl, validaciones de datos conservadas). Es el criterio
-  de ojo humano y sigue pendiente.
-- **La revisión caso por caso de los UAT viejos fue dirigida, no exhaustiva.**
-  Se buscaron los patrones que este cambio podía romper (conteos de filas,
-  celdas vacías, texto de «Falla Funcional», posiciones de columna) y no
-  apareció ninguno obsoleto. No darla por cerrada.
-- **CI llevaba roto desde el 02-ago-2026** por una causa ajena a esta feature:
-  `settings` es un singleton de módulo y `tests/evals/stakeholder_sim.py`
-  importa `config` durante la colección, antes de que `tests/unit/conftest.py`
-  ponga la llave. Acá se resolvió poniéndola en el entorno del job. El arreglo
-  de fondo —mover ese bloque a un `tests/conftest.py` raíz, que se carga antes
-  que cualquier subcarpeta— queda pendiente y no pertenece a esta spec.
-- **Tres tests marcados `eval` no los corre nadie**, y uno de ellos cubre
-  justamente la compuerta borrador/definitivo que esta feature toca.
+Lo que esta spec decidió sobre ellos no cambia: **el exportador no oculta ni
+descarta nada**. Se muestran, con su centinela, y la corrección es un problema
+de datos y de modelo.
