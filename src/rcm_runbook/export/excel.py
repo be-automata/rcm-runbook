@@ -245,8 +245,12 @@ def _write_audit_sheet(
         )
         row += 1
         for blocker in blockers:
-            marca = re.search(r"\b(FM-\d+|FF-\d+)\b", blocker)
-            ws.cell(row=row, column=1, value=marca.group(1) if marca else "")
+            # `findall` y no `search`: un bloqueador que relacione dos modos
+            # —los duplicados, por ejemplo— dejaría a uno de los dos sin forma
+            # de localizarlo. Hoy ninguno de los 121 trae más de un id, así que
+            # con `search` acertaba por el orden de las palabras, no por diseño.
+            marcas = dict.fromkeys(re.findall(r"\b(?:FM|FF)-\d+", blocker))
+            ws.cell(row=row, column=1, value="; ".join(marcas))
             # La prosa va a la columna C, que es la ancha de esta hoja (70) y la
             # que usan las demás secciones. En la B (14) los 121 bloqueadores de
             # ~95 caracteres salían ilegibles.

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from rcm_runbook.engine.decision_logic import derive_route
 from rcm_runbook.models.catalogs import (
     POLICY_PLAN_COLUMN,
+    ConsequenceClass,
     MaintenancePolicy,
 )
 from rcm_runbook.models.domain import DecisionResult, Effect, MaintenanceTask
@@ -28,6 +29,10 @@ X = "X"  # benchmark marks consequence/strategy flags with X
 # ser «D» afirma en el entregable que el equipo descartó operar-hasta-la-falla.
 SIN_DECISION = "PENDIENTE — sin decisión RCM"
 RUTA_INCONSISTENTE = "PENDIENTE — ruta no reproducible"
+# Distinto de SIN_DECISION: acá la decisión existe —la fila muestra su política,
+# su tarea y su ejecutor— y lo que falta es la ruta. Decir «sin decisión RCM» en
+# esa fila se contradice con sus propias columnas.
+DECISION_SIN_RUTA = "PENDIENTE — decisión sin ruta registrada"
 
 
 class AMEFRow(BaseModel):
@@ -98,6 +103,25 @@ def _effect_text(session: RCMSession, fmid: str) -> str:
     return f"{effect.local}. {effect.system}. {effect.plant}."
 
 
+def _es_oculta(effect: Effect | None, decision: DecisionResult | None) -> bool:
+    """En qué columna cae el centinela: la que marca la visibilidad.
+
+    `effect.is_hidden` es la fuente primaria. Sin `Effect` la visibilidad **no
+    se pierde**: `DecisionResult.consequence_class` es obligatorio
+    (`domain.py:226`) y `hidden_route` sólo se llena para fallas ocultas. Caer
+    al `else` sin mirarlos hacía que el libro clasificara como *evidente* una
+    falla que la propia decisión guardada declara *oculta*.
+    """
+    if effect is not None:
+        return effect.is_hidden
+    if decision is None:
+        return False
+    return (
+        decision.consequence_class == ConsequenceClass.OCULTA
+        or decision.hidden_route is not None
+    )
+
+
 def _contraste(
     effect: Effect | None, decision: DecisionResult | None
 ) -> tuple[tuple[str, str], tuple[str, str]] | None:
@@ -144,10 +168,15 @@ def _rutas(effect: Effect | None, decision: DecisionResult | None) -> tuple[str,
     contraste = _contraste(effect, decision)
     if contraste is not None and contraste[0] == contraste[1]:
         return contraste[0]  # la única salida que imprime letras
-    # Hay ruta guardada pero no se pudo reproducir: o discrepa del recálculo, o
-    # falta el efecto contra el cual recalcularla. Las dos son estado corrupto.
-    pendiente = RUTA_INCONSISTENTE if guardada != ("", "") else SIN_DECISION
-    return ("", pendiente) if (effect is not None and effect.is_hidden) else (pendiente, "")
+    if guardada != ("", ""):
+        # Hay ruta guardada y no se pudo reproducir: o discrepa del recálculo, o
+        # falta el efecto contra el cual recalcularla. Las dos son estado corrupto.
+        pendiente = RUTA_INCONSISTENTE
+    elif decision is not None:
+        pendiente = DECISION_SIN_RUTA
+    else:
+        pendiente = SIN_DECISION
+    return ("", pendiente) if _es_oculta(effect, decision) else (pendiente, "")
 
 
 def _etiqueta_ruta(par: tuple[str, str]) -> str:
@@ -180,6 +209,11 @@ def rutas_inconsistentes(session: RCMSession) -> list[tuple[str, str, str]]:
         effect = session.effects.get(fmid)
         guardada_cruda = (decision.evident_route or "", decision.hidden_route or "")
         if guardada_cruda == ("", ""):
+            # Una decisión que perdió su ruta también es estado corrupto, y
+            # antes se iba por este `continue` sin dejar rastro en ninguna hoja
+            # — el mismo defecto que esta feature vino a arreglar, un piso más
+            # abajo.
+            desacuerdos.append((fmid, "sin ruta", "la decisión existe pero no registró ruta"))
             continue
         guardada = _etiqueta_ruta(guardada_cruda)
         if effect is None:
