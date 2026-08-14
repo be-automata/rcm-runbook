@@ -247,7 +247,10 @@ def _write_audit_sheet(
         for blocker in blockers:
             marca = re.search(r"\b(FM-\d+|FF-\d+)\b", blocker)
             ws.cell(row=row, column=1, value=marca.group(1) if marca else "")
-            ws.cell(row=row, column=2, value=blocker).alignment = WRAP
+            # La prosa va a la columna C, que es la ancha de esta hoja (70) y la
+            # que usan las demás secciones. En la B (14) los 121 bloqueadores de
+            # ~95 caracteres salían ilegibles.
+            ws.cell(row=row, column=3, value=blocker).alignment = WRAP
             row += 1
         row += 1
 
@@ -261,7 +264,7 @@ def _write_audit_sheet(
         for fmid, guardada, calculada in desacuerdos:
             ws.cell(row=row, column=1, value=fmid)
             ws.cell(
-                row=row, column=2,
+                row=row, column=3,
                 value=f"guardada: {guardada} — contraste: {calculada}. "
                       "No se imprime ninguna en la fila; hay que rehacer la decisión.",
             ).alignment = WRAP

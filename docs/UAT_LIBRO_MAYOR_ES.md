@@ -98,6 +98,9 @@ está en `UAT_SCRIPT_ES.md`.
 | 15 | El definitivo no se sirve sin análisis completo | ronda 37 | `AMEF_P200.xlsx` **con llave** → 404 «Entregable no encontrado», mientras el borrador → 200 |
 | 16 | Corre fuera de la Mac | rondas 37 y 41 | `server: cloudflare`, `cf-ray`, HTTP/2, y el túnel local apagado. *Inferencia de arquitectura: no se apagó la Mac* |
 | 18 | Lo incompleto se entrega marcado | ronda 37 | `filename="BORRADOR_…"`; sin TAG, 404 en español |
+| 18b | Lo incompleto se entrega marcado **dentro** del libro | ronda 47 | El prefijo del nombre no viaja con una captura de pantalla ni con una fila pegada en un correo: sello en la fila 2 de AMEF y PLAN, y los bloqueadores en AUDITORIA con su `FM-` en celda propia |
+| 18c | Cada fila se puede cruzar con la conversación | ronda 47 | `FM-` en la columna A de AMEF y PLAN, `FF-` dentro de la celda «Falla Funcional». Antes el agente citaba los códigos y el Excel no traía ninguno |
+| 18d | Ninguna fila queda sin clasificar en silencio | ronda 47 | 0 filas con ABCD y AEFG vacías a la vez; centinela `PENDIENTE` en la columna que marca la visibilidad. Antes: 28 de 60 mudas |
 | 19 | La llave no viaja en la URL | ronda 37 | `/demo` sin llave devuelve el HTML del repo byte a byte; el botón pide `/exports/<id>` sin `key=` |
 | 28 | Arranque en frío con página de espera | ronda 37 | *Parcial:* `test`. No se forzó un arranque en frío del contenedor del cliente |
 | 31 | No hay salto de directorio | rondas 37 y 41 | `%2e%2e%2f…passwd` → 400; variantes con llave → 404 |

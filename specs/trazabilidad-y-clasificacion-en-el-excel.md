@@ -359,13 +359,13 @@ pasarán en verde sobre un caso que nunca falla.
        del repo (junto a `src/rcm_runbook/data/benchmark_fixture.json`, que es
        el precedente del patrón) y añadir sobre él los tests de los criterios
        1, 3 y 4. A partir de esta tarea la spec se verifica sin acceso a Neon.
-8. [ ] Verificar la implementación contra esta spec con el agente
+8. [x] Verificar la implementación contra esta spec con el agente
        `spec-verifier` (`.claude/agents/spec-verifier.md`) **antes del PR**. Lo
        exige `.claude/rules/specs.md:22` para toda feature con spec, y es una
        comprobación distinta de la de la tarea 9: `spec-verifier` contrasta el
        código contra los criterios de este documento; `production-validator`
        ejecuta los casos de prueba.
-9. [ ] Verificación con `production-validator`
+9. [x] Verificación con `production-validator`
        (`~/.claude/agents/testing/production-validator.md`) en local y en el
        entorno desplegado, regenerando el libro de la sesión de UAT y
        comprobando los siete criterios. El despliegue es Cloudflare Containers
@@ -417,3 +417,36 @@ FM-022 cambió a una falla funcional peor). Una regla "conservar el ID mayor"
 es sistemáticamente perjudicial en esos casos.
 
 Los 8 huérfanos sin sucesor están listados en Pre-requisitos.
+
+## Estado de verificación (ronda 47)
+
+- `spec-verifier`: CUMPLE PARCIAL en la primera pasada. Encontró que `_rutas`
+  imprimía la letra sin contrastarla cuando el modo no tenía `Effect`, y que
+  faltaba el test del caso «decisión sin ninguna ruta». Ambos corregidos.
+- `production-validator`: LISTO CON RESERVAS. Verificó los cinco criterios
+  nuevos a mano sobre la sesión real, el endpoint `/exports` con `TestClient`,
+  y descartó regresiones en anchos, `freeze_panes`, bloque TPEF y LOOKUPS.
+  Encontró un defecto vivo —el renglón de auditoría decía
+  «guardada: A — contraste: A» al aplanar la tupla de rutas— corregido con
+  `_etiqueta_ruta`. Los casos de UAT de `docs/` quedaron actualizados.
+- Revisión cruzada de la spec con un revisor externo (codex): 4 ciclos,
+  3 HIGH resueltos, salida `SIN HIGH`.
+
+### Reservas abiertas, deliberadamente fuera de esta spec
+
+- **Abrir el libro en Excel o LibreOffice real.** Ninguno de los dos existe en
+  la máquina de desarrollo; la validación fue estructural (OOXML bien formado,
+  round-trip con openpyxl, validaciones de datos conservadas). Es el criterio
+  de ojo humano y sigue pendiente.
+- **La revisión caso por caso de los UAT viejos fue dirigida, no exhaustiva.**
+  Se buscaron los patrones que este cambio podía romper (conteos de filas,
+  celdas vacías, texto de «Falla Funcional», posiciones de columna) y no
+  apareció ninguno obsoleto. No darla por cerrada.
+- **CI llevaba roto desde el 02-ago-2026** por una causa ajena a esta feature:
+  `settings` es un singleton de módulo y `tests/evals/stakeholder_sim.py`
+  importa `config` durante la colección, antes de que `tests/unit/conftest.py`
+  ponga la llave. Acá se resolvió poniéndola en el entorno del job. El arreglo
+  de fondo —mover ese bloque a un `tests/conftest.py` raíz, que se carga antes
+  que cualquier subcarpeta— queda pendiente y no pertenece a esta spec.
+- **Tres tests marcados `eval` no los corre nadie**, y uno de ellos cubre
+  justamente la compuerta borrador/definitivo que esta feature toca.

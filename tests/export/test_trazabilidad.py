@@ -150,6 +150,24 @@ class TestCriterio3SinCeldasMudas:
         assert RUTA_INCONSISTENTE in (fila.evidente, fila.oculta)
         assert fmid in {d[0] for d in rutas_inconsistentes(corrupta)}
 
+    def test_el_renglon_de_auditoria_distingue_evidente_de_oculta(self, sesion):
+        """Una ruta evidente A y una oculta A son distintas y se ven iguales si
+        se aplana la tupla: el renglón decía «guardada: A — contraste: A», o sea
+        afirmaba una discrepancia mostrando dos veces el mismo valor."""
+        girada = sesion.model_copy(deep=True)
+        fmid = next(
+            f for f, d in girada.decisions.items()
+            if d.evident_route == "A" and girada.effects.get(f)
+        )
+        girada.effects[fmid] = girada.effects[fmid].model_copy(
+            update={"is_hidden": True, "evident_route": None}
+        )
+        (_, guardada, contraste), = [
+            d for d in rutas_inconsistentes(girada) if d[0] == fmid
+        ]
+        assert guardada != contraste
+        assert guardada == "evidente:A" and contraste == "oculta:A"
+
     def test_decision_sin_ninguna_ruta_tambien_lleva_centinela(self, sesion):
         """El criterio 3 exige cubrir los dos casos, no sólo «sin decisión»:
         `DecisionResult` deja ambas rutas opcionales, así que un estado

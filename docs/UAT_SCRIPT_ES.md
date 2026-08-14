@@ -170,6 +170,16 @@ Abra en Excel, lado a lado, el archivo exportado y el benchmark del cliente:
 
 - [ ] Existen las hojas **AMEF**, **PLAN DE MANTENIMIENTO**, **SAE-J1739** y
   **AUDITORIA RCM**, con los mismos encabezados y filas de título que el benchmark.
+  **La columna A es nuestra y el benchmark no la tiene**: lleva el identificador
+  del modo (`FM-001`) para poder cruzar cada fila con la conversación. No es una
+  discrepancia con el benchmark — sus encabezados siguen empezando en la
+  columna B, sin moverse.
+- [ ] Todas las filas de datos de AMEF y de PLAN llevan su `FM-` en la columna A,
+  y la celda «Falla Funcional» de AMEF empieza por su código `FF-`.
+- [ ] Ninguna fila tiene vacías a la vez «Falla Evidente (ABCD)» y «Falla Oculta
+  (AEFG)». Donde el análisis todavía no decidió, dice `PENDIENTE`; y ese
+  `PENDIENTE` aparece en la columna que corresponde a si la falla es evidente u
+  oculta, no en las dos.
 - [ ] La fila del presostato muestra falla oculta, ruta oculta y política **BF**,
   con el aprobador humano visible en la auditoría.
 - [ ] El modo descartado (si registró alguno no creíble) aparece en la auditoría
@@ -299,6 +309,8 @@ done
 | 16 | El servicio responde con la Mac del desarrollador apagada | ☐ |
 | 17 | El botón «Descargar Excel» entrega el entregable sin pasar por el facilitador | ☐ |
 | 18 | Todo análisis incompleto baja como `BORRADOR_` y se avisa en pantalla | ☐ |
+| 18b | Renombrando el archivo, el borrador **sigue** distinguiéndose: sello `BORRADOR — NO APTO PARA EJECUCIÓN` en la fila 2 de AMEF y de PLAN, y los defectos listados en AUDITORIA RCM con su `FM-` al lado | ☐ |
+| 18c | Cada `FM-` citado en la conversación se localiza en el Excel por la columna A, sin leer descripciones | ☐ |
 | 19 | La llave no aparece en la URL de descarga del botón | ☐ |
 | 20 | Las respuestas del agente se leen formateadas, sin asteriscos en pantalla | ☐ |
 | 21 | Lo que escribe el cliente sigue siendo texto plano | ☐ |

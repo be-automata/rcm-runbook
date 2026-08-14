@@ -150,6 +150,22 @@ def _rutas(effect: Effect | None, decision: DecisionResult | None) -> tuple[str,
     return ("", pendiente) if (effect is not None and effect.is_hidden) else (pendiente, "")
 
 
+def _etiqueta_ruta(par: tuple[str, str]) -> str:
+    """«evidente:A» / «oculta:A», no «A».
+
+    La posición en la tupla es la mitad del dato: una ruta evidente A y una
+    oculta A son distintas y se ven iguales si se aplana. El renglón de
+    auditoría decía «guardada: A — contraste: A», o sea afirmaba una
+    discrepancia mostrando dos veces el mismo valor.
+    """
+    evidente, oculta = par
+    if evidente:
+        return f"evidente:{evidente}"
+    if oculta:
+        return f"oculta:{oculta}"
+    return "sin ruta"
+
+
 def rutas_inconsistentes(session: RCMSession) -> list[tuple[str, str, str]]:
     """(modo, ruta guardada, ruta contrastada) para el registro de auditoría.
 
@@ -165,16 +181,14 @@ def rutas_inconsistentes(session: RCMSession) -> list[tuple[str, str, str]]:
         guardada_cruda = (decision.evident_route or "", decision.hidden_route or "")
         if guardada_cruda == ("", ""):
             continue
-        guardada = "/".join(x for x in guardada_cruda if x)
+        guardada = _etiqueta_ruta(guardada_cruda)
         if effect is None:
             desacuerdos.append((fmid, guardada, "sin efecto registrado"))
             continue
         contraste = _contraste(effect, decision)
         assert contraste is not None
         if contraste[0] != contraste[1]:
-            desacuerdos.append(
-                (fmid, guardada, "/".join(x for x in contraste[1] if x))
-            )
+            desacuerdos.append((fmid, guardada, _etiqueta_ruta(contraste[1])))
     return desacuerdos
 
 
