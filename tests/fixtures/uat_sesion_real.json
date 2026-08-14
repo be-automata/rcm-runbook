@@ -1,0 +1,4144 @@
+{
+ "kpis": [
+  {
+   "name": "Disponibilidad de P-101A",
+   "target": "95%"
+  },
+  {
+   "name": "Disponibilidad de P-101B (respaldo)",
+   "target": "90%"
+  },
+  {
+   "name": "Confiabilidad del sistema de arranque automático",
+   "target": "95%"
+  },
+  {
+   "name": "Tasa de cumplimiento de tareas programadas",
+   "target": "100%"
+  },
+  {
+   "name": "Costo de mantenimiento correctivo/costo total",
+   "target": "20%"
+  },
+  {
+   "name": "Índice de vibración (máx 5mm/s)",
+   "target": ""
+  },
+  {
+   "name": "Presión de descarga (6 bar nominal)",
+   "target": ""
+  }
+ ],
+ "team": [
+  {
+   "name": "Integrante Técnico especialista",
+   "role": "Técnico especialista de mantenimiento"
+  },
+  {
+   "name": "Integrante Operador del sistema",
+   "role": "Operador del sistema"
+  }
+ ],
+ "phase": 4,
+ "scope": {
+  "tag": "P-101 (P-101A + P-101B)",
+  "location": "Sistema de abastecimiento de agua potable",
+  "objective": "Establecer un plan de mantenimiento centrado en la fiabilidad que maximice la disponibilidad del suministro de agua potable y minimice el riesgo de falla simultánea de ambas bombas.",
+  "boundaries": "Análisis incluye: ambas bombas (motor, impulsor, sello mecánico, rodamientos), tuberías de succión y descarga, válvulas de retención/aislamiento, VFD y sistema de control automático de arranque. Excluye: red de distribución aguas abajo, pretratamiento de agua.",
+  "interfaces": "Entrada: agua potable tratada desde el pretratamiento. Salida: agua a presión y caudal requeridos hacia la red de distribución. Señal de control: sensor de presión de descarga → PLC → VFD y contactor de P-101B.",
+  "equipment_family": "Bomba centrífuga",
+  "normal_conditions": "Operación continua 24 h/día. Fluido: agua potable. Control: variador de frecuencia (VFD) en P-101A. Redundancia 2×100%: una activa, una en reserva.",
+  "operating_context": "Régimen de operación continuo. Carga variable según demanda. Arranque automático de P-101B cuando presión de descarga cae o P-101A se detiene.",
+  "equipment_description": "Sistema de dos bombas centrífugas en paralelo para suministro de agua potable. P-101A en servicio continuo; P-101B en reserva con arranque automático por falla de presión o parada de P-101A."
+ },
+ "tasks": {
+  "FM-014": [
+   {
+    "frequency": "Mensual",
+    "discipline": "Rotativo",
+    "description": "Prueba funcional de bomba de reserva P-101B: arrancar bajo carga durante 30 minutos, verificar presión, caudal y temperatura, luego retornar a standby. Documentar resultado en bitácora.",
+    "duration_hours": 1.5,
+    "failure_mode_id": "FM-014",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": true
+   }
+  ],
+  "FM-015": [
+   {
+    "frequency": "Mensual",
+    "discipline": "Instrumentista",
+    "description": "Prueba funcional del interruptor de bajo caudal: simular condición de bajo caudal (cerrar parcialmente válvula de descarga o desviar caudal), verificar que interruptor dispara alarma visual/sonora, que se detiene el motor de P-101A o se activa protección correspondiente. Documentar resultado en bitácora.",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-015",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": true
+   }
+  ],
+  "FM-035": [
+   {
+    "frequency": "Mensual",
+    "discipline": "Operador",
+    "description": "Inspección y limpieza del filtro de aspiración",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-035",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Semestral",
+    "discipline": "Mecánico",
+    "description": "Sustitución del cartucho del filtro de aspiración",
+    "duration_hours": 2.0,
+    "failure_mode_id": "FM-035",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-036": [
+   {
+    "frequency": "Anual",
+    "discipline": "Mecánico",
+    "description": "Inspección visual del impulsor por desgaste o erosión",
+    "duration_hours": 3.0,
+    "failure_mode_id": "FM-036",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Según sea el caso",
+    "discipline": "Mecánico",
+    "description": "Sustitución del impulsor (si es necesario)",
+    "duration_hours": 8.0,
+    "failure_mode_id": "FM-036",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-037": [
+   {
+    "frequency": "Diario",
+    "discipline": "Operador",
+    "description": "Inspección del nivel de agua en el depósito de aspiración",
+    "duration_hours": 0.25,
+    "failure_mode_id": "FM-037",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Según sea el caso",
+    "discipline": "Operador",
+    "description": "Reposición de agua en el depósito si es necesario",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-037",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-039": [
+   {
+    "frequency": "Diario",
+    "discipline": "Operador",
+    "description": "Monitoreo de presión de descarga y temperatura durante operación",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-039",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Semanal",
+    "discipline": "Operador",
+    "description": "Verificación de caudal con medidor de flujo (si está instalado)",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-039",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-040": [
+   {
+    "frequency": "Anual",
+    "discipline": "Mecánico",
+    "description": "Inspección visual del impulsor por obstrucción",
+    "duration_hours": 3.0,
+    "failure_mode_id": "FM-040",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Según sea el caso",
+    "discipline": "Mecánico",
+    "description": "Limpieza del impulsor si presenta obstrucciones menores",
+    "duration_hours": 3.0,
+    "failure_mode_id": "FM-040",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-041": [
+   {
+    "frequency": "Semestral",
+    "discipline": "Mecánico",
+    "description": "Inspección y prueba de apertura de la válvula de descarga",
+    "duration_hours": 2.0,
+    "failure_mode_id": "FM-041",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Según sea el caso",
+    "discipline": "Mecánico",
+    "description": "Limpieza o sustitución de la válvula de descarga",
+    "duration_hours": 3.0,
+    "failure_mode_id": "FM-041",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-043": [
+   {
+    "frequency": "Semanal",
+    "discipline": "Operador",
+    "description": "Inspección auditiva y visual para detección de cavitación (ruido, vibración)",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-043",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Mensual",
+    "discipline": "Predictivo",
+    "description": "Verificación de NPSH disponible y presión de entrada",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-043",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-044": [
+   {
+    "frequency": "Anual",
+    "discipline": "Mecánico",
+    "description": "Inspección visual y prueba de flujo de la tubería de descarga",
+    "duration_hours": 2.0,
+    "failure_mode_id": "FM-044",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Según sea el caso",
+    "discipline": "Mecánico",
+    "description": "Limpieza de la tubería de descarga o sustitución si está dañada",
+    "duration_hours": 6.0,
+    "failure_mode_id": "FM-044",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-046": [
+   {
+    "frequency": "Mensual",
+    "discipline": "Operador",
+    "description": "Inspección visual del sello mecánico por fugas",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-046",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Bi-Anual",
+    "discipline": "Mecánico",
+    "description": "Sustitución del sello mecánico (mantenimiento preventivo)",
+    "duration_hours": 6.0,
+    "failure_mode_id": "FM-046",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-047": [
+   {
+    "frequency": "Mensual",
+    "discipline": "Electricista",
+    "description": "Prueba funcional del sistema de arranque automático (simulación de falla de presión)",
+    "duration_hours": 2.0,
+    "failure_mode_id": "FM-047",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": true
+   },
+   {
+    "frequency": "Trimestral",
+    "discipline": "Electricista",
+    "description": "Inspección de sensores de presión y conexiones eléctricas del sistema de control",
+    "duration_hours": 1.5,
+    "failure_mode_id": "FM-047",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Catorcenal",
+    "discipline": "Electricista",
+    "description": "Prueba funcional completa del sistema de arranque automático de P-101B",
+    "duration_hours": 2.0,
+    "failure_mode_id": "FM-047",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": true
+   }
+  ],
+  "FM-049": [
+   {
+    "frequency": "Semanal",
+    "discipline": "Operador",
+    "description": "Inspección auditiva para detección de cavitación (monitoreo de ruido)",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-049",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Mensual",
+    "discipline": "Predictivo",
+    "description": "Análisis de vibración para detección temprana de cavitación",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-049",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-051": [
+   {
+    "frequency": "Anual",
+    "discipline": "Mecánico",
+    "description": "Inspección visual de holguras internas (desmontaje e inspección del impulsor)",
+    "duration_hours": 4.0,
+    "failure_mode_id": "FM-051",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Según sea el caso",
+    "discipline": "Mecánico",
+    "description": "Sustitución de la bomba o componentes internos desgastados",
+    "duration_hours": 16.0,
+    "failure_mode_id": "FM-051",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-052": [
+   {
+    "frequency": "Semestral",
+    "discipline": "Mecánico",
+    "description": "Relubricación de rodamientos con grasa de bomba centrífuga",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-052",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-053": [
+   {
+    "frequency": "Trimestral",
+    "discipline": "Predictivo",
+    "description": "Inspección visual de pernos de anclaje y medición de vibración",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-053",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Semestral",
+    "discipline": "Mecánico",
+    "description": "Apriete de pernos de anclaje y verificación de estabilidad de base",
+    "duration_hours": 1.5,
+    "failure_mode_id": "FM-053",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-054": [
+   {
+    "frequency": "Semanal",
+    "discipline": "Operador",
+    "description": "Monitoreo de caudal y presión para detectar holguras internas",
+    "duration_hours": 0.5,
+    "failure_mode_id": "FM-054",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Mensual",
+    "discipline": "Predictivo",
+    "description": "Análisis de ruido y vibración para detección de holguras internas",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-054",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-056": [
+   {
+    "frequency": "Anual",
+    "discipline": "Mecánico",
+    "description": "Inspección visual del impulsor por desgaste o erosión",
+    "duration_hours": 3.0,
+    "failure_mode_id": "FM-056",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Tetra-Anual",
+    "discipline": "Mecánico",
+    "description": "Sustitución del impulsor por desgaste - mantenimiento preventivo",
+    "duration_hours": 8.0,
+    "failure_mode_id": "FM-056",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-058": [
+   {
+    "frequency": "Mensual",
+    "discipline": "Predictivo",
+    "description": "Monitoreo de vibración para detectar desalineación progresiva",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-058",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   },
+   {
+    "frequency": "Anual",
+    "discipline": "Mecánico",
+    "description": "Alineación láser de bomba y motor (mantenimiento preventivo)",
+    "duration_hours": 4.0,
+    "failure_mode_id": "FM-058",
+    "requires_shutdown": true,
+    "es_busqueda_de_fallas": false
+   }
+  ],
+  "FM-059": [
+   {
+    "frequency": "Semestral",
+    "discipline": "Mecánico",
+    "description": "Relubricación de rodamientos del motor",
+    "duration_hours": 1.0,
+    "failure_mode_id": "FM-059",
+    "requires_shutdown": false,
+    "es_busqueda_de_fallas": false
+   }
+  ]
+ },
+ "actions": {
+  "FM-005": [
+   {
+    "who": "Víctor López (Jefe de Mantenimiento) + Especialista en instrumentación",
+    "what": "Instalar sensor de nivel bajo en el depósito de succión + válvula de flotador automática de reposición; configurar alarma en PLC para nivel bajo (p.ej. 30% del volumen nominal)",
+    "when": "Antes de fin de Q2 2026 (plazo: 6 meses máximo)",
+    "resources": "",
+    "verification": "Prueba funcional: simular bajo nivel, verificar que alarma se dispara y válvula de flotador repone agua automáticamente; documentar en bitácora",
+    "failure_mode_id": "FM-005"
+   }
+  ],
+  "FM-014": [
+   {
+    "who": "Técnico Rotativo (Víctor López o designado)",
+    "what": "Ejecutar prueba funcional mensual de P-101B (wet-run test): arrancar bajo carga durante 30 minutos mínimo, verificar ausencia de ruidos, vibraciones, fugas y estabilidad de presión/caudal",
+    "when": "Mensual, según calendario de mantenimiento preventivo",
+    "resources": "",
+    "verification": "Bitácora de operación: registro de fecha, hora inicio/fin, presión entrada, presión salida, caudal, temperatura motor, observaciones. Foto de tablero de control.",
+    "failure_mode_id": "FM-014"
+   }
+  ],
+  "FM-015": [
+   {
+    "who": "Técnico Instrumentista (equipo calificado)",
+    "what": "Ejecutar prueba funcional mensual del interruptor de bajo caudal: simular bajo caudal (cerrar 50% válvula de descarga durante 2-3 minutos), verificar que alarma dispara (visual y sonora) y que sistema de protección responde correctamente (paro de P-101A o activación de P-101B)",
+    "when": "Mensual, coordinado con prueba de P-101B para aprovechar parada",
+    "resources": "",
+    "verification": "Bitácora de prueba: fecha, hora, resultado (PASA/FALLA), número de disparo, tiempo de respuesta, observaciones. Foto de pantalla de alarma.",
+    "failure_mode_id": "FM-015"
+   }
+  ],
+  "FM-035": [
+   {
+    "who": "Electricista (instalación de alarma); Operador (cambio preventivo)",
+    "what": "Instalar alarma de diferencial de presión en filtro; cambio automático de cartucho cuando DP>0.5 bar; programa de sustitución semestral",
+    "when": "Fase 1: Instalación de alarma en 2 semanas; Fase 2: Cambio semestral de cartucho iniciando mes siguiente",
+    "resources": "",
+    "verification": "Funcionamiento de alarma; registro de cambios de cartucho; presión de entrada >0.2 bar; caudal>95% del nominal",
+    "failure_mode_id": "FM-035"
+   }
+  ],
+  "FM-037": [
+   {
+    "who": "Operador (inspección diaria); Técnico de instrumentación (ajuste de alarma)",
+    "what": "Mejorar sistema de indicación de nivel: agregar alarma de nivel bajo; establecer inspección diaria con registro operacional",
+    "when": "Calibración de alarma en 1 semana; inspecciones diarias iniciando de inmediato",
+    "resources": "",
+    "verification": "Alarma activa cuando nivel <50%; registro diario de niveles; ausencia de cavitación por bajo nivel en historial",
+    "failure_mode_id": "FM-037"
+   }
+  ],
+  "FM-039": [
+   {
+    "who": "Técnico Predictivo (instalación); Operador (monitoreo diario)",
+    "what": "Implementar monitoreo continuo de presión y temperatura; configurar límites de alerta (P<5.5 bar, T>65°C); adquirir medidor de flujo si no existe",
+    "when": "Instalación de instrumentos en 3 semanas; monitoreo diario iniciando inmediatamente",
+    "resources": "",
+    "verification": "Datos de presión y temperatura diarios; alarmas funcionando; caudal medido >95% especificación; ausencia de cavitación detectada",
+    "failure_mode_id": "FM-039"
+   }
+  ],
+  "FM-044": [
+   {
+    "who": "Mecánico + Operador (inspección conjunta)",
+    "what": "Implementar inspección visual anual de tubería de descarga con prueba de flujo; documentar historial de obstrucciones detectadas",
+    "when": "Anualmente, previo a temporada de alta demanda; registro en CMMS",
+    "resources": "",
+    "verification": "Acta de inspección firmada; fotografías de tubería; verificación de caudal nominal (120 m³/h); ausencia de restricciones visibles",
+    "failure_mode_id": "FM-044"
+   }
+  ],
+  "FM-047": [
+   {
+    "who": "Electricista especializado + Supervisor de Mantenimiento",
+    "what": "Establecer plan de búsqueda de falla (BF) con prueba funcional mensual del sistema de arranque automático de P-101B mediante simulación de falla de presión",
+    "when": "Inmediatamente; pruebas cada 15 días (Catorcenal)",
+    "resources": "",
+    "verification": "Registro de pruebas funcionales en CMMS; confirmación de activación de P-101B; análisis de logs del PLC; reducción de RPN a <50 en 3 meses",
+    "failure_mode_id": "FM-047"
+   }
+  ]
+ },
+ "effects": {
+  "FM-001": {
+   "local": "Aumento de la caída de presión en la tubería de succión; reducción del NPSH disponible en la entrada del impulsor",
+   "plant": "Falta de suministro de agua potable hacia la red de distribución; presión insuficiente en puntos de consumo; posible interrupción del servicio si ocurre en P-101A y P-101B no arranca a tiempo",
+   "safety": false,
+   "system": "Disminución progresiva del caudal de salida; aumento de la corriente del motor (sobrecarga progresiva); eventual detención de la bomba por pérdida total de caudal",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-001",
+   "non_operational": false
+  },
+  "FM-002": {
+   "local": "Acumulación de sedimentos/depósitos en los canales del impulsor; reducción del área de paso",
+   "plant": "Disminución del suministro de agua hacia la red; presión baja en puntos críticos; si bloqueo es total, pérdida del servicio en P-101A",
+   "safety": false,
+   "system": "Reducción de caudal; aumento de presión local (velocidad mayor); aumento de vibración; potencial cavitación aguas abajo de la obstrucción",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-002",
+   "non_operational": false
+  },
+  "FM-003": {
+   "local": "Aumento progresivo de la fricción en los rodamientos; calor generado eleva la temperatura del alojamiento",
+   "plant": "Parada de la bomba por temperatura excesiva (si hay sensor térmica) o falla catastrófica del rodamiento (si no hay control); interrupción del servicio",
+   "safety": false,
+   "system": "Temperatura de rodamientos sube progresivamente (>80°C objetivo); vibración aumenta; potencial agarrotamiento de rodamientos si degradación persiste",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-003",
+   "non_operational": false
+  },
+  "FM-004": {
+   "local": "Colapso de burbujas de vapor en el impulsor; erosión progresiva de las caras de los álabes y la carcasa",
+   "plant": "Reducción gradual del caudal y presión suministrados; si persiste sin intervención, pérdida total del servicio; riesgo de fuga interna y contaminación del agua",
+   "safety": false,
+   "system": "Vibración y ruido característicos (rugido de cavitación); reducción de rendimiento; eventual rotura del impulsor o sello mecánico; bomba sale de servicio",
+   "is_hidden": false,
+   "environment": true,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-004",
+   "non_operational": false
+  },
+  "FM-005": {
+   "local": "Reducción del nivel de agua en el depósito de succión; pérdida de carga estática (altura manométrica negativa)",
+   "plant": "Ausencia de suministro de agua potable; presión nula en la red de distribución; afecta consumo de usuarios y servicios críticos (hospitales, incendios, etc.)",
+   "safety": true,
+   "system": "Pérdida de NPSH disponible; cavitación en el impulsor; caudal cae a cero; bomba se detiene o entra en modo de vibración severa",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-005",
+   "non_operational": false
+  },
+  "FM-006": {
+   "local": "Microgrietas en el aislamiento entre espiras; ingreso de humedad; picaduras eléctricas (arcos locales)",
+   "plant": "Bomba no arranca o arranca lentamente; si cortocircuito es severo, pérdida total del motor; parada de emergencia; requiere reparación o reemplazo del motor",
+   "safety": false,
+   "system": "Aumento de corriente de fuga a tierra; reducción de par motor; eventual cortocircuito espira-tierra; disparo de protección térmica o diferencial",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-006",
+   "non_operational": false
+  },
+  "FM-007": {
+   "local": "Pérdida de material en los álabes del impulsor; desbalanceo rotatorio; deformación de la geometría de flujo",
+   "plant": "Reducción gradual del suministro de agua; presión insuficiente en la red de distribución; consumo energético y emisiones de CO₂ aumentan",
+   "safety": false,
+   "system": "Disminución progresiva de caudal y presión de descarga; aumento de vibración y temperatura de rodamientos; consumo energético aumenta; eventual falla del motor o rodamientos",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-007",
+   "non_operational": false
+  },
+  "FM-008": {
+   "local": "Fuerzas radiales en el acoplamiento; carga excéntrica en rodamientos; tensión en el eje",
+   "plant": "Ruido y vibraciones perceptibles; riesgo de fuga del sello mecánico; riesgo de fractura del eje o desacoplamiento si se prolonga",
+   "safety": false,
+   "system": "Vibración de alta frecuencia en la dirección radial; aumento de consumo energético; aceleración del desgaste de rodamientos y sello mecánico",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-008",
+   "non_operational": true
+  },
+  "FM-009": {
+   "local": "Concentración de carga en uno o dos puntos de apoyo; movimiento oscilante de la base",
+   "plant": "Vibraciones y ruidos intensos; riesgo de desacoplamiento súbito o colapso de la unidad; riesgo de lesiones al personal; parada de emergencia necesaria",
+   "safety": true,
+   "system": "Amplificación de vibración; carga dinámica excesiva en rodamientos; potencial desprendimiento de pernos adicionales o rotura de eje",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-009",
+   "non_operational": false
+  },
+  "FM-010": {
+   "local": "Goteos o fugas visibles en la carcasa de la bomba alrededor del sello mecánico; pérdida de agua presurizada",
+   "plant": "Fugas de agua potable hacia la base/piso; contaminación del área; posible inundación del sótano; pérdida de agua (recurso valioso); demanda correctiva urgente",
+   "safety": false,
+   "system": "Disminución gradual de la presión interna; pérdida de eficiencia; entrada de aire en la bomba (oxidación interna); corrosión acelerada",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-010",
+   "non_operational": true
+  },
+  "FM-011": {
+   "local": "Interrupción del circuito de potencia; contactos abiertos; componentes quemados en el VFD o contactor",
+   "plant": "Pérdida total e inmediata del suministro de agua desde P-101A; necesario arranque de P-101B de reserva; si P-101B tampoco funciona, pérdida total del servicio",
+   "safety": true,
+   "system": "Ausencia de tensión en el motor; motor no energizado; bomba completamente inoperativa",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-011",
+   "non_operational": false
+  },
+  "FM-012": {
+   "local": "Válvula permanece en posición abierta durante la parada; flujo inverso desde la red hacia la bomba y tubería de succión",
+   "plant": "Ruido fuerte de ariete en tuberías; potencial ruptura de tuberías o conexiones; presión cae significativamente después de parada; riesgo de cavitación al reinicio",
+   "safety": false,
+   "system": "Caída de presión en descarga durante parada; sobrecarga hidráulica cuando bomba intenta reiniciar; golpe de ariete en tuberías",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-012",
+   "non_operational": false
+  },
+  "FM-013": {
+   "local": "Señal eléctrica de salida del transmisor desviada de la realidad física (presión o caudal real)",
+   "plant": "Suministro de agua con presión o caudal incorrecto; consumidor percibe servicio deficiente (baja presión cuando supuestamente está alta); decisiones operacionales basadas en datos falsos",
+   "safety": false,
+   "system": "PLC o VFD recibe datos incorrectos; control automático de presión/caudal hace ajustes erróneos; operador ve valores falsos en pantalla",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-013",
+   "non_operational": false
+  },
+  "FM-014": {
+   "local": "Rodamientos agarrotados; eje inmóvil; motor no puede entregar par suficiente para iniciar rotación",
+   "plant": "Pérdida total del suministro de agua potable; falla simultánea de ambas bombas; servicio interrumpido; consecuencia crítica de seguridad y operacional",
+   "safety": true,
+   "system": "P-101B no arranca cuando se ordena (por relé de presión baja o PLC); presión en descarga de P-101A sigue cayendo sin intervención de la bomba de reserva",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-014",
+   "non_operational": false
+  },
+  "FM-015": {
+   "local": "Contactos abiertos permanentemente o cerrados permanentemente del interruptor; no hay cambio de estado cuando se alcanza el threshold",
+   "plant": "Operación prolongada sin agua provoca daño térmico severo y rápido a los rodamientos; riesgo de fractura del eje o incendio; falla catastrófica de la bomba",
+   "safety": true,
+   "system": "Señal de parada/alarma no se envía al PLC cuando caudal cae por debajo de lo mínimo; bomba sigue operando sin agua o con cavitación severa",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-015",
+   "non_operational": false
+  },
+  "FM-016": {
+   "local": "Pérdida de adherencia del recubrimiento; formación de óxido en el acero base; orificios/perforaciones pequeñas en la carcasa",
+   "plant": "Fugas visibles de agua; contaminación del suelo o base; posible electrocución si agua llega a componentes eléctricos; pérdida de agua potable (recurso escaso)",
+   "safety": true,
+   "system": "Fugas externas de agua presurizada; entrada de agua en los espacios del motor (si está en el mismo alojamiento); oxidación interna progresiva",
+   "is_hidden": false,
+   "environment": true,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-016",
+   "non_operational": false
+  },
+  "FM-017": {
+   "local": "Restricción parcial del conducto de descarga; presión aguas arriba de la válvula aumenta; caudal disponible aguas abajo se reduce",
+   "plant": "Suministro insuficiente de agua hacia la red de distribución; presión baja en puntos críticos; consumo energético sube (menos eficiencia); temperatura del motor sube",
+   "safety": false,
+   "system": "Caudal de salida cae; presión en la descarga de la bomba sube; bomba trabaja fuera de su punto de máxima eficiencia; temperatura y vibración aumentan",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-017",
+   "non_operational": false
+  },
+  "FM-018": {
+   "local": "Flujo recirculado internamente dentro de la bomba (bypass); generación de calor por fricción; ausencia de enfriamiento por circulación normal",
+   "plant": "Parada de la bomba por temperatura excesiva (protección térmica) o falla catastrófica del motor/rodamientos; interrupción del servicio; consumo energético muy elevado para bajo caudal",
+   "safety": false,
+   "system": "Temperatura de la bomba y motor sube progresivamente (>80°C objetivo); vibración aumenta; lubricación deficiente en rodamientos; riesgo de agarrotamiento",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-018",
+   "non_operational": false
+  },
+  "FM-019": {
+   "local": "La bomba no puede aspirar agua; caudal nulo o muy reducido; presión en descarga cae a casi cero; motor se sobrecalienta por falta de flujo de enfriamiento",
+   "plant": "Red de agua a usuarios sin presión (sin servicio); consumidores sin agua potable o con presión insuficiente",
+   "safety": false,
+   "system": "P-101A no entrega agua a la red; presión de distribución cae por debajo de mínimo requerido",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-019",
+   "non_operational": false
+  },
+  "FM-020": {
+   "local": "Burbujas de aire en la carcasa; pérdida de la columna de agua; bomba hace ruido característico de cavitación; generación de vacío parcial",
+   "plant": "Servicio de agua interrumpido o muy irregular; operador percibe caídas de presión frecuentes",
+   "safety": true,
+   "system": "P-101A produce flujo intermitente o nulo; presión fluctúa y cae a cero",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-020",
+   "non_operational": false
+  },
+  "FM-021": {
+   "local": "Motor gira pero con RPM reducidas; caudal y presión por debajo de especificación; motor se sobrecalienta",
+   "plant": "Red servida con presión insuficiente; consumidores reportan débil flujo",
+   "safety": false,
+   "system": "P-101A entrega parcialmente (ej. 60 m³/h en lugar de 100); presión cae progresivamente",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-021",
+   "non_operational": false
+  },
+  "FM-022": {
+   "local": "Motor gira en sentido contrario; impulsor aspira hacia descarga, impulsa hacia aspiración; cero caudal hacia red",
+   "plant": "Sin servicio de agua; válvula de retención evita daño pero sistema se detiene",
+   "safety": false,
+   "system": "P-101A no aporta agua o flujo inverso hacia el depósito",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-022",
+   "non_operational": false
+  },
+  "FM-023": {
+   "local": "Depósitos minerales, óxido o materia extraña bloquea parcialmente los álabes del impulsor; caudal y presión reducidos progresivamente",
+   "plant": "Presión baja en red; consumidores reportan flujo débil",
+   "safety": false,
+   "system": "P-101A entrega flujo menor que nominal; presión disminuye; eficiencia cae",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-023",
+   "non_operational": false
+  },
+  "FM-024": {
+   "local": "Desgaste de rodamientos y sello mecánico crea espacios internos; fugas internas aumentan; caudal efectivo hacia descarga disminuye; vibraciones",
+   "plant": "Presión insuficiente en red; servicio degradado; consumidores ven flujo débil",
+   "safety": true,
+   "system": "P-101A produce caudal pero con presión baja por fugas internas; mayor consumo de energía por fricción",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-024",
+   "non_operational": false
+  },
+  "FM-025": {
+   "local": "Ruptura o junta defectuosa en tubería de descarga; agua sale de la línea antes de llegar a la red; pérdida de presión",
+   "plant": "Consumo de energía sin beneficio; presión baja en red; riesgo de contaminación por entrada de agua externa en ruptura",
+   "safety": false,
+   "system": "P-101A bombeada pero agua no alcanza la red completa; presión cae; caudal útil reducido",
+   "is_hidden": false,
+   "environment": true,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-025",
+   "non_operational": false
+  },
+  "FM-026": {
+   "local": "Instrumento de medición falla (falsa lectura baja, lectura nula, lectura oscilante); operador no tiene información real de la presión",
+   "plant": "El sistema está en buen estado, pero la lectura de los datos señala una falla; operación a ciegas; riesgo de servicio irregular a consumidores",
+   "safety": true,
+   "system": "Operador toma decisiones basadas en lecturas falsas: puede no detectar caída real de presión o pensar que hay falla cuando no la hay",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-026",
+   "non_operational": false
+  },
+  "FM-027": {
+   "local": "Sensor de presión o relé de control no funciona; señal de arranque no se genera o se pierde; P-101B no recibe orden",
+   "plant": "Sin respaldo: servicio se pierde; consumidores sin agua; potencial daño a P-101A al forzar el funcionamiento",
+   "safety": true,
+   "system": "P-101B no recibe orden de arranque cuando P-101A falla; P-101A sigue intentando bombear aunque esté dañada; presión no se recupera",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-027",
+   "non_operational": false
+  },
+  "FM-028": {
+   "local": "Motor está en standby pero cuando se ordena arranque, no gira (bobinado quemado, contactor pegado, fusible quemado); motor permanece inactivo",
+   "plant": "Pérdida de respaldo; servicio interrumpido si P-101A falla; consumidores sin agua",
+   "safety": true,
+   "system": "P-101B no arranca; P-101A debe continuar (posible daño si ya estaba fallando) o sistema queda sin presión",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-028",
+   "non_operational": false
+  },
+  "FM-029": {
+   "local": "Rotor del motor y/o impulsor se corroen/gripen por inactividad prolongada; cuando se ordena arranque, motor no puede rotar; amperaje sube, se quema bobinado",
+   "plant": "Pérdida de respaldo; servicio interrumpido; posible falla de P-101A al seguir funcionando sin respaldo",
+   "safety": true,
+   "system": "P-101B no arranca; P-101A debe continuar o sistema se detiene",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-029",
+   "non_operational": false
+  },
+  "FM-030": {
+   "local": "Válvula de retención defectuosa o tubería de aspiración rota; carcasa de P-101B se vacía; cuando se ordena arranque, no hay agua para aspirar",
+   "plant": "Pérdida de respaldo efectivo; consumidores sin agua; daño a impulsores de P-101B por funcionamiento en vacío",
+   "safety": true,
+   "system": "P-101B arranca pero no genera presión; sistema sin presión",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-030",
+   "non_operational": false
+  },
+  "FM-031": {
+   "local": "Válvula de aislamiento en la línea de P-101B está cerrada (por mantenimiento anterior olvidado); cuando se ordena arranque, presión no se recupera",
+   "plant": "Consumidores sin agua; respaldo no funciona efectivamente",
+   "safety": true,
+   "system": "P-101B arranca pero su descarga no fluye a la red; sistema sigue con presión baja o nula",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-031",
+   "non_operational": false
+  },
+  "FM-032": {
+   "local": "Obstrucción o ruptura en tubería que alimenta a P-101B (aspiración) o descarga; cuando se ordena arranque, flujo bloqueado",
+   "plant": "Consumidores sin agua; respaldo inoperativo; daño a P-101B por funcionamiento en bloqueo",
+   "safety": true,
+   "system": "P-101B arranca pero no puede aspirar o descargar agua; presión no se recupera",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-032",
+   "non_operational": false
+  },
+  "FM-033": {
+   "local": "Obstrucción del filtro de aspiración, restricción de flujo",
+   "plant": "Falta de suministro de agua a la red de distribución, posible parada de P-101A",
+   "safety": false,
+   "system": "Presión de salida insuficiente, posible cavitación del impulsor",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-033",
+   "non_operational": false
+  },
+  "FM-034": {
+   "local": "Obstrucción del filtro de aspiración, restricción de flujo",
+   "plant": "Falta de suministro de agua a la red de distribución, posible parada de P-101A",
+   "safety": false,
+   "system": "Presión de salida insuficiente, posible cavitación del impulsor",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-034",
+   "non_operational": false
+  },
+  "FM-035": {
+   "local": "Obstrucción del filtro de aspiración, restricción de paso de agua",
+   "plant": "Falta de suministro de agua a la red de distribución, posible parada de P-101A",
+   "safety": false,
+   "system": "Reducción progresiva del caudal, aumento de presión en aspiración, cavitación",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-035",
+   "non_operational": false
+  },
+  "FM-036": {
+   "local": "Obstrucción parcial de los álabes del impulsor",
+   "plant": "Suministro insuficiente de agua a la red de distribución",
+   "safety": false,
+   "system": "Reducción de caudal, aumento de vibración, desgaste acelerado del impulsor",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-036",
+   "non_operational": false
+  },
+  "FM-037": {
+   "local": "Nivel bajo en el depósito de aspiración",
+   "plant": "Parada de la bomba por pérdida de cebado, interrupción del suministro de agua",
+   "safety": false,
+   "system": "Pérdida de cebado, entrada de aire en la línea de aspiración, cavitación",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-037",
+   "non_operational": false
+  },
+  "FM-038": {
+   "local": "Bloqueo mecánico total del conjunto bomba-motor",
+   "plant": "Parada total del sistema de bombeo, interrupción inmediata del suministro de agua",
+   "safety": false,
+   "system": "Motor incapaz de girar, protecciones térmicas se activan",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-038",
+   "non_operational": false
+  },
+  "FM-039": {
+   "local": "Operación prolongada con caudal menor al mínimo especificado",
+   "plant": "Suministro insuficiente de agua a la red, riesgo de cavitación y daño prematuro de la bomba",
+   "safety": false,
+   "system": "Recirculación interna excesiva, sobrecalentamiento del fluido, desgaste acelerado",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-039",
+   "non_operational": false
+  },
+  "FM-040": {
+   "local": "Impulsor parcialmente obstruido por sedimentos o erosión",
+   "plant": "Suministro parcial o insuficiente de agua a la red de distribución",
+   "safety": false,
+   "system": "Reducción de caudal y presión, aumento de vibración y ruido",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-040",
+   "non_operational": false
+  },
+  "FM-041": {
+   "local": "Válvula de descarga no abre completamente o se cierra parcialmente",
+   "plant": "Reducción del suministro de agua, aumento de carga en la bomba",
+   "safety": false,
+   "system": "Restricción del caudal de descarga, aumento de presión en la línea",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-041",
+   "non_operational": false
+  },
+  "FM-042": {
+   "local": "Pérdida del sello de agua en la línea de aspiración, entrada de aire",
+   "plant": "Parada intermitente o total de la bomba, interrupción del suministro de agua",
+   "safety": false,
+   "system": "Pérdida de cebado, formación de bolsas de aire en la línea",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-042",
+   "non_operational": false
+  },
+  "FM-043": {
+   "local": "Formación de burbujas de vapor en la línea de aspiración",
+   "plant": "Ruido excesivo, reducción de caudal, posible daño crítico de la bomba",
+   "safety": false,
+   "system": "Colapso de burbujas con ruido característico, erosión progresiva del impulsor",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-043",
+   "non_operational": false
+  },
+  "FM-044": {
+   "local": "Tubería de descarga completamente bloqueada o dañada",
+   "plant": "Parada inmediata de la bomba, posible rotura de tubería con fuga de agua, interrupción total del suministro",
+   "safety": false,
+   "system": "Presión en descarga aumenta sin límite, riesgo de ruptura de tubería",
+   "is_hidden": false,
+   "environment": true,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-044",
+   "non_operational": false
+  },
+  "FM-045": {
+   "local": "Fuga visible de agua en la unión bomba-tubería",
+   "plant": "Pérdida de agua, aumento de costos operacionales, necesidad de reposición continua",
+   "safety": false,
+   "system": "Pérdida progresiva de agua, aumento del consumo en depósito auxiliar",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-045",
+   "non_operational": true
+  },
+  "FM-046": {
+   "local": "Desgaste del sello mecánico, fuga de agua en el eje",
+   "plant": "Pérdida de agua, aumento de costos, eventual parada si falla total del sello",
+   "safety": false,
+   "system": "Pérdida progresiva de agua, contaminación del motor si es tipo sumergible",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-046",
+   "non_operational": true
+  },
+  "FM-047": {
+   "local": "Sistema de arranque automático no activa cuando hay falla de presión",
+   "plant": "Pérdida de respaldo automático, riesgo de parada total si falla P-101A",
+   "safety": false,
+   "system": "P-101B no arranca, solo P-101A disponible sin respaldo",
+   "is_hidden": true,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-047",
+   "non_operational": false
+  },
+  "FM-048": {
+   "local": "Motor no arranca o arranca lentamente por falta de potencia eléctrica",
+   "plant": "Parada total del sistema de bombeo, interrupción inmediata del suministro de agua",
+   "safety": false,
+   "system": "P-101A incapaz de iniciar, respaldo P-101B también afectado",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-048",
+   "non_operational": false
+  },
+  "FM-049": {
+   "local": "Formación de burbujas de vapor con colapso ruidoso en el impulsor",
+   "plant": "Ruido anormal audible, posible alarma de vibración, daño prematuro de la bomba",
+   "safety": false,
+   "system": "Ruido excesivo y característico, vibración, erosión progresiva",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-049",
+   "non_operational": true
+  },
+  "FM-050": {
+   "local": "Partícula sólida grande golpea el impulsor",
+   "plant": "Ruido anormal severo, posible activación de alarmas de vibración",
+   "safety": false,
+   "system": "Ruido de impacto, posible daño del impulsor, vibración severa",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-050",
+   "non_operational": true
+  },
+  "FM-051": {
+   "local": "Desgaste excesivo de componentes internos, aumento de juego mecánico",
+   "plant": "Ruido anormal progresivo, aumento de consumo eléctrico, eventual parada",
+   "safety": false,
+   "system": "Ruido progresivo, vibración, reducción de eficiencia",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-051",
+   "non_operational": true
+  },
+  "FM-052": {
+   "local": "Degradación de la grasa en rodamientos, aumento de fricción",
+   "plant": "Vibración anormal y ruido, posible activación de alarmas de vibración",
+   "safety": false,
+   "system": "Aumento progresivo de vibración y ruido, temperatura de rodamientos aumenta",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-052",
+   "non_operational": true
+  },
+  "FM-053": {
+   "local": "Pernos de anclaje aflojados, base sin estabilidad",
+   "plant": "Vibración anormal transmitida a la planta, posible daño a tuberías adyacentes",
+   "safety": false,
+   "system": "Aumento de vibración transmitida a la estructura, desplazamiento de la bomba",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-053",
+   "non_operational": true
+  },
+  "FM-054": {
+   "local": "Holguras excesivas entre impulsor y carcasa, fugas internas",
+   "plant": "Caudal reducido, ruido anormal, aumento de consumo eléctrico",
+   "safety": false,
+   "system": "Reducción de caudal, aumento de ruido y vibración, eficiencia disminuida",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-054",
+   "non_operational": false
+  },
+  "FM-055": {
+   "local": "Falla en variador, contactor o relés del circuito de arranque",
+   "plant": "Arranque lento o fallido de la bomba, aumento de estrés mecánico",
+   "safety": false,
+   "system": "Motor inicia lentamente o con dificultad, corriente de arranque excesiva",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-055",
+   "non_operational": false
+  },
+  "FM-056": {
+   "local": "Desgaste progresivo de los álabes del impulsor por erosión o fricción",
+   "plant": "Caudal reducido progresivamente, ruido aumenta, eventual parada",
+   "safety": false,
+   "system": "Reducción gradual del caudal, aumento de vibración, eficiencia disminuida",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-056",
+   "non_operational": false
+  },
+  "FM-057": {
+   "local": "Corrosión o degradación del recubrimiento protector interno de la carcasa",
+   "plant": "Posible fuga o ruptura de carcasa a largo plazo, riesgo de parada",
+   "safety": false,
+   "system": "Progresión lenta de corrosión, eventual pérdida de integridad estructural",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-057",
+   "non_operational": false
+  },
+  "FM-058": {
+   "local": "Desalineación angular o axial entre ejes de bomba y motor",
+   "plant": "Vibración anormal, ruido en acoplamiento, daño progresivo a cojinetes",
+   "safety": false,
+   "system": "Vibración en la zona del acoplamiento, desgaste acelerado de rodamientos",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-058",
+   "non_operational": true
+  },
+  "FM-059": {
+   "local": "Desgaste de rodamientos del motor, aumento de fricción interna",
+   "plant": "Consumo eléctrico excesivo, ruido y vibración, eventual falla de motor",
+   "safety": false,
+   "system": "Consumo eléctrico aumenta, temperatura de motor aumenta, eficiencia disminuida",
+   "is_hidden": false,
+   "environment": false,
+   "operational": false,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-059",
+   "non_operational": true
+  },
+  "FM-060": {
+   "local": "Motor gira en sentido contrario al requerido",
+   "plant": "Bomba no suministra agua, sistema inoperativo",
+   "safety": false,
+   "system": "Bomba descarga agua en dirección opuesta o no descarga",
+   "is_hidden": false,
+   "environment": false,
+   "operational": true,
+   "hidden_route": null,
+   "evident_route": null,
+   "failure_mode_id": "FM-060",
+   "non_operational": false
+  }
+ },
+ "controls": {
+  "FM-001": [
+   {
+    "kind": "preventivo",
+    "description": "Cambio preventivo del filtro según programa establecido",
+    "failure_mode_id": "FM-001"
+   }
+  ],
+  "FM-002": [
+   {
+    "kind": "preventivo",
+    "description": "Limpieza preventiva del impulsor según programa establecido",
+    "failure_mode_id": "FM-002"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo de vibración permite detectar incremento progresivo anómalo del impulsor",
+    "failure_mode_id": "FM-002"
+   }
+  ],
+  "FM-003": [
+   {
+    "kind": "detectivo",
+    "description": "Sensor de temperatura en rodamientos monitorea en tiempo real; alarma si T > 80°C",
+    "failure_mode_id": "FM-003"
+   },
+   {
+    "kind": "preventivo",
+    "description": "Cambio preventivo de grasa en rodamientos según programa establecido",
+    "failure_mode_id": "FM-003"
+   }
+  ],
+  "FM-004": [
+   {
+    "kind": "mitigante",
+    "description": "Válvula de retención en aspiración evita entrada de aire y mantiene cebado",
+    "failure_mode_id": "FM-004"
+   }
+  ],
+  "FM-005": [
+   {
+    "kind": "detectivo",
+    "description": "Sin control actual registrado — operador debe detectar síntomas de cavitación o baja presión por manómetro",
+    "failure_mode_id": "FM-005"
+   }
+  ],
+  "FM-006": [
+   {
+    "kind": "detectivo",
+    "description": "Protección térmica del motor (termostato o relé térmico); parada automática si T motor > umbral calibrado",
+    "failure_mode_id": "FM-006"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Sin control actual registrado — degradación del aislamiento solo se detecta con prueba de megohmetría o cuando ya causa falla",
+    "failure_mode_id": "FM-006"
+   }
+  ],
+  "FM-007": [
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo de vibración permite detectar incremento anómalo por desgaste del impulsor",
+    "failure_mode_id": "FM-007"
+   }
+  ],
+  "FM-008": [
+   {
+    "kind": "detectivo",
+    "description": "Sensor de vibraciones monitorea amplitud y frecuencia; alarma si vibración excede 4,5 mm/s RMS",
+    "failure_mode_id": "FM-008"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo de vibración permite detectar incremento anómalo por desalineación",
+    "failure_mode_id": "FM-008"
+   }
+  ],
+  "FM-009": [
+   {
+    "kind": "detectivo",
+    "description": "Sensor de vibraciones detecta cambios anormales en amplitud indicativos de pie cojo o aflojamiento",
+    "failure_mode_id": "FM-009"
+   },
+   {
+    "kind": "preventivo",
+    "description": "Inspección visual periódica de la base y pernos de sujeción detecta aflojamiento o pernos rotos",
+    "failure_mode_id": "FM-009"
+   }
+  ],
+  "FM-010": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual periódica de goteos en la zona del sello mecánico; registro de observaciones",
+    "failure_mode_id": "FM-010"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual de fugas del sello mecánico permite detectar desgaste progresivo",
+    "failure_mode_id": "FM-010"
+   }
+  ],
+  "FM-011": [
+   {
+    "kind": "detectivo",
+    "description": "Protección diferencial del circuito; disparo si corriente de fuga a tierra > umbral (típicamente 30 mA)",
+    "failure_mode_id": "FM-011"
+   },
+   {
+    "kind": "preventivo",
+    "description": "Inspección periódica del VFD: limpieza, revisión de condensadores, prueba de funcionamiento con carga",
+    "failure_mode_id": "FM-011"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual del variador, contactor y circuito eléctrico durante mantenimiento",
+    "failure_mode_id": "FM-011"
+   }
+  ],
+  "FM-012": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual de válvula de retención durante mantenimiento",
+    "failure_mode_id": "FM-012"
+   }
+  ],
+  "FM-013": [
+   {
+    "kind": "preventivo",
+    "description": "Segundo transmisor redundante permite cruzar verificaciones y detectar deriva del primario",
+    "failure_mode_id": "FM-013"
+   }
+  ],
+  "FM-014": [
+   {
+    "kind": "detectivo",
+    "description": "Prueba funcional periódica de la bomba de reserva P-101B: arranque manual o automático simulado para verificar disponibilidad",
+    "failure_mode_id": "FM-014"
+   },
+   {
+    "kind": "preventivo",
+    "description": "Sin control actual registrado — P-101B permanece en standby sin rotación periódica ni prueba de arranque",
+    "failure_mode_id": "FM-014"
+   }
+  ],
+  "FM-015": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual del interruptor durante mantenimiento",
+    "failure_mode_id": "FM-015"
+   }
+  ],
+  "FM-016": [
+   {
+    "kind": "detectivo",
+    "description": "Sin control actual registrado — corrosión interna solo se detecta con inspección destructiva o cuando ya genera síntomas",
+    "failure_mode_id": "FM-016"
+   }
+  ],
+  "FM-017": [
+   {
+    "kind": "detectivo",
+    "description": "Verificación visual periódica de que la válvula de descarga está abierta al inicio de cada operación",
+    "failure_mode_id": "FM-017"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Sin control actual registrado — válvula de descarga solo se verifica visualmente si se desmonta",
+    "failure_mode_id": "FM-017"
+   }
+  ],
+  "FM-018": [
+   {
+    "kind": "detectivo",
+    "description": "Sensor de temperatura en rodamientos y motor; parada automática si T sobrepasa límite de seguridad",
+    "failure_mode_id": "FM-018"
+   },
+   {
+    "kind": "detectivo",
+    "description": "Sin control actual registrado — operador debe estar atento a lecturas de presión pero no existe límite automático de tiempo",
+    "failure_mode_id": "FM-018"
+   }
+  ],
+  "FM-019": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual de caída de presión",
+    "failure_mode_id": "FM-019"
+   }
+  ],
+  "FM-020": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual de presión inestable o nula (cavitación)",
+    "failure_mode_id": "FM-020"
+   }
+  ],
+  "FM-021": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual de presión baja o progresivamente reducida",
+    "failure_mode_id": "FM-021"
+   }
+  ],
+  "FM-022": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual inmediata de ausencia de presión o flujo inverso",
+    "failure_mode_id": "FM-022"
+   }
+  ],
+  "FM-023": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual progresiva de caída de presión",
+    "failure_mode_id": "FM-023"
+   }
+  ],
+  "FM-024": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual de presión baja; vibración excesiva es detectable por inspección",
+    "failure_mode_id": "FM-024"
+   }
+  ],
+  "FM-025": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro en la descarga de P-101A permite detección visual de caída de presión; mojadura externa visible alerta sobre fuga",
+    "failure_mode_id": "FM-025"
+   }
+  ],
+  "FM-026": [
+   {
+    "kind": "preventivo",
+    "description": "Transmisor redundante proporciona lectura alternativa si el primario falla; permite cruzar verificaciones",
+    "failure_mode_id": "FM-026"
+   }
+  ],
+  "FM-027": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual de tuberías de P-101B puede revelar conexiones sueltas en sensor o relé durante mantenimiento",
+    "failure_mode_id": "FM-027"
+   }
+  ],
+  "FM-028": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual de P-101B durante mantenimiento puede detectar signos de daño eléctrico o corrosión; no hay prueba funcional rutinaria",
+    "failure_mode_id": "FM-028"
+   }
+  ],
+  "FM-029": [
+   {
+    "kind": "preventivo",
+    "description": "Inspección visual de P-101B durante mantenimiento puede detectar corrosión o acumulación de depósitos; rotación manual periódica podría prevenirlo",
+    "failure_mode_id": "FM-029"
+   }
+  ],
+  "FM-030": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual de tuberías de aspiración de P-101B y válvula de retención puede revelar signos de fuga o ruptura",
+    "failure_mode_id": "FM-030"
+   }
+  ],
+  "FM-031": [
+   {
+    "kind": "preventivo",
+    "description": "Procedimiento de reapertura de válvulas tras mantenimiento; inspección visual confirma posición abierta de válvulas de aislamiento",
+    "failure_mode_id": "FM-031"
+   }
+  ],
+  "FM-032": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual de tuberías de conexión de P-101B detecta signos de obstrucción (endurecimiento, corrosión acelerada) o daño visible",
+    "failure_mode_id": "FM-032"
+   }
+  ],
+  "FM-033": [
+   {
+    "kind": "preventivo",
+    "description": "Filtro de aspiración con malla estándar, operación en rango nominal de caudal",
+    "failure_mode_id": "FM-033"
+   }
+  ],
+  "FM-034": [
+   {
+    "kind": "preventivo",
+    "description": "Filtro de aspiración con malla estándar, operación en rango nominal de caudal",
+    "failure_mode_id": "FM-034"
+   }
+  ],
+  "FM-035": [
+   {
+    "kind": "preventivo",
+    "description": "Filtro de aspiración con malla de retención estándar, mantenimiento operacional",
+    "failure_mode_id": "FM-035"
+   }
+  ],
+  "FM-036": [
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo operacional de caudal y presión durante funcionamiento",
+    "failure_mode_id": "FM-036"
+   }
+  ],
+  "FM-037": [
+   {
+    "kind": "detectivo",
+    "description": "Indicador visual de nivel de agua en depósito, inspección diaria por operador",
+    "failure_mode_id": "FM-037"
+   }
+  ],
+  "FM-038": [
+   {
+    "kind": "mitigante",
+    "description": "Protecciones térmicas del motor, interruptor de sobrecarga",
+    "failure_mode_id": "FM-038"
+   }
+  ],
+  "FM-039": [
+   {
+    "kind": "detectivo",
+    "description": "Manómetro de presión, termómetro, monitoreo de temperatura por operador",
+    "failure_mode_id": "FM-039"
+   }
+  ],
+  "FM-040": [
+   {
+    "kind": "preventivo",
+    "description": "Filtro de aspiración con malla de retención, operación en rango nominal",
+    "failure_mode_id": "FM-040"
+   }
+  ],
+  "FM-041": [
+   {
+    "kind": "preventivo",
+    "description": "Válvula de descarga de diseño estándar, operación dentro de especificación",
+    "failure_mode_id": "FM-041"
+   }
+  ],
+  "FM-042": [
+   {
+    "kind": "detectivo",
+    "description": "Verificación de cebado antes de arranque, inspección visual de entrada de agua",
+    "failure_mode_id": "FM-042"
+   }
+  ],
+  "FM-043": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección auditiva y visual para ruido de cavitación, monitoreo de presión de entrada",
+    "failure_mode_id": "FM-043"
+   }
+  ],
+  "FM-044": [
+   {
+    "kind": "preventivo",
+    "description": "Tubería de descarga de material resistente a corrosión, instalación con soportes",
+    "failure_mode_id": "FM-044"
+   }
+  ],
+  "FM-045": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual periódica de uniones y acoples por fugas",
+    "failure_mode_id": "FM-045"
+   }
+  ],
+  "FM-046": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual mensual del eje por fugas alrededor del sello mecánico",
+    "failure_mode_id": "FM-046"
+   }
+  ],
+  "FM-047": [
+   {
+    "kind": "detectivo",
+    "description": "Sistema de control automático con sensor de presión, lógica de activación PLC",
+    "failure_mode_id": "FM-047"
+   }
+  ],
+  "FM-048": [
+   {
+    "kind": "mitigante",
+    "description": "Protecciones térmicas del motor, contactor con sobrecarga, suministro eléctrico regulado",
+    "failure_mode_id": "FM-048"
+   }
+  ],
+  "FM-049": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección auditiva semanal para ruido característico de cavitación",
+    "failure_mode_id": "FM-049"
+   }
+  ],
+  "FM-050": [
+   {
+    "kind": "preventivo",
+    "description": "Filtro de aspiración, tamizado de agua de entrada",
+    "failure_mode_id": "FM-050"
+   }
+  ],
+  "FM-051": [
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo de ruido y vibración durante operación, análisis periódico predictivo",
+    "failure_mode_id": "FM-051"
+   }
+  ],
+  "FM-052": [
+   {
+    "kind": "preventivo",
+    "description": "Rodamientos con sello de protección, grasa de calidad para bombas",
+    "failure_mode_id": "FM-052"
+   }
+  ],
+  "FM-053": [
+   {
+    "kind": "detectivo",
+    "description": "Inspección visual trimestral de pernos, medición de vibración para detectar aflojamiento",
+    "failure_mode_id": "FM-053"
+   }
+  ],
+  "FM-054": [
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo de caudal y presión, análisis de ruido y vibración predictivo",
+    "failure_mode_id": "FM-054"
+   }
+  ],
+  "FM-055": [
+   {
+    "kind": "mitigante",
+    "description": "Variador y contactor con protecciones térmicas, fuente de alimentación estabilizada",
+    "failure_mode_id": "FM-055"
+   }
+  ],
+  "FM-056": [
+   {
+    "kind": "preventivo",
+    "description": "Filtro de aspiración, operación dentro de especificaciones de caudal y presión",
+    "failure_mode_id": "FM-056"
+   }
+  ],
+  "FM-057": [
+   {
+    "kind": "mitigante",
+    "description": "Recubrimiento protector estándar de carcasa, material resistente a corrosión",
+    "failure_mode_id": "FM-057"
+   }
+  ],
+  "FM-058": [
+   {
+    "kind": "detectivo",
+    "description": "Monitoreo de vibración mensual, inspección visual de acoplamiento",
+    "failure_mode_id": "FM-058"
+   }
+  ],
+  "FM-059": [
+   {
+    "kind": "preventivo",
+    "description": "Rodamientos de motor con sello de protección, lubricación estándar",
+    "failure_mode_id": "FM-059"
+   }
+  ],
+  "FM-060": [
+   {
+    "kind": "preventivo",
+    "description": "Verificación de secuencia de fases antes de primer arranque, inspección visual de conexiones",
+    "failure_mode_id": "FM-060"
+   }
+  ]
+ },
+ "decisions": {
+  "FM-005": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "e7a01a7ef92514c3",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "A",
+   "justification": "Falla detectable antes del fallo funcional: monitoreo automatizado disponible.",
+   "failure_mode_id": "FM-005",
+   "consequence_class": "seguridad_ambiente",
+   "hitl_confirmed_by": "Luis Espinoza, Director de Planta; Víctor López, Jefe de Mantenimiento",
+   "recommended_interval": ""
+  },
+  "FM-014": {
+   "policy": "BF",
+   "ffi_hours": null,
+   "input_hash": "2d3b825757a98747",
+   "provisional": false,
+   "hidden_route": "A",
+   "evident_route": null,
+   "justification": "Falla oculta con consecuencia seguridad/ambiente: búsqueda de fallas aplicable (intervalo por FFI); confirmado por revisión humana.",
+   "failure_mode_id": "FM-014",
+   "consequence_class": "oculta",
+   "hitl_confirmed_by": "Víctor López, Jefe de Mantenimiento",
+   "recommended_interval": ""
+  },
+  "FM-015": {
+   "policy": "BF",
+   "ffi_hours": null,
+   "input_hash": "378871e6d71b8632",
+   "provisional": false,
+   "hidden_route": "A",
+   "evident_route": null,
+   "justification": "Falla oculta con consecuencia seguridad/ambiente: búsqueda de fallas aplicable (intervalo por FFI); confirmado por revisión humana.",
+   "failure_mode_id": "FM-015",
+   "consequence_class": "oculta",
+   "hitl_confirmed_by": "Víctor López, Jefe de Mantenimiento",
+   "recommended_interval": ""
+  },
+  "FM-019": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "416b7731f42d3357",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-019",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-033": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "2a144a58ea1c8669",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-033",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-034": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "ba5fa88f1538e3fa",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-034",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-035": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "c7ba9e0b4d004b2c",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-035",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-036": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "6bd22b125bdc2ad6",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-036",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-037": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "3f766dcc8e3e716b",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-037",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-038": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "0ac4281fbc973b59",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-038",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-039": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "dbb533e37885f245",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-039",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-040": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "eb2c6eadc684dec8",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-040",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-041": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "949976bcee7e2b27",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-041",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-042": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "8bc63f58b1d42c7a",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-042",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-043": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "b4e7a4e121103aeb",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-043",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-044": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "62633b83f6090452",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "A",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-044",
+   "consequence_class": "seguridad_ambiente",
+   "hitl_confirmed_by": "Supervisor HSE - Sistema de bombeo P-101",
+   "recommended_interval": ""
+  },
+  "FM-045": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "155da9220b713caa",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-045",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-046": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "fd5a0761184f2fcb",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-046",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-047": {
+   "policy": "BF",
+   "ffi_hours": null,
+   "input_hash": "6552d8830bf93950",
+   "provisional": false,
+   "hidden_route": "E",
+   "evident_route": null,
+   "justification": "Falla oculta sin tarea proactiva aplicable: búsqueda de fallas para verificar disponibilidad de la función de protección (intervalo por FFI).",
+   "failure_mode_id": "FM-047",
+   "consequence_class": "oculta",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-048": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "b9fc55710dc1f5f2",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-048",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-049": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "f55e5ad2f1db2feb",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-049",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-050": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "7acaa3739218b79e",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-050",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-051": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "9d9d217dd4588ee4",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-051",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-052": {
+   "policy": "ReP",
+   "ffi_hours": null,
+   "input_hash": "8c81462425867683",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Degradación por consumo de lubricante con patrón de envejecimiento: relubricación programada.",
+   "failure_mode_id": "FM-052",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-053": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "4a4562ec6635dafd",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-053",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-054": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "86417951b482852b",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-054",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-055": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "965161cf5f1121a4",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-055",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-056": {
+   "policy": "MBT",
+   "ffi_hours": null,
+   "input_hash": "279d816c15da25c8",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "B",
+   "justification": "Patrón de fin de vida útil con restauración/sustitución programada viable.",
+   "failure_mode_id": "FM-056",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-057": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "67c6f06d5190f341",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-057",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-058": {
+   "policy": "MBC",
+   "ffi_hours": null,
+   "input_hash": "5709728b75be6c13",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Existe síntoma detectable con intervalo P-F suficiente (inspección ≤ P-F/2).",
+   "failure_mode_id": "FM-058",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-059": {
+   "policy": "ReP",
+   "ffi_hours": null,
+   "input_hash": "95a5982433b70ee0",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "C",
+   "justification": "Degradación por consumo de lubricante con patrón de envejecimiento: relubricación programada.",
+   "failure_mode_id": "FM-059",
+   "consequence_class": "no_operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  },
+  "FM-060": {
+   "policy": "OHF",
+   "ffi_hours": null,
+   "input_hash": "36d8831e35fe2ca7",
+   "provisional": false,
+   "hidden_route": null,
+   "evident_route": "D",
+   "justification": "Sin tarea proactiva aplicable y consecuencias económicas tolerables: operar hasta la falla, con justificación documentada.",
+   "failure_mode_id": "FM-060",
+   "consequence_class": "operacional",
+   "hitl_confirmed_by": null,
+   "recommended_interval": ""
+  }
+ },
+ "functions": {
+  "F-001": {
+   "id": "F-001",
+   "kind": "primaria",
+   "verb": "Bombear",
+   "object": "agua potable desde depósito hasta red de distribución",
+   "performance_standard": "180 m³/h (rango aceptable 160–200 m³/h) a presión de descarga 4,0–4,4 bar"
+  },
+  "F-002": {
+   "id": "F-002",
+   "kind": "secundaria",
+   "verb": "Arrancar",
+   "object": "cuando sea requerida",
+   "performance_standard": "Alcanzar condiciones estables en menos de 10 segundos"
+  },
+  "F-003": {
+   "id": "F-003",
+   "kind": "secundaria",
+   "verb": "Contener",
+   "object": "el agua bombeada",
+   "performance_standard": "Sin fugas visibles ni pérdida significativa de presión"
+  },
+  "F-004": {
+   "id": "F-004",
+   "kind": "secundaria",
+   "verb": "Preservar",
+   "object": "la calidad sanitaria del agua",
+   "performance_standard": "No introducir grasas, partículas metálicas ni materiales incompatibles con agua potable"
+  },
+  "F-005": {
+   "id": "F-005",
+   "kind": "secundaria",
+   "verb": "Operar",
+   "object": "sin deterioro mecánico excesivo",
+   "performance_standard": "Vibración global inferior a 4,5 mm/s RMS y temperatura de rodamientos inferior a 80 °C"
+  },
+  "F-006": {
+   "id": "F-006",
+   "kind": "secundaria",
+   "verb": "Operar",
+   "object": "con eficiencia energética aceptable",
+   "performance_standard": "Consumo específico inferior a 0,18 kWh/m³"
+  },
+  "F-007": {
+   "id": "F-007",
+   "kind": "secundaria",
+   "verb": "Evitar",
+   "object": "el flujo inverso durante la parada",
+   "performance_standard": "La válvula de retención debe cerrar sin golpes de ariete significativos"
+  },
+  "F-008": {
+   "id": "F-008",
+   "kind": "proteccion",
+   "verb": "Proteger",
+   "object": "la bomba ante condiciones anormales",
+   "performance_standard": "Parada o alarma por falta de agua, bajo caudal, alta temperatura o vibración severa (sensor de presión, temperatura, vibraciones)"
+  },
+  "F-009": {
+   "id": "F-009",
+   "kind": "proteccion",
+   "verb": "Proporcionar",
+   "object": "respaldo automático",
+   "performance_standard": "La bomba de reserva P-101B debe arrancar automáticamente cuando falle la bomba principal P-101A o disminuya presión de descarga"
+  },
+  "F-010": {
+   "id": "F-010",
+   "kind": "secundaria",
+   "verb": "Arrancar o parar",
+   "object": "cuando sea requerida",
+   "performance_standard": "Arranque y parada confiable según demanda operacional"
+  }
+ },
+ "hitl_ledger": [
+  {
+   "reason": "El modo FM-005 tiene consecuencia de SEGURIDAD/AMBIENTE (política propuesta: MBC — Falla detectable antes del fallo funcional: monitoreo automatizado disponible.) Se requiere confirmación humana explícita antes de registrar la decisión.",
+   "confirmed_by": "Integrante confirmante",
+   "failure_mode_id": "FM-005",
+   "requested_at_turn": 0
+  },
+  {
+   "reason": "El modo FM-014 tiene consecuencia de SEGURIDAD/AMBIENTE (política propuesta: BF — Falla oculta sin tarea proactiva aplicable: búsqueda de fallas para verificar disponibilidad de la función de protección (intervalo por FFI).) Se requiere confirmación humana explícita antes de registrar la decisión.",
+   "confirmed_by": "Integrante confirmante",
+   "failure_mode_id": "FM-014",
+   "requested_at_turn": 0
+  },
+  {
+   "reason": "El modo FM-015 tiene consecuencia de SEGURIDAD/AMBIENTE (política propuesta: BF — Falla oculta sin tarea proactiva aplicable: búsqueda de fallas para verificar disponibilidad de la función de protección (intervalo por FFI).) Se requiere confirmación humana explícita antes de registrar la decisión.",
+   "confirmed_by": "Integrante confirmante",
+   "failure_mode_id": "FM-015",
+   "requested_at_turn": 0
+  },
+  {
+   "reason": "El modo FM-044 tiene consecuencia de SEGURIDAD/AMBIENTE (política propuesta: MBT — Patrón de fin de vida útil con restauración/sustitución programada viable.) Se requiere confirmación humana explícita antes de registrar la decisión.",
+   "confirmed_by": "Integrante confirmante",
+   "failure_mode_id": "FM-044",
+   "requested_at_turn": 0
+  }
+ ],
+ "risk_scores": {
+  "FM-001": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "3154f9cffab664ab",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-001"
+  },
+  "FM-002": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "cd82a9a6fc1fa5f1",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-002"
+  },
+  "FM-003": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "b25046c458f6fc51",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-003"
+  },
+  "FM-004": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "390880e17c9a98ca",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-004"
+  },
+  "FM-005": {
+   "severity": 8,
+   "detection": 4,
+   "input_hash": "03d7eff39d128be6",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-005"
+  },
+  "FM-006": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "2a7116348d450dd0",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-006"
+  },
+  "FM-007": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "83c7aafe31d84dea",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-007"
+  },
+  "FM-008": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "80e2d0bc16ebd32f",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-008"
+  },
+  "FM-009": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "b1e24168695056f8",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-009"
+  },
+  "FM-010": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "e724019a3fe01f38",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-010"
+  },
+  "FM-011": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "8888326b7644f406",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-011"
+  },
+  "FM-012": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "9303b84f8521026d",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-012"
+  },
+  "FM-013": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "ce0a4c1f4fcfb464",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-013"
+  },
+  "FM-014": {
+   "severity": 8,
+   "detection": 8,
+   "input_hash": "30ae9d3d72efa832",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-014"
+  },
+  "FM-015": {
+   "severity": 8,
+   "detection": 8,
+   "input_hash": "b0fbc0925ebd5e52",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-015"
+  },
+  "FM-016": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "e01d30c7ee750f27",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-016"
+  },
+  "FM-017": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "4fe29d24bca2966e",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-017"
+  },
+  "FM-018": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "441e344c87fbadf3",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-018"
+  },
+  "FM-019": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "416b7731f42d3357",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-019"
+  },
+  "FM-020": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "c8ccfbbe7747575d",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-020"
+  },
+  "FM-021": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "a5623b2294ae1834",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-021"
+  },
+  "FM-022": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "06a065e7fe926f0a",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-022"
+  },
+  "FM-023": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "f1565824e5f5a2f8",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-023"
+  },
+  "FM-024": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "d2ef91ce6ab8883a",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-024"
+  },
+  "FM-025": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "e4ecc39fbde305bb",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-025"
+  },
+  "FM-026": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "0b2574b0b00be687",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-026"
+  },
+  "FM-027": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "0302d849859269b1",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-027"
+  },
+  "FM-028": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "198cbee57175da0a",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-028"
+  },
+  "FM-029": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "bb34df0c229a48dc",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-029"
+  },
+  "FM-030": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "7b357e4de41132c2",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-030"
+  },
+  "FM-031": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "d90431f6f2c7f83b",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-031"
+  },
+  "FM-032": {
+   "severity": 1,
+   "detection": 10,
+   "input_hash": "9b48f549f84c941b",
+   "occurrence": 1,
+   "is_residual": false,
+   "failure_mode_id": "FM-032"
+  },
+  "FM-033": {
+   "severity": 8,
+   "detection": 4,
+   "input_hash": "380495879631fa76",
+   "occurrence": 6,
+   "is_residual": false,
+   "failure_mode_id": "FM-033"
+  },
+  "FM-034": {
+   "severity": 8,
+   "detection": 4,
+   "input_hash": "c257fb7baad7ac6a",
+   "occurrence": 6,
+   "is_residual": false,
+   "failure_mode_id": "FM-034"
+  },
+  "FM-035": {
+   "severity": 8,
+   "detection": 4,
+   "input_hash": "abbff91bc72b54a5",
+   "occurrence": 6,
+   "is_residual": false,
+   "failure_mode_id": "FM-035"
+  },
+  "FM-036": {
+   "severity": 7,
+   "detection": 4,
+   "input_hash": "fd53bb2e4b8dfc46",
+   "occurrence": 6,
+   "is_residual": false,
+   "failure_mode_id": "FM-036"
+  },
+  "FM-037": {
+   "severity": 8,
+   "detection": 4,
+   "input_hash": "14e543a474e56cce",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-037"
+  },
+  "FM-038": {
+   "severity": 8,
+   "detection": 5,
+   "input_hash": "50acd2fa639bf4bd",
+   "occurrence": 3,
+   "is_residual": false,
+   "failure_mode_id": "FM-038"
+  },
+  "FM-039": {
+   "severity": 7,
+   "detection": 5,
+   "input_hash": "35f20bcec42e6e49",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-039"
+  },
+  "FM-040": {
+   "severity": 7,
+   "detection": 4,
+   "input_hash": "0dd162b7c9ea736e",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-040"
+  },
+  "FM-041": {
+   "severity": 7,
+   "detection": 5,
+   "input_hash": "f4ccf9fa3f82be7e",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-041"
+  },
+  "FM-042": {
+   "severity": 8,
+   "detection": 4,
+   "input_hash": "5861036c01318a7a",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-042"
+  },
+  "FM-043": {
+   "severity": 7,
+   "detection": 4,
+   "input_hash": "07a74a3b24bb08b0",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-043"
+  },
+  "FM-044": {
+   "severity": 9,
+   "detection": 5,
+   "input_hash": "75c43bcf6c96bf6c",
+   "occurrence": 2,
+   "is_residual": false,
+   "failure_mode_id": "FM-044"
+  },
+  "FM-045": {
+   "severity": 4,
+   "detection": 2,
+   "input_hash": "020caee1ec0263df",
+   "occurrence": 6,
+   "is_residual": false,
+   "failure_mode_id": "FM-045"
+  },
+  "FM-046": {
+   "severity": 5,
+   "detection": 3,
+   "input_hash": "638f5834cc55fc08",
+   "occurrence": 7,
+   "is_residual": false,
+   "failure_mode_id": "FM-046"
+  },
+  "FM-047": {
+   "severity": 8,
+   "detection": 8,
+   "input_hash": "280d3efdaf6ba26c",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-047"
+  },
+  "FM-048": {
+   "severity": 8,
+   "detection": 5,
+   "input_hash": "caae27135271a218",
+   "occurrence": 3,
+   "is_residual": false,
+   "failure_mode_id": "FM-048"
+  },
+  "FM-049": {
+   "severity": 5,
+   "detection": 2,
+   "input_hash": "d7812374e9133ccc",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-049"
+  },
+  "FM-050": {
+   "severity": 5,
+   "detection": 2,
+   "input_hash": "ce09ab07bce1072e",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-050"
+  },
+  "FM-051": {
+   "severity": 5,
+   "detection": 3,
+   "input_hash": "ba2dff6f570bb4c7",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-051"
+  },
+  "FM-052": {
+   "severity": 5,
+   "detection": 3,
+   "input_hash": "8296a3123f46aadb",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-052"
+  },
+  "FM-053": {
+   "severity": 4,
+   "detection": 3,
+   "input_hash": "d070b63a58fcfd54",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-053"
+  },
+  "FM-054": {
+   "severity": 6,
+   "detection": 4,
+   "input_hash": "eec7012b5a282a43",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-054"
+  },
+  "FM-055": {
+   "severity": 6,
+   "detection": 4,
+   "input_hash": "06fc93e66dd7f0ba",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-055"
+  },
+  "FM-056": {
+   "severity": 7,
+   "detection": 4,
+   "input_hash": "50fcb9c49d016d8e",
+   "occurrence": 5,
+   "is_residual": false,
+   "failure_mode_id": "FM-056"
+  },
+  "FM-057": {
+   "severity": 7,
+   "detection": 6,
+   "input_hash": "7173d3ed43af2b99",
+   "occurrence": 3,
+   "is_residual": false,
+   "failure_mode_id": "FM-057"
+  },
+  "FM-058": {
+   "severity": 5,
+   "detection": 3,
+   "input_hash": "77040850652bdb1a",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-058"
+  },
+  "FM-059": {
+   "severity": 6,
+   "detection": 4,
+   "input_hash": "0ef7f31f56b0fccd",
+   "occurrence": 4,
+   "is_residual": false,
+   "failure_mode_id": "FM-059"
+  },
+  "FM-060": {
+   "severity": 8,
+   "detection": 6,
+   "input_hash": "2f1b41d03dd5b53d",
+   "occurrence": 2,
+   "is_residual": false,
+   "failure_mode_id": "FM-060"
+  }
+ },
+ "ffi_por_modo": {
+  "FM-014": {
+   "horas": 525.6,
+   "avisos": [],
+   "metodo": "availability",
+   "formula": "FFI = 2 * U * Mtive"
+  },
+  "FM-015": {
+   "horas": 525.6,
+   "avisos": [],
+   "metodo": "availability",
+   "formula": "FFI = 2 * U * Mtive"
+  },
+  "FM-047": {
+   "horas": 3200.0,
+   "avisos": [],
+   "metodo": "single_multi",
+   "formula": "FFI = Mtive * [(n+1) * Mted / Mmf]^(1/n)"
+  }
+ },
+ "info_sources": [],
+ "failure_modes": {
+  "FM-001": {
+   "id": "FM-001",
+   "tpef": {
+    "note": "TPEF típico de 6 meses (4320 h) para agua con sedimentos moderados; P-F: caída de presión detectada ~1 semana antes de bloqueo total",
+    "fuente": "Opinión de experto",
+    "value_hours": 4320.0
+   },
+   "cause": "Acumulación de sedimentos, partículas, algas o depósitos minerales en el filtro de succión o tubería de aspiración",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "La obstrucción progresiva reduce el flujo disponible, disminuyendo el caudal de salida y aumentando la caída de presión en la succión, reduciendo el NPSH disponible",
+   "root_cause": "Calidad del agua de entrada con partículas suspendidas; falta de mantenimiento preventivo del filtro; diseño del filtro con área insuficiente",
+   "description": "Obstrucción del filtro o de la tubería de aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 168.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-002"
+  },
+  "FM-002": {
+   "id": "FM-002",
+   "tpef": {
+    "note": "TPEF de ~1 año típico; P-F: caída de caudal/presión detectable ~30 días antes de bloqueo total",
+    "fuente": "Opinión de experto",
+    "value_hours": 8760.0
+   },
+   "cause": "Depósitos de calcio, óxido, algas o sedimentos en los álabes del impulsor; objetos atrapados entre impulsor y carcasa",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "La obstrucción parcial bloquea el flujo a través del impulsor, reduciendo el área efectiva de paso; caudal y presión disminuyen; aumento de velocidad local genera cavitación",
+   "root_cause": "Calidad del agua; falta de limpieza; erosión anterior que favorece depósitos; operación con agua de mala calidad",
+   "description": "Obstrucción parcial del impulsor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 720.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-002"
+  },
+  "FM-003": {
+   "id": "FM-003",
+   "tpef": {
+    "note": "TPEF típico de 4 años (35040 h) con relubricación anual; P-F: aumento gradual de temperatura y vibración ~5000 h antes del agarrotamiento",
+    "fuente": "Opinión de experto",
+    "value_hours": 35040.0
+   },
+   "cause": "Envejecimiento de la grasa; contaminación por agua o polvo; temperatura excesiva; operación prolongada sin relubricación",
+   "credible": true,
+   "iso_code": "OHE",
+   "mechanism": "La grasa degradada pierde propiedades lubricantes; aumenta la fricción en rodamientos, generando calor; temperatura se eleva, acelerando degradación; rodamientos se agarrotan progresivamente",
+   "root_cause": "Falta de relubricación preventiva; sellos defectuosos en rodamientos; temperatura de operación elevada; grasa de mala calidad",
+   "description": "Degradación de la grasa de los rodamientos",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 5000.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-005"
+  },
+  "FM-004": {
+   "id": "FM-004",
+   "tpef": {
+    "note": "Si cavitación persiste, erosión del impulsor en ~1 año; P-F: vibración anómala y ruido característico detectables meses antes",
+    "fuente": "Opinión de experto",
+    "value_hours": 8760.0
+   },
+   "cause": "NPSH disponible por debajo del NPSH requerido por la bomba; ocurre por baja presión en succión, alto nivel de succión, temperatura alta del fluido, o alta velocidad",
+   "credible": true,
+   "iso_code": "ERO",
+   "mechanism": "Cuando presión local en el impulsor cae por debajo de la presión de vapor, se forman burbujas que colapsan, erosionando el impulsor y las carcasas; genera vibración, ruido, pérdida de caudal",
+   "root_cause": "Diseño de tubería de succión deficiente; obstrucción en succión; altura geométrica excesiva; temperatura de agua elevada; VFD operando a velocidad muy alta",
+   "description": "Cavitación por insuficiente NPSH disponible",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria/Fin de Vida Útil",
+   "pf_interval_hours": 500.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-002"
+  },
+  "FM-005": {
+   "id": "FM-005",
+   "tpef": null,
+   "cause": "Vaciado del depósito de succión por consumo sin reposición; grieta o fuga en el depósito; error operacional (válvula cerrada)",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Sin nivel mínimo en succión, la bomba pierde NPSH disponible, genera cavitación o empieza a aspirar aire; caudal se reduce drásticamente o cesa",
+   "root_cause": "Fallo del sistema de reposición de agua; operación sin supervisión; mantenimiento deficiente del depósito",
+   "description": "Bajo nivel en el depósito de aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-001"
+  },
+  "FM-006": {
+   "id": "FM-006",
+   "tpef": {
+    "note": "TPEF típico de 5 años (43800 h); P-F: aumento de temperatura motor y caída de aislamiento detectados ~1 año antes de cortocircuito catastrófico",
+    "fuente": "Opinión de experto",
+    "value_hours": 43800.0
+   },
+   "cause": "Envejecimiento del aislamiento por exposición al calor y humedad; contaminación por agua, polvo o vapores corrosivos; sobretensión eléctrica; defecto en fabricación",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "El aislamiento pierde resistencia dieléctrica gradualmente; microgrietas permite ingreso de humedad; cortocircuito espira-tierra causa arco eléctrico; motor deja de arrancar o pierde potencia",
+   "root_cause": "Temperatura de operación elevada sin control; ambiente húmedo o corrosivo; falta de ventilación adecuada del motor; sobrecarga eléctrica crónica; aislamiento de baja calidad",
+   "description": "Degradación del aislamiento del motor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 8760.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-004"
+  },
+  "FM-007": {
+   "id": "FM-007",
+   "tpef": {
+    "note": "TPEF típico de 2 años (17520 h) en agua potable; P-F: caída lenta de presión y caudal, aumento gradual de vibración ~2000 h antes de falla",
+    "fuente": "Opinión de experto",
+    "value_hours": 17520.0
+   },
+   "cause": "Erosión por cavitación; abrasión por partículas en el agua; corrosión; impacto mecánico durante operación anormal",
+   "credible": true,
+   "iso_code": "STD",
+   "mechanism": "Pérdida progresiva de material en álabes del impulsor reduce el rendimiento hidráulico; caudal y presión disminuyen gradualmente; desbalanceo genera vibración creciente",
+   "root_cause": "Cavitación crónica; agua con partículas abrasivas o corrosivas; depósitos de calcio/óxido; desequilibrio rotatorio o impacto con objetos",
+   "description": "Desgaste o erosión del impulsor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 2000.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-002"
+  },
+  "FM-008": {
+   "id": "FM-008",
+   "tpef": {
+    "note": "TPEF de 6 años típico si no se corrige; P-F: aumento de vibración en eje y temperatura detectables ~12 meses antes de falla crítica",
+    "fuente": "Opinión de experto",
+    "value_hours": 52560.0
+   },
+   "cause": "Movimiento de la bomba o motor respecto a la base; desgaste de pernos de fijación; asentamiento de los cimientos; error en el montaje original",
+   "credible": true,
+   "iso_code": "VIB",
+   "mechanism": "La desalineación genera fuerzas radiales y momentos flectores en el eje acoplamiento; estos aumentan la carga en rodamientos y causan vibración de alta frecuencia; acelera desgaste",
+   "root_cause": "Fijación deficiente; vibraciones crónicas no amortiguadas; pernos aflojados; base deformada; falta de inspección periódica de alineación",
+   "description": "Desalineación entre bomba y motor",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria/Fin de Vida Útil",
+   "pf_interval_hours": 8760.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-008"
+  },
+  "FM-009": {
+   "id": "FM-009",
+   "tpef": null,
+   "cause": "Pernos de anclaje aflojados; deformación de la base por vibración o carga; hundimiento localizado de los apoyos; corrosión de los pernos",
+   "credible": true,
+   "iso_code": "VIB",
+   "mechanism": "Un pie cojo o perno suelto genera contacto puntual en lugar de distribuido; esto amplifica la vibración y causa oscilación de la máquina; carga concentrada acelera desgaste y puede provocar falla catastrófica",
+   "root_cause": "Fijación inicial inadecuada; mantenimiento deficiente sin inspección periódica de apriete; vibración crónica sin amortiguación; corrosión ambiental",
+   "description": "Aflojamiento de la base o presencia de pie cojo",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-008"
+  },
+  "FM-010": {
+   "id": "FM-010",
+   "tpef": {
+    "note": "TPEF típico de 3 años (26280 h) en agua potable; P-F: aparición de goteos leves ~2000 h antes de fuga importante",
+    "fuente": "Opinión de experto",
+    "value_hours": 26280.0
+   },
+   "cause": "Desgaste del sello por fricción; erosión por partículas en el fluido; cristalización de depósitos minerales; resecamiento del sello",
+   "credible": true,
+   "iso_code": "ELP",
+   "mechanism": "El sello mecánico es la barrera entre el interior presurizados de la bomba y el exterior; desgaste de las caras del sello aumenta la brecha, permitiendo fugas progresivas de agua",
+   "root_cause": "Falta de lubricación del sello; agua con partículas abrasivas; temperatura elevada; sello defectuoso o de vida útil vencida; falta de mantenimiento preventivo",
+   "description": "Desgaste del sello mecánico",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 2000.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-006"
+  },
+  "FM-011": {
+   "id": "FM-011",
+   "tpef": {
+    "note": "TPEF típico de 6 años si mantenimiento es regular; falla es típicamente abrupta sin P-F detectable; reemplazable planificadamente antes de fin de vida",
+    "fuente": "Opinión de experto",
+    "value_hours": 52560.0
+   },
+   "cause": "Cortocircuito en el VFD, contactor o cableado; falla de componentes electrónicos (capacitores, transistores); soldaduras defectuosas; sobretensión transitoria; desgaste de contactos",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "El VFD o contactor es esencial para arrancar el motor; su falla interrumpe el flujo de corriente; motor no puede energizarse; bomba queda inoperativa",
+   "root_cause": "Calidad pobre del VFD o circuito; falta de mantenimiento preventivo; sobretensión en la red; temperatura de operación excesiva sin disipación; diseño sin protecciones suficientes",
+   "description": "Falla del variador, contactor o circuito de mando",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-004"
+  },
+  "FM-012": {
+   "id": "FM-012",
+   "tpef": {
+    "note": "TPEF típico de 3 años (26280 h) en agua potable; P-F: caída lenta de presión de cierre o ruido de flujo inverso ~6 meses antes de bloqueo total",
+    "fuente": "Opinión de experto",
+    "value_hours": 26280.0
+   },
+   "cause": "Corrosión o depósito mineral en el asiento de la válvula; obstrucción por partículas; desgaste del vástago; resorte débil o roto",
+   "credible": true,
+   "iso_code": "STP",
+   "mechanism": "Cuando la válvula debe cerrarse (bomba parada), permanece abierta; permite flujo inverso desde la red hacia la bomba y tuberías; presión cae; golpe de ariete al intentar cerrar",
+   "root_cause": "Calidad del agua con sedimentos o corrosivos; falta de limpieza de la válvula; válvula de mala calidad o vencida; vibración excesiva que favorece depósitos",
+   "description": "Válvula de retención bloqueada abierta",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 4380.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-013": {
+   "id": "FM-013",
+   "tpef": {
+    "note": "TPEF típico de 5 años (43800 h); P-F: desviación lenta de lectura, detectada por comparación con medición manual ~30 días antes de error crítico",
+    "fuente": "Opinión de experto",
+    "value_hours": 43800.0
+   },
+   "cause": "Envejecimiento del sensor; depósitos en la membrana del transmisor; variación de la calibración por temperatura; corrosión de contactos eléctricos",
+   "credible": true,
+   "iso_code": "AIR",
+   "mechanism": "El transmisor envía señal errónea al PLC/VFD; control hace ajustes incorrectos (reduce caudal cuando presión cae falsa, o viceversa); operador ve valores incorrectos",
+   "root_cause": "Falta de calibración periódica; calidad del agua con partículas; fluctuaciones de temperatura; vibración que afecta electrónica; sensor de mala calidad",
+   "description": "Deriva del transmisor de presión o caudal",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria/Fin de Vida Útil",
+   "pf_interval_hours": 2000.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-002"
+  },
+  "FM-014": {
+   "id": "FM-014",
+   "tpef": null,
+   "cause": "Rodamientos oxidados por falta de rotación; grasa degradada; eje corrosionado; motor con aislamiento degradado; bobina de arranque defectuosa",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "En caso de falla de P-101A, el relé de presión o PLC ordena arrancar P-101B; motor no responde porque está agarrotado; presión sigue cayendo; falla simultánea de ambas bombas → pérdida total del servicio",
+   "root_cause": "Bomba de reserva sin mantenimiento preventivo; ausencia de rotación periódica (wet-run test); ambiente corrosivo; falta de inspección de disponibilidad; sellos defectuosos",
+   "description": "Bomba de reserva agarrotada o motor de reserva no disponible",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-012"
+  },
+  "FM-015": {
+   "id": "FM-015",
+   "tpef": {
+    "note": "Falla oculta: solo se detecta cuando se prueba; TPEF típico de 6 años; sin P-F; requiere búsqueda de falla (prueba de contacto)",
+    "fuente": "Opinión de experto",
+    "value_hours": 52560.0
+   },
+   "cause": "Contactos corrosionados o quemados; sensor de presión diferencial o flotador atascado; electrónica interna defectuosa; cableado suelto o roto",
+   "credible": true,
+   "iso_code": "AIR",
+   "mechanism": "El interruptor debe detectar bajo caudal o nivel y enviar señal de parada/alarma; su falla permite que bomba siga operando sin agua (cavitación, daño) o con presión insuficiente",
+   "root_cause": "Falta de mantenimiento del interruptor; ambiente corrosivo; vibración que afloja conexiones; calidad pobre del dispositivo; envejecimiento sin reemplazo planificado",
+   "description": "Falla del interruptor de bajo caudal o bajo nivel",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-011"
+  },
+  "FM-016": {
+   "id": "FM-016",
+   "tpef": {
+    "note": "TPEF típico de 4 años (35040 h) si agua es de mala calidad; P-F: aparición de pequeñas fugas y turbiedad del agua ~6 meses antes de fuga importante",
+    "fuente": "Opinión de experto",
+    "value_hours": 35040.0
+   },
+   "cause": "Agua con pH desequilibrado, oxígeno disuelto o iones corrosivos; recubrimiento original defectuoso o degradado; exposición a agua salada o agua de mala calidad",
+   "credible": true,
+   "iso_code": "STD",
+   "mechanism": "La corrosión interna genera óxido y partículas; estas dañan el sello mecánico (causa fugas) y contaminan el agua; carcasa se perfora, causando fuga externa severa",
+   "root_cause": "Agua sin tratamiento adecuado; recubrimiento de mala calidad o instalado incorrectamente; falta de inhibidores de corrosión; material de carcasa inapropiado para el fluido",
+   "description": "Corrosión o degradación del recubrimiento interior",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 5000.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-006"
+  },
+  "FM-017": {
+   "id": "FM-017",
+   "tpef": {
+    "note": "TPEF típico de 3 años si válvula es de baja calidad; P-F: caída gradual de caudal y aumento de presión aguas arriba detectables ~30 días antes de bloqueo",
+    "fuente": "Opinión de experto",
+    "value_hours": 26280.0
+   },
+   "cause": "Corrosión o depósitos minerales en el asiento o vástago de la válvula; obstrucción por partículas; accionamiento manual olvidado en posición cerrada; muelle defectuoso",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Válvula parcialmente cerrada restringe el flujo hacia la red; caudal se reduce; presión aguas arriba sube; bomba trabaja fuera de punto de eficiencia; consumo energético aumenta, calor se genera",
+   "root_cause": "Válvula de mala calidad; falta de limpieza; agua con sedimentos; cierre manual accidental; falta de candado o señalización; muelle envejecido",
+   "description": "Válvula de descarga parcialmente cerrada",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 2000.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-002"
+  },
+  "FM-018": {
+   "id": "FM-018",
+   "tpef": {
+    "note": "TPEF muy corto: ~6 meses de operación continua a bajo caudal causa daño térmico severo; P-F: temperatura y vibración anormales detectables ~30 días antes de falla",
+    "fuente": "Opinión de experto",
+    "value_hours": 4380.0
+   },
+   "cause": "VFD operando a velocidad muy baja (estrangulación); válvula de descarga parcialmente cerrada; demanda menor que el mínimo de la bomba; consigna errónea de presión muy alta",
+   "credible": true,
+   "iso_code": "OHE",
+   "mechanism": "A bajo caudal, flujo es insuficiente para enfriar la bomba; temperatura interna sube; lubricación es deficiente; rodamientos se sobrecalientan; vibración aumenta; riesgo de cavitación y daño térmico",
+   "root_cause": "Configuración incorrecta del VFD; error operacional; falta de entendimiento de punto mínimo de operación estable; control de presión sin rango muerto adecuado",
+   "description": "Operación prolongada con caudal inferior al mínimo estable",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": 730.0,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-005"
+  },
+  "FM-019": {
+   "id": "FM-019",
+   "tpef": null,
+   "cause": "Filtro sucio, tubería obstruida, válvula de aspiración parcialmente cerrada",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Acumulación de sedimentos, suciedad o materia extraña en la tubería de aspiración o en el filtro de entrada",
+   "root_cause": "Falta de cambio preventivo del filtro, presencia de materia extraña en depósito",
+   "description": "Restricción u obstrucción en la aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-020": {
+   "id": "FM-020",
+   "tpef": null,
+   "cause": "Grieta en tubería de aspiración, válvula de retención defectuosa, nivel bajo en depósito, junta defectuosa",
+   "credible": true,
+   "iso_code": "AIR",
+   "mechanism": "Entrada de aire en la línea de aspiración, causando pérdida del cebado hidráulico",
+   "root_cause": "Falta de inspección de integridad de tuberías, mantenimiento deficiente de juntas",
+   "description": "Entrada de aire o pérdida parcial de cebado",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-021": {
+   "id": "FM-021",
+   "tpef": null,
+   "cause": "Falla parcial del motor, deslizamiento de correa, frecuencia de línea incorrecta, carga excesiva en el impulsor",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Reducción de RPM del motor por debajo de las especificaciones, resultando en menor caudal y presión",
+   "root_cause": "Desgaste del motor, desalineación, variador de frecuencia defectuoso",
+   "description": "Velocidad de giro inferior a la requerida",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-022": {
+   "id": "FM-022",
+   "tpef": null,
+   "cause": "Conexión incorrecta de fase eléctrica, error en el cableado trifásico, inversión accidental de polaridad",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Motor girando en sentido contrario al diseñado, resultando en ausencia de caudal o flujo inverso",
+   "root_cause": "Error en mantenimiento eléctrico, falta de verificación post-mantenimiento",
+   "description": "Sentido de giro incorrecto",
+   "weibull_beta": null,
+   "failure_pattern": "Mortalidad Infantil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-023": {
+   "id": "FM-023",
+   "tpef": null,
+   "cause": "Corrosión interna, sedimentos en el agua, entrada de materia extraña, depósitos minerales",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Acumulación de depósitos, corrosión o materia extraña en el impulsor, reduciendo el flujo de agua",
+   "root_cause": "Falta de filtración adecuada, agua con dureza alta, ausencia de inspección interna",
+   "description": "Impulsor parcialmente obstruido",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-024": {
+   "id": "FM-024",
+   "tpef": null,
+   "cause": "Desgaste por abrasión, erosión, o corrosión de piezas internas, rodamientos defectuosos",
+   "credible": true,
+   "iso_code": "PDE",
+   "mechanism": "Desgaste de rodamientos, sello mecánico o carcasa, aumentando las fugas internas y reduciendo eficiencia",
+   "root_cause": "Envejecimiento de componentes, falta de lubricación, operación con cavitación",
+   "description": "Holguras internas incorrectas",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-025": {
+   "id": "FM-025",
+   "tpef": null,
+   "cause": "Corrosión de tubería, fisura por vibración, junta defectuosa, válvula de retención bloqueada abierta",
+   "credible": true,
+   "iso_code": "ELP",
+   "mechanism": "Ruptura en tubería de descarga o válvula con fugas, permitiendo pérdida de agua antes de alcanzar la presión requerida",
+   "root_cause": "Envejecimiento de tuberías, vibraciones excesivas, falta de mantenimiento de juntas",
+   "description": "Fuga importante o bypass en el sistema de descarga",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-026": {
+   "id": "FM-026",
+   "tpef": null,
+   "cause": "Calibración perdida, elemento sensor dañado, conexión defectuosa, punto de toma de presión obstruido",
+   "credible": true,
+   "iso_code": "AIR",
+   "mechanism": "Fallo del instrumento de medición, indicando presión incorrecta (falsa baja lectura sin que presión real sea baja)",
+   "root_cause": "Falta de calibración periódica, envejecimiento del instrumento, daño mecánico",
+   "description": "Transmisor de presión o manómetro defectuoso",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-013"
+  },
+  "FM-027": {
+   "id": "FM-027",
+   "tpef": null,
+   "cause": "Sensor de presión defectuoso, relé quemado, lógica de control corrupta, desconexión accidental",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Fallo del sensor de presión, relé de control, o lógica de automatización que debería detectar falla de P-101A e iniciar arranque de P-101B",
+   "root_cause": "Falta de calibración periódica del sensor, envejecimiento del equipo de control, mantenimiento deficiente",
+   "description": "Falla del sistema de arranque automático",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-028": {
+   "id": "FM-028",
+   "tpef": null,
+   "cause": "Motor bobinado defectuoso, contactor pegado, variador falla, fusible quemado, conexión eléctrica suelta",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Fallo del motor eléctrico, contactor, variador de frecuencia o circuito de potencia de P-101B, impidiendo que inicie rotación",
+   "root_cause": "Envejecimiento del motor, sobrecarga previa, falta de revisión eléctrica periódica",
+   "description": "Motor o sistema eléctrico incapaz de arrancar",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-029": {
+   "id": "FM-029",
+   "tpef": null,
+   "cause": "Corrosión interna, depósitos minerales, entrada de materia extraña, rodamientos gripados, sello mecánico pegado",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Bloqueo mecánico del rotor del motor o impulsor de la bomba, impidiendo rotación incluso con suministro eléctrico disponible",
+   "root_cause": "Inactividad prolongada sin rotación periódica, falta de mantenimiento preventivo, agua con alto contenido mineral",
+   "description": "Conjunto bomba-motor agarrotado o bloqueado mecánicamente",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-030": {
+   "id": "FM-030",
+   "tpef": null,
+   "cause": "Válvula de retención defectuosa, tubería de aspiración rota, válvula de aislamiento cerrada, nivel bajo en depósito",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Vaciado de la carcasa de la bomba o línea de aspiración obstruida, impidiendo que P-101B genere presión aunque el motor arranque",
+   "root_cause": "Falta de inspección de integridad de tuberías, mantenimiento deficiente de válvulas de retención",
+   "description": "Pérdida de cebado o aspiración no disponible",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-031": {
+   "id": "FM-031",
+   "tpef": null,
+   "cause": "Error operacional, mantenimiento sin reapertura confirmada, falta de procedimiento de bloqueo/etiquetado",
+   "credible": true,
+   "iso_code": "STP",
+   "mechanism": "Válvula de aislamiento en la línea de descarga o aspiración de P-101B cerrada inadvertidamente, bloqueando el flujo",
+   "root_cause": "Ausencia de sistema de etiquetado (LOTO), procedimiento de mantenimiento incompleto, comunicación deficiente",
+   "description": "Válvula de aislamiento manual cerrada",
+   "weibull_beta": null,
+   "failure_pattern": "Mortalidad Infantil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-032": {
+   "id": "FM-032",
+   "tpef": null,
+   "cause": "Corrosión de tubería, sedimentos acumulados, vibración que causa fractura, golpe de ariete, congelamiento",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Obstrucción o ruptura en la tubería que conecta P-101B al sistema común (aspiración o descarga), impidiendo flujo",
+   "root_cause": "Envejecimiento de tuberías, falta de inspección visual, vibraciones no controladas",
+   "description": "Tubería de conexión bloqueada o dañada",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-010"
+  },
+  "FM-033": {
+   "id": "FM-033",
+   "tpef": {
+    "note": "Sistema nuevo, agua potable. MBT cada 2,700 horas",
+    "fuente": "OREDA",
+    "value_hours": 3000.0
+   },
+   "cause": "Acumulación de sedimentos en el filtro",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Obstrucción progresiva del filtro de aspiración por acumulación de sedimentos",
+   "root_cause": "Envejecimiento del filtro con uso continuo",
+   "description": "Restricción u obstrucción en la aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-007"
+  },
+  "FM-034": {
+   "id": "FM-034",
+   "tpef": {
+    "note": "Sistema nuevo, agua potable. MBT cada 2,700 horas",
+    "fuente": "OREDA",
+    "value_hours": 3000.0
+   },
+   "cause": "Acumulación de sedimentos en el filtro",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Obstrucción progresiva del filtro de aspiración por acumulación de sedimentos",
+   "root_cause": "Envejecimiento del filtro con uso continuo",
+   "description": "Restricción u obstrucción en la aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-001"
+  },
+  "FM-035": {
+   "id": "FM-035",
+   "tpef": {
+    "note": "Sistema nuevo, agua potable",
+    "fuente": "OREDA",
+    "value_hours": 3000.0
+   },
+   "cause": "Falta de limpieza del filtro o presencia de residuos en la tubería",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Acumulación de sedimentos o residuos en el filtro o tubería",
+   "root_cause": "Envejecimiento del filtro o contaminación del fluido de entrada",
+   "description": "Obstrucción del filtro o de la tubería de aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-036": {
+   "id": "FM-036",
+   "tpef": {
+    "note": "Depende de la calidad del agua",
+    "fuente": "Opinión de experto",
+    "value_hours": 5000.0
+   },
+   "cause": "Entrada de partículas o erosión progresiva",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Acumulación de sedimentos o erosión en los álabes del impulsor",
+   "root_cause": "Falta de filtración adecuada del agua de entrada",
+   "description": "Obstrucción parcial del impulsor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-037": {
+   "id": "FM-037",
+   "tpef": {
+    "note": "Depende de la gestión operacional",
+    "fuente": "Opinión de experto",
+    "value_hours": 2000.0
+   },
+   "cause": "Fuga en el sistema, consumo excesivo o falta de reposición",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Insuficiencia de agua en el depósito, causando cavitación o pérdida de cebado",
+   "root_cause": "Mantenimiento inadecuado del nivel del depósito",
+   "description": "Bajo nivel en el depósito de aspiración",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-038": {
+   "id": "FM-038",
+   "tpef": {
+    "note": "Evento poco frecuente",
+    "fuente": "Opinión de experto",
+    "value_hours": 8000.0
+   },
+   "cause": "Entrada de cuerpo extraño grande o corrosión severa",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Bloqueo mecánico total del conjunto impidiendo cualquier rotación",
+   "root_cause": "Falta de protección contra cuerpos extraños o corrosión acelerada",
+   "description": "Conjunto bomba-motor agarrotado o bloqueado",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-039": {
+   "id": "FM-039",
+   "tpef": {
+    "note": "Depende del patrón de demanda",
+    "fuente": "Opinión de experto",
+    "value_hours": 3000.0
+   },
+   "cause": "Falta de demanda adecuada en la red o regulación deficiente",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Bomba opera continuamente por debajo del caudal mínimo especificado, causando recirculación y sobrecalentamiento",
+   "root_cause": "Control de caudal inadecuado en el sistema",
+   "description": "Operación prolongada con caudal inferior al mínimo",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-040": {
+   "id": "FM-040",
+   "tpef": {
+    "note": "Similar a FM-002",
+    "fuente": "Opinión de experto",
+    "value_hours": 5000.0
+   },
+   "cause": "Entrada de partículas en la bomba o erosión progresiva",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Acumulación de residuos o detritus en los álabes del impulsor",
+   "root_cause": "Filtración insuficiente del agua de entrada",
+   "description": "Impulsor parcialmente obstruido",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-041": {
+   "id": "FM-041",
+   "tpef": {
+    "note": "Sistema nuevo sin historial",
+    "fuente": "Opinión de experto",
+    "value_hours": 4000.0
+   },
+   "cause": "Ensuciamiento, desgaste o ajuste incorrecto de la válvula",
+   "credible": true,
+   "iso_code": "STP",
+   "mechanism": "Válvula de descarga no abre completamente o se cierra parcialmente durante operación",
+   "root_cause": "Falta de limpieza o mantenimiento preventivo de la válvula",
+   "description": "Válvula de descarga parcialmente cerrada",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-042": {
+   "id": "FM-042",
+   "tpef": {
+    "note": "Depende de condiciones operacionales",
+    "fuente": "Opinión de experto",
+    "value_hours": 3000.0
+   },
+   "cause": "Fugas en acoplamientos, falta de sifón inverso o tubería dañada",
+   "credible": true,
+   "iso_code": "LOO",
+   "mechanism": "Pérdida del sello de agua en la línea de aspiración, causando entrada de aire",
+   "root_cause": "Mantenimiento inadecuado de la integridad de la aspiración",
+   "description": "Pérdida de cebado o aspiración no disponible",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-043": {
+   "id": "FM-043",
+   "tpef": {
+    "note": "Depende de condiciones de NPSH",
+    "fuente": "Opinión de experto",
+    "value_hours": 2000.0
+   },
+   "cause": "NPSH disponible menor que NPSH requerido por la bomba",
+   "credible": true,
+   "iso_code": "HIO",
+   "mechanism": "Formación de burbujas de vapor en la línea de aspiración debido a presión insuficiente",
+   "root_cause": "Aspiración a mayor altura, tubería restrictiva o bajo nivel en depósito",
+   "description": "Cavitación por insuficiente NPSH disponible",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-015"
+  },
+  "FM-044": {
+   "id": "FM-044",
+   "tpef": {
+    "note": "Evento poco probable en sistema nuevo",
+    "fuente": "Opinión de experto",
+    "value_hours": 8000.0
+   },
+   "cause": "Acumulación de sedimentos, corrosión, o impacto mecánico",
+   "credible": true,
+   "iso_code": "BRD",
+   "mechanism": "Obstrucción total o parcial en la tubería de descarga, o daño (grietas, abolladura)",
+   "root_cause": "Falta de mantenimiento o diseño inadequado de tuberías",
+   "description": "Tubería de conexión bloqueada o dañada",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-015"
+  },
+  "FM-045": {
+   "id": "FM-045",
+   "tpef": {
+    "note": "Depende de calidad de instalación y vibración",
+    "fuente": "Opinión de experto",
+    "value_hours": 5000.0
+   },
+   "cause": "Vibración, ciclos térmicos, corrosión, o ajuste inadecuado inicial",
+   "credible": true,
+   "iso_code": "ELP",
+   "mechanism": "Desprendimiento, corrosión o aflojamiento de conexiones de tuberías en la bomba",
+   "root_cause": "Falta de mantenimiento preventivo o diseño de uniones insuficiente",
+   "description": "Fuga por unión bomba-tubería",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-016"
+  },
+  "FM-046": {
+   "id": "FM-046",
+   "tpef": {
+    "note": "Típico en bombas centrífugas con operación continua",
+    "fuente": "OREDA",
+    "value_hours": 4000.0
+   },
+   "cause": "Envejecimiento del sello, fricción excesiva, o contaminación de partículas",
+   "credible": true,
+   "iso_code": "ELP",
+   "mechanism": "Desgaste o degradación del sello mecánico o empaquetadura, permitiendo escape de agua",
+   "root_cause": "Desgaste natural del sello mecánico con el uso continuo",
+   "description": "Fuga por sello mecánico / empaquetadura",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-016"
+  },
+  "FM-047": {
+   "id": "FM-047",
+   "tpef": {
+    "note": "Sistema de control, típicamente muy confiable",
+    "fuente": "Opinión de experto",
+    "value_hours": 10000.0
+   },
+   "cause": "Falla en relés, PLC, sensor de presión, o conexiones eléctricas",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Falla en la lógica de control o hardware del sistema de arranque automático",
+   "root_cause": "Envejecimiento de componentes eléctricos o pérdida de señal de sensor",
+   "description": "Falla del sistema de arranque automático",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-009"
+  },
+  "FM-048": {
+   "id": "FM-048",
+   "tpef": {
+    "note": "Motor con protecciones térmicas estándar",
+    "fuente": "Opinión de experto",
+    "value_hours": 8000.0
+   },
+   "cause": "Falla del contactor, variador, fusible, o conexión eléctrica deficiente",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Motor no gira o arranca lentamente debido a falta de potencia eléctrica o sobrecarga",
+   "root_cause": "Envejecimiento de componentes eléctricos o mantenimiento inadecuado",
+   "description": "Motor o sistema eléctrico de potencia incapaz de arrancar",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-009"
+  },
+  "FM-049": {
+   "id": "FM-049",
+   "tpef": {
+    "note": "Produce ruido característico y erosión del impulsor",
+    "fuente": "Opinión de experto",
+    "value_hours": 2000.0
+   },
+   "cause": "NPSH insuficiente, aspiración restrictiva, o bajo nivel en depósito",
+   "credible": true,
+   "iso_code": "NOI",
+   "mechanism": "Formación de burbujas de vapor en la línea de aspiración, colapsando en la zona de descarga",
+   "root_cause": "Condiciones operacionales inadecuadas o diseño de aspiración insuficiente",
+   "description": "Cavitación",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-017"
+  },
+  "FM-050": {
+   "id": "FM-050",
+   "tpef": {
+    "note": "Evento poco frecuente en sistemas bien mantenidos",
+    "fuente": "Opinión de experto",
+    "value_hours": 5000.0
+   },
+   "cause": "Falta de filtración adecuada o contaminación del sistema",
+   "credible": true,
+   "iso_code": "NOI",
+   "mechanism": "Partícula sólida grande o cuerpo extraño ingresa a la bomba, causando choque en el impulsor",
+   "root_cause": "Diseño de filtro insuficiente o mantenimiento inadecuado",
+   "description": "Cuerpo extraño en la bomba",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-017"
+  },
+  "FM-051": {
+   "id": "FM-051",
+   "tpef": {
+    "note": "Síntoma de envejecimiento de la bomba",
+    "fuente": "Opinión de experto",
+    "value_hours": 6000.0
+   },
+   "cause": "Desgaste progresivo del impulsor, eje, o carcasa",
+   "credible": true,
+   "iso_code": "NOI",
+   "mechanism": "Desgaste excesivo de componentes internos, generando juego mecánico y ruido",
+   "root_cause": "Operación a condiciones fuera de especificación o falta de mantenimiento preventivo",
+   "description": "Holguras internas incorrectas",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-017"
+  },
+  "FM-052": {
+   "id": "FM-052",
+   "tpef": {
+    "note": "Depende de ciclo de operación y ambiental",
+    "fuente": "Opinión de experto",
+    "value_hours": 6000.0
+   },
+   "cause": "Envejecimiento natural, contaminación por agua o fricción excesiva",
+   "credible": true,
+   "iso_code": "VIB",
+   "mechanism": "Oxidación, contaminación o envejecimiento de la grasa lubricante en los rodamientos",
+   "root_cause": "Falta de relubricación preventiva o sello deficiente",
+   "description": "Degradación de la grasa de los rodamientos",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-019"
+  },
+  "FM-053": {
+   "id": "FM-053",
+   "tpef": {
+    "note": "Inspección visual periódica lo previene",
+    "fuente": "Opinión de experto",
+    "value_hours": 3000.0
+   },
+   "cause": "Vibración, ciclos térmicos, o torsión excesiva",
+   "credible": true,
+   "iso_code": "VIB",
+   "mechanism": "Aflojamiento de pernos de anclaje o desgaste de aisladores",
+   "root_cause": "Mantenimiento preventivo insuficiente de anclajes",
+   "description": "Aflojamiento de la base o presencia de pies cortos",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-019"
+  },
+  "FM-054": {
+   "id": "FM-054",
+   "tpef": {
+    "note": "Afecta eficiencia y caudal progresivamente",
+    "fuente": "Opinión de experto",
+    "value_hours": 6000.0
+   },
+   "cause": "Desgaste por operación prolongada a altas velocidades o con agua abrasiva",
+   "credible": true,
+   "iso_code": "STD",
+   "mechanism": "Desgaste excesivo de rodetes o sellos internos, aumentando el juego mecánico interno",
+   "root_cause": "Envejecimiento de componentes internos",
+   "description": "Holguras internas incorrectas en bomba",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-055": {
+   "id": "FM-055",
+   "tpef": {
+    "note": "Componentes sensibles a sobretensiones",
+    "fuente": "Opinión de experto",
+    "value_hours": 8000.0
+   },
+   "cause": "Envejecimiento de componentes, corrosión, sobrecarga o picos de tensión",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Falla en componentes eléctricos del sistema de arranque: variador de frecuencia, contactor, relés",
+   "root_cause": "Mantenimiento preventivo inadecuado de componentes eléctricos",
+   "description": "Falla del variador, contactor o circuito de control",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-020"
+  },
+  "FM-056": {
+   "id": "FM-056",
+   "tpef": {
+    "note": "Causa progresiva de reducción de caudal",
+    "fuente": "Opinión de experto",
+    "value_hours": 5000.0
+   },
+   "cause": "Operación con agua abrasiva o presencia de sedimentos",
+   "credible": true,
+   "iso_code": "STD",
+   "mechanism": "Desgaste progresivo o erosión de los álabes del impulsor por fricción o impacto de partículas",
+   "root_cause": "Filtración inadecuada del agua de entrada",
+   "description": "Desgaste o erosión del impulsor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-057": {
+   "id": "FM-057",
+   "tpef": {
+    "note": "Sistema nuevo, riesgo bajo inicialmente",
+    "fuente": "Opinión de experto",
+    "value_hours": 7000.0
+   },
+   "cause": "Agua corrosiva, falta de aditivos anticorrosivos o edad del material",
+   "credible": true,
+   "iso_code": "STD",
+   "mechanism": "Corrosión de la carcasa interna o pérdida de recubrimiento protector",
+   "root_cause": "Calidad del agua o envejecimiento del recubrimiento",
+   "description": "Corrosión o degradación del recubrimiento interno",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-014"
+  },
+  "FM-058": {
+   "id": "FM-058",
+   "tpef": {
+    "note": "Requiere alineación laser periódica",
+    "fuente": "Opinión de experto",
+    "value_hours": 4000.0
+   },
+   "cause": "Asentamiento de fundación, desgaste de acoplamientos, o variación térmica",
+   "credible": true,
+   "iso_code": "VIB",
+   "mechanism": "Desplazamiento angular o axial entre los ejes de bomba y motor",
+   "root_cause": "Falta de mantenimiento preventivo o deficiente alineación inicial",
+   "description": "Desalineación entre bomba y motor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-019"
+  },
+  "FM-059": {
+   "id": "FM-059",
+   "tpef": {
+    "note": "Aumenta consumo eléctrico progresivamente",
+    "fuente": "Opinión de experto",
+    "value_hours": 8000.0
+   },
+   "cause": "Envejecimiento de rodamientos o falta de lubricación",
+   "credible": true,
+   "iso_code": "OHE",
+   "mechanism": "Desgaste de rodamientos del motor, aumentando fricción interna",
+   "root_cause": "Desgaste natural del motor",
+   "description": "Holguras internas incorrectas en motor",
+   "weibull_beta": null,
+   "failure_pattern": "Fin de Vida Útil",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-012"
+  },
+  "FM-060": {
+   "id": "FM-060",
+   "tpef": {
+    "note": "Evento raro si el sistema está correctamente instalado",
+    "fuente": "Opinión de experto",
+    "value_hours": 10000.0
+   },
+   "cause": "Inversión de fases en conexión eléctrica del motor o error en arranque automático",
+   "credible": true,
+   "iso_code": "FTS",
+   "mechanism": "Motor gira en sentido inverso al requerido, impidiendo que la bomba bombee agua",
+   "root_cause": "Error en la instalación eléctrica o fallo en el sistema de control de giro",
+   "description": "Sentido de giro incorrecto",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "",
+   "functional_failure_id": "FF-021"
+  },
+  "FM-061": {
+   "id": "FM-061",
+   "tpef": null,
+   "cause": "N/A",
+   "credible": false,
+   "iso_code": "OTH",
+   "mechanism": "N/A",
+   "root_cause": "N/A",
+   "description": "NO APLICA - Función de contaminación de agua no es crítica en sistema de bombeo (responsabilidad de tratamiento).",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "No aplica al alcance de análisis RCM de bomba. La calidad del agua es responsabilidad del sistema de tratamiento previo, no de la bomba centrífuga.",
+   "functional_failure_id": "FF-003"
+  },
+  "FM-062": {
+   "id": "FM-062",
+   "tpef": null,
+   "cause": "Ver modos FM-049, FM-050, FM-051",
+   "credible": false,
+   "iso_code": "NOI",
+   "mechanism": "Referencia a modos existentes",
+   "root_cause": "Ver modos FM-049, FM-050, FM-051",
+   "description": "Modos de ruido ya registrados bajo FF-018: FM-049 (Cavitación), FM-050 (Cuerpo extraño), FM-051 (Holguras internas)",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "Referencia: Los modos de ruido anormal ya están desagregados en FM-049, FM-050 y FM-051 bajo FF-018. Este registro es solo para completar la estructura.",
+   "functional_failure_id": "FF-018"
+  },
+  "FM-063": {
+   "id": "FM-063",
+   "tpef": {
+    "note": "Componentes sensibles a sobretensiones",
+    "fuente": "Opinión de experto",
+    "value_hours": 8000.0
+   },
+   "cause": "Envejecimiento de componentes, corrosión, sobrecarga o picos de tensión",
+   "credible": false,
+   "iso_code": "FTS",
+   "mechanism": "Falla en componentes eléctricos del sistema de arranque: variador de frecuencia, contactor, relés",
+   "root_cause": "Mantenimiento preventivo inadecuado de componentes eléctricos",
+   "description": "Falla del variador, contactor o circuito de control",
+   "weibull_beta": null,
+   "failure_pattern": "Aleatoria",
+   "pf_interval_hours": null,
+   "weibull_eta_hours": null,
+   "non_credible_discard": "Este modo está duplicado en FM-055. Se usa la estructura de FF-022/FM para completar F-010, pero el análisis se centra en FM-055.",
+   "functional_failure_id": "FF-022"
+  }
+ },
+ "schema_version": 1,
+ "residual_scores": {
+  "FM-035": {
+   "severity": 8,
+   "detection": 2,
+   "input_hash": "abbff91bc72b54a5",
+   "occurrence": 4,
+   "is_residual": true,
+   "failure_mode_id": "FM-035"
+  },
+  "FM-037": {
+   "severity": 8,
+   "detection": 2,
+   "input_hash": "14e543a474e56cce",
+   "occurrence": 3,
+   "is_residual": true,
+   "failure_mode_id": "FM-037"
+  },
+  "FM-039": {
+   "severity": 7,
+   "detection": 2,
+   "input_hash": "35f20bcec42e6e49",
+   "occurrence": 3,
+   "is_residual": true,
+   "failure_mode_id": "FM-039"
+  },
+  "FM-044": {
+   "severity": 9,
+   "detection": 3,
+   "input_hash": "75c43bcf6c96bf6c",
+   "occurrence": 2,
+   "is_residual": true,
+   "failure_mode_id": "FM-044"
+  },
+  "FM-047": {
+   "severity": 8,
+   "detection": 2,
+   "input_hash": "280d3efdaf6ba26c",
+   "occurrence": 3,
+   "is_residual": true,
+   "failure_mode_id": "FM-047"
+  }
+ },
+ "review_triggers": [
+  "Falla de P-101A o P-101B",
+  "Falta de disponibilidad de respaldo automático (FM-047)",
+  "Presión de descarga <5.5 bar",
+  "Vibración >5mm/s",
+  "Ruido anormal detectado",
+  "Temperatura motor >65°C",
+  "Cambio en plan de operaciones",
+  "Presencia de fugas",
+  "Cada 6 meses (revisión periódica)"
+ ],
+ "validation_signoff": "Validación Operaciones: Jefe de Planta P-101; Validación Mantenimiento: Supervisor Mecánico; Validación HSE: Responsable HSE (modos con S≥9 o consecuencias de seguridad)",
+ "functional_failures": {
+  "FF-001": {
+   "id": "FF-001",
+   "description": "La bomba no suministra caudal",
+   "function_id": "F-001"
+  },
+  "FF-002": {
+   "id": "FF-002",
+   "description": "La bomba suministra menos de 160 m³/h",
+   "function_id": "F-001"
+  },
+  "FF-003": {
+   "id": "FF-003",
+   "description": "La bomba no alcanza la presión mínima de 4,0 bar",
+   "function_id": "F-001"
+  },
+  "FF-004": {
+   "id": "FF-004",
+   "description": "La bomba no arranca o tarda más de 10 segundos",
+   "function_id": "F-002"
+  },
+  "FF-005": {
+   "id": "FF-005",
+   "description": "La bomba se detiene inesperadamente durante la operación",
+   "function_id": "F-001"
+  },
+  "FF-006": {
+   "id": "FF-006",
+   "description": "Se producen fugas de agua",
+   "function_id": "F-003"
+  },
+  "FF-007": {
+   "id": "FF-007",
+   "description": "La bomba contamina el agua potable",
+   "function_id": "F-004"
+  },
+  "FF-008": {
+   "id": "FF-008",
+   "description": "Se produce flujo inverso o golpe de ariete durante la parada",
+   "function_id": "F-007"
+  },
+  "FF-009": {
+   "id": "FF-009",
+   "description": "Las protecciones no actúan cuando aparece una condición peligrosa",
+   "function_id": "F-008"
+  },
+  "FF-010": {
+   "id": "FF-010",
+   "description": "La bomba de reserva no arranca cuando es requerida",
+   "function_id": "F-009"
+  },
+  "FF-011": {
+   "id": "FF-011",
+   "description": "La bomba funciona con vibración o temperatura excesiva",
+   "function_id": "F-005"
+  },
+  "FF-012": {
+   "id": "FF-012",
+   "description": "El consumo energético supera 0,18 kWh/m³",
+   "function_id": "F-006"
+  },
+  "FF-013": {
+   "id": "FF-013",
+   "description": "Pérdida de presión en la descarga",
+   "function_id": "F-001"
+  },
+  "FF-014": {
+   "id": "FF-014",
+   "description": "Reducción de caudal",
+   "function_id": "F-001"
+  },
+  "FF-015": {
+   "id": "FF-015",
+   "description": "Presión de salida insuficiente",
+   "function_id": "F-001"
+  },
+  "FF-016": {
+   "id": "FF-016",
+   "description": "Fugas externas",
+   "function_id": "F-003"
+  },
+  "FF-017": {
+   "id": "FF-017",
+   "description": "La bomba principal no puede arrancar",
+   "function_id": "F-002"
+  },
+  "FF-018": {
+   "id": "FF-018",
+   "description": "Ruido anormal",
+   "function_id": "F-005"
+  },
+  "FF-019": {
+   "id": "FF-019",
+   "description": "Vibración anormal",
+   "function_id": "F-008"
+  },
+  "FF-020": {
+   "id": "FF-020",
+   "description": "Arranque lento de la bomba",
+   "function_id": "F-002"
+  },
+  "FF-021": {
+   "id": "FF-021",
+   "description": "Protección mecánica",
+   "function_id": "F-008"
+  },
+  "FF-022": {
+   "id": "FF-022",
+   "description": "Arranque lento de la bomba",
+   "function_id": "F-010"
+  }
+ },
+ "secondary_functions_confirmed": true,
+ "protective_functions_confirmed": true
+}

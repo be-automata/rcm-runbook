@@ -17,4 +17,17 @@ jobs:
       # con el tipo equivocado que reventaba toda la corrida en producción, y
       # ni pytest ni ruff la veían. mypy la cazaba en una línea.
       - run: uv run mypy src scripts
+      # La llave va en el entorno del job y no sólo en el conftest: `settings`
+      # es un singleton de módulo, así que si cualquier test se importa antes
+      # que `tests/unit/conftest.py` la construye vacía y
+      # `test_hay_llave_configurada_para_que_nada_se_salte_en_verde` falla. En
+      # local no se nota porque la llave sale del `.env`.
+      #
+      # RCM_OS_SECURITY_KEY y NO OS_SECURITY_KEY, por lo mismo que explica ese
+      # conftest: el segundo nombre lo lee también AgnoAPISettings, activa su
+      # propia dependencia de auth —sólo `Authorization: Bearer`— y mata los
+      # enlaces `?key=`. No es una llave real: sólo tiene que estar presente
+      # para que las cuatro pruebas del WebSocket no se salten en verde.
       - run: uv run pytest -m "not eval"
+        env:
+          RCM_OS_SECURITY_KEY: llave-de-ci-sin-valor-real

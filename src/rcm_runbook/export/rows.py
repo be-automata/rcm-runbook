@@ -11,14 +11,23 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from rcm_runbook.engine.decision_logic import derive_route
 from rcm_runbook.models.catalogs import (
     POLICY_PLAN_COLUMN,
     MaintenancePolicy,
 )
-from rcm_runbook.models.domain import MaintenanceTask
+from rcm_runbook.models.domain import DecisionResult, Effect, MaintenanceTask
 from rcm_runbook.models.session import RCMSession
 
 X = "X"  # benchmark marks consequence/strategy flags with X
+
+# Un modo sin ruta decidida NO deja la celda muda: el interesado leyó 28 de 60
+# filas en blanco y no tenía forma de saber si era un olvido del método o un
+# defecto del exportador. Tampoco se inventa la letra: A/B/C/D y A/E/F/G
+# dependen de la política elegida (`derive_route`), y escribir «B» donde podría
+# ser «D» afirma en el entregable que el equipo descartó operar-hasta-la-falla.
+SIN_DECISION = "PENDIENTE — sin decisión RCM"
+RUTA_INCONSISTENTE = "PENDIENTE — ruta no reproducible"
 
 
 class AMEFRow(BaseModel):
@@ -89,6 +98,100 @@ def _effect_text(session: RCMSession, fmid: str) -> str:
     return f"{effect.local}. {effect.system}. {effect.plant}."
 
 
+def _contraste(
+    effect: Effect | None, decision: DecisionResult | None
+) -> tuple[tuple[str, str], tuple[str, str]] | None:
+    """(ruta guardada, ruta recalculada), o `None` si no hay nada que contrastar.
+
+    Único sitio del módulo que invoca `derive_route`. Lo comparten la
+    proyección de las celdas y el registro de auditoría, que antes repetían la
+    misma comparación y ya habían divergido en el caso `effect is None`.
+    """
+    if decision is None or effect is None:
+        return None
+    guardada = (decision.evident_route or "", decision.hidden_route or "")
+    if guardada == ("", ""):
+        return None
+    calc_e, calc_o = derive_route(effect, MaintenancePolicy(decision.policy))
+    return guardada, (calc_e or "", calc_o or "")
+
+
+def _rutas(effect: Effect | None, decision: DecisionResult | None) -> tuple[str, str]:
+    """Celdas (ABCD, AEFG). Sólo se imprime una letra que se pueda reproducir.
+
+    No hay respaldo hacia `Effect.evident_route`/`hidden_route`: esos campos son
+    válidos en el modelo pero el flujo de producción no los puebla, y la ruta es
+    una conclusión de la lógica JA1011 cuyo único dueño legítimo es
+    `DecisionResult`. Una ruta guardada en el efecto es un dato sin procedencia
+    auditable.
+
+    La letra guardada se contrasta contra `derive_route` antes de imprimirla:
+    `DecisionResult` no valida coherencia con la visibilidad ni con la política,
+    así que un estado histórico puede traer una «B» donde la lógica da «A». Ante
+    el desacuerdo no se imprime ninguna de las dos —reescribir en silencio
+    ocultaría que el estado está corrupto— y el caso se registra en AUDITORIA.
+    Sin `Effect` tampoco se imprime: la regla es «toda letra impresa se puede
+    reproducir», no «toda letra que no pude refutar se imprime».
+
+    El centinela va en la columna que marca la visibilidad, nunca en las dos: la
+    fila sigue diciendo lo que el análisis sí determinó —la falla es oculta— y
+    declara pendiente sólo lo que falta, que es la letra.
+    """
+    guardada = (
+        (decision.evident_route or "", decision.hidden_route or "")
+        if decision is not None else ("", "")
+    )
+    contraste = _contraste(effect, decision)
+    if contraste is not None and contraste[0] == contraste[1]:
+        return contraste[0]  # la única salida que imprime letras
+    # Hay ruta guardada pero no se pudo reproducir: o discrepa del recálculo, o
+    # falta el efecto contra el cual recalcularla. Las dos son estado corrupto.
+    pendiente = RUTA_INCONSISTENTE if guardada != ("", "") else SIN_DECISION
+    return ("", pendiente) if (effect is not None and effect.is_hidden) else (pendiente, "")
+
+
+def _etiqueta_ruta(par: tuple[str, str]) -> str:
+    """«evidente:A» / «oculta:A», no «A».
+
+    La posición en la tupla es la mitad del dato: una ruta evidente A y una
+    oculta A son distintas y se ven iguales si se aplana. El renglón de
+    auditoría decía «guardada: A — contraste: A», o sea afirmaba una
+    discrepancia mostrando dos veces el mismo valor.
+    """
+    evidente, oculta = par
+    if evidente:
+        return f"evidente:{evidente}"
+    if oculta:
+        return f"oculta:{oculta}"
+    return "sin ruta"
+
+
+def rutas_inconsistentes(session: RCMSession) -> list[tuple[str, str, str]]:
+    """(modo, ruta guardada, ruta contrastada) para el registro de auditoría.
+
+    Sólo modos creíbles: los demás no tienen fila en ninguna hoja, y el renglón
+    de auditoría habla de «la fila» donde no se imprime la ruta.
+    """
+    desacuerdos: list[tuple[str, str, str]] = []
+    for fmid, decision in session.decisions.items():
+        fm = session.failure_modes.get(fmid)
+        if fm is None or not fm.credible:
+            continue
+        effect = session.effects.get(fmid)
+        guardada_cruda = (decision.evident_route or "", decision.hidden_route or "")
+        if guardada_cruda == ("", ""):
+            continue
+        guardada = _etiqueta_ruta(guardada_cruda)
+        if effect is None:
+            desacuerdos.append((fmid, guardada, "sin efecto registrado"))
+            continue
+        contraste = _contraste(effect, decision)
+        assert contraste is not None
+        if contraste[0] != contraste[1]:
+            desacuerdos.append((fmid, guardada, _etiqueta_ruta(contraste[1])))
+    return desacuerdos
+
+
 def _task_cells(task: MaintenanceTask | None) -> tuple[str, str, float | str, str, str]:
     if task is None:
         return "", "", "", "", ""
@@ -123,8 +226,17 @@ def _first_task(session: RCMSession, fmid: str) -> tuple[str, str, float | str, 
     )
 
 
-def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
-    rows: list[AMEFRow] = []
+def amef_rows_with_ids(session: RCMSession) -> list[tuple[str, AMEFRow]]:
+    """Filas del AMEF junto a su `FM-id`.
+
+    El id no puede ser un campo de `AMEFRow`: `amef_headers()` se construye con
+    los alias del modelo y un golden test los compara verbatim contra el fixture
+    del cliente, así que un campo más rompería el contrato del dialecto. Viaja
+    aparte y `excel.py` lo escribe en la columna A, fuera del rango de
+    encabezados. Y viaja desde acá, y no de un segundo recorrido, para que el
+    filtro de credibilidad y el orden tengan una sola fuente de verdad.
+    """
+    rows: list[tuple[str, AMEFRow]] = []
     for fmid, fm in session.failure_modes.items():
         if not fm.credible:
             continue  # documented discards live in the audit sheet, not the AMEF
@@ -132,13 +244,18 @@ def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
         effect = session.effects.get(fmid)
         score = session.risk_scores.get(fmid)
         decision = session.decisions.get(fmid)
+        evidente, oculta = _rutas(effect, decision)
         tarea, frecuencia, duracion, ejecutor, paro = _first_task(session, fmid)
-        rows.append(
+        rows.append((
+            fmid,
             AMEFRow.model_validate({
                     "Familia del Equipo": session.scope.equipment_family,
                     "Descripción Equipo": session.scope.equipment_description,
                     "TAG": session.scope.tag,
-                    "Falla Funcional": ff.description,
+                    # El código FF- va DENTRO de la celda: no hay una segunda
+                    # columna libre y es el formato que pidió el interesado.
+                    # El encabezado está congelado, el contenido no.
+                    "Falla Funcional": f"{ff.id} — {ff.description}",
                     "Mecanismo de Falla (ISO 14224)": fm.mechanism,
                     "Modo de Falla (ISO 14224)": fm.description,
                     "Causa de la Falla (ISO 14224)": fm.cause,
@@ -146,14 +263,8 @@ def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
                     "Causa Raíz": fm.root_cause,
                     "Patrón de Falla": fm.failure_pattern,
                     "Efecto de la Falla": _effect_text(session, fmid),
-                    "Falla Evidente (ABCD)": (
-                        decision.evident_route or "" if decision
-                        else (effect.evident_route or "" if effect else "")
-                    ),
-                    "Falla Oculta (AEFG)": (
-                        decision.hidden_route or "" if decision
-                        else (effect.hidden_route or "" if effect else "")
-                    ),
+                    "Falla Evidente (ABCD)": evidente,
+                    "Falla Oculta (AEFG)": oculta,
                     "Seguridad": _mark(bool(effect and effect.safety)),
                     "Ambiente": _mark(bool(effect and effect.environment)),
                     "Operacional": _mark(bool(effect and effect.operational)),
@@ -169,37 +280,50 @@ def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
                     "EJECUTOR (DISCIPLINA)": ejecutor,
                     "REQUIERE PARO DEL EQUIPO?": paro,
                 }
-            )
-        )
+            ),
+        ))
     return rows
 
 
-def to_plan_rows(session: RCMSession) -> list[PlanRow]:
+def to_amef_rows(session: RCMSession) -> list[AMEFRow]:
+    return [row for _, row in amef_rows_with_ids(session)]
+
+
+def plan_rows_with_ids(session: RCMSession) -> list[tuple[str, PlanRow]]:
     """One PLAN row per (failure mode, task) — no task is ever dropped. Modes with a
-    decision but no scheduled task (e.g. OHF) still emit one row with empty task cells."""
-    rows: list[PlanRow] = []
+    decision but no scheduled task (e.g. OHF) still emit one row with empty task cells.
+
+    Un modo creíble SIN decisión también emite su fila. Antes se lo saltaba en
+    silencio: la hoja salía con 49 filas contra las 60 del AMEF y no había en
+    todo el libro nada que dijera qué se había caído ni por qué. En la sesión
+    real eso escondía 8 de las 11 fallas ocultas y todas las de seguridad sin
+    decidir. Un entregable auditable no desaparece datos; los marca.
+    """
+    rows: list[tuple[str, PlanRow]] = []
     for fmid, fm in session.failure_modes.items():
         if not fm.credible:
             continue
         decision = session.decisions.get(fmid)
-        if decision is None:
-            continue
         effect = session.effects.get(fmid)
-        plan_col = POLICY_PLAN_COLUMN.get(MaintenancePolicy(decision.policy), "")
+        evidente, oculta = _rutas(effect, decision)
+        plan_col = (
+            POLICY_PLAN_COLUMN.get(MaintenancePolicy(decision.policy), "") if decision else ""
+        )
         tasks: list[MaintenanceTask | None] = list(session.tasks.get(fmid, []))
         if not tasks:
             tasks = [None]
         for task in tasks:
             tarea, frecuencia, duracion, ejecutor, paro = _task_cells(task)
-            rows.append(
+            rows.append((
+            fmid,
             PlanRow.model_validate({
                     "Modo de Falla (ISO 14224)": fm.description,
                     "Codigo ISO 14224": fm.iso_code,
                     "Causa Raíz": fm.root_cause,
                     "Patrón de Falla": fm.failure_pattern,
                     "Efecto de la Falla": _effect_text(session, fmid),
-                    "Falla Evidente (ABCD)": decision.evident_route or "",
-                    "Falla Oculta (AEFG)": decision.hidden_route or "",
+                    "Falla Evidente (ABCD)": evidente,
+                    "Falla Oculta (AEFG)": oculta,
                     "Seguridad": _mark(bool(effect and effect.safety)),
                     "Ambiente": _mark(bool(effect and effect.environment)),
                     "Operacional": _mark(bool(effect and effect.operational)),
@@ -216,9 +340,13 @@ def to_plan_rows(session: RCMSession) -> list[PlanRow]:
                     "EJECUTOR (DISCIPLINA)": ejecutor,
                     "REQUIERE PARO DEL EQUIPO?": paro,
                 }
-            )
-        )
+            ),
+        ))
     return rows
+
+
+def to_plan_rows(session: RCMSession) -> list[PlanRow]:
+    return [row for _, row in plan_rows_with_ids(session)]
 
 
 def amef_headers() -> list[str]:
