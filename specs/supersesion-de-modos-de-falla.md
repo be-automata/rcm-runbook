@@ -41,13 +41,15 @@ mostrar el estado real era su trabajo, corregirlo es el de ésta.
 - Cambiar la forma del entregable más allá de la sección de supersesiones en
   AUDITORIA RCM. Los encabezados siguen congelados; `AMEFRow`/`PlanRow` no
   ganan campos.
-- **Las 31 decisiones desactualizadas.** `export_blockers()` sobre el estado
-  real devuelve 121 bloqueadores: 28 modos sin decisión, 31 valoraciones
-  desactualizadas y 31 decisiones desactualizadas. Las dos últimas son un
-  problema distinto —el snapshot de entrada cambió después de decidir— y
-  merecen su propio diagnóstico. Esta spec no las toca y **no las va a dejar
-  resueltas**: la sesión seguirá sin poder exportar definitivo hasta que se
-  aborden.
+- **Las 31 decisiones desactualizadas.** Diagnosticadas y con spec propia:
+  [`hash-de-decision-y-de-valoracion.md`](hash-de-decision-y-de-valoracion.md).
+  Resumen: un solo hash sella dos artefactos con insumos distintos, e incluye
+  los controles, que no alimentan la decisión. Añadir un control invalidó 31
+  decisiones que no pudo cambiar. **Esa spec debería ir primero**: sin ella,
+  la migración de acá trabaja sobre un estado que miente sobre qué está
+  obsoleto. Y de paso, las «31 valoraciones desactualizadas» que se creían
+  parte del problema **no existen**: 0 de 60 scores tienen el hash desfasado;
+  son un defecto de reporte. Los bloqueadores reales son 90, no 121.
 - Detección semántica por embeddings. El criterio textual medido abajo tiene
   95 % de exhaustividad; el 5 % que se pierde lo resuelve un humano mirando la
   lista.
@@ -168,6 +170,66 @@ causa varias fallas funcionales y debe registrarse en cada una. Bajar el umbral
 a 0.72 no recupera `FM-010` (0.56) y sí empieza a emparejar cosas absurdas.
 **0.85 es el óptimo local sobre estos datos.**
 
+**DECIDIDO — libro de supersesiones, no campo en `FailureMode`.** Con
+`sustituido_por(fmid)` y `sustituidos()` como métodos derivados del libro, no
+como estado duplicado; así el consumo en `rows.py` y `compliance.py` cuesta lo
+mismo con las dos formas y deja de ser un criterio.
+
+Primero, un hecho que despeja la mitad del debate: **ninguna de las dos opciones
+toca los hashes.** `failure_mode_snapshot` (`domain.py:284-298`) enumera sus
+campos uno por uno, así que un campo nuevo no entra en el digest salvo que
+alguien lo añada a esa lista. El argumento «un campo invalida las 92
+valoraciones y decisiones» es falso. Pero **hay que escribir en el propio
+`failure_mode_snapshot` por qué la supersesión queda fuera** —no es un insumo
+de la decisión, es un hecho sobre el análisis—: sin ese comentario, el próximo
+que añada un campo lo mete «por completitud» y detona todo.
+
+Descartado ese factor, lo que decide es **deshacer**. Un campo que se pone a
+`None` para revertir **borra el hecho de que la supersesión ocurrió**, y eso
+viola el principio que el propio dominio ya fijó (`domain.py:8`: *«Non-credible
+failure modes carry a documented discard (kept, never deleted)»*). Y deshacer
+no es un caso raro acá: hay **4 pares donde el sucesor es peor que el
+original** (Anexo). El libro además da su sitio natural a quién aprobó, cuándo
+y por qué, mantiene una sola fuente con el `hitl_ledger` del criterio 3, y
+tiene precedente en el repo (`session.py:145`).
+
+**Tres cosas que hay que resolver y que ninguna versión de esta spec veía:**
+
+1. **Tres fallas funcionales se quedan sin modos vivos.** Verificado: excluidos
+   los 20 sustituidos, `FF-005`, `FF-006` y `FF-008` no conservan ninguno, y
+   `compliance.py:81-84` bloquea toda FF sin modos → **3 bloqueadores nuevos**.
+   Decisión a tomar explícitamente: `compliance.py:81` debe seguir contando los
+   sustituidos —una FF cuyo modo fue sustituido por otro colgado de otra FF
+   sigue analizada— **o** la migración debe reasignar esas FF. Recomendado lo
+   primero, y que AUDITORIA lo declare.
+2. **La cadena.** Nada impide `A → B` y luego `B → C`. Los consumidores
+   necesitan el sucesor **final**, no el inmediato, y el libro debe rechazar
+   ciclos. Con un campo esto se olvida; con el libro es una función con test.
+3. **`_next_id` cuenta el diccionario** (`session.py:151-152`:
+   `len(existing) + 1`). Cualquier implementación que **borre** los sustituidos
+   en vez de marcarlos **reutiliza IDs ya emitidos** y corrompe la auditoría.
+   Otro argumento por el no-borrado, y merece test de regresión.
+
+**DECIDIDO — `SCHEMA_VERSION` sube a 2.** El guardián existe y hace una sola
+cosa (`tools.py:96-101`): rechaza cargar una sesión cuya versión sea mayor que
+la de la aplicación. Es un guardián de **rollback de la aplicación**, no de
+migración. El escenario que protege es real acá: pydantic v2 ignora los campos
+desconocidos, así que una versión anterior cargaría una sesión con
+supersesiones, **las descartaría en silencio**, y al siguiente `_save`
+sobrescribiría la fila de Neon sin ellas. Pérdida irreversible, sin error, en
+la única sesión con datos reales.
+
+El criterio es la **asimetría**: subir cuesta una línea y dos tests que ya hay
+que tocar (`tests/unit/test_models.py:229` y `tests/unit/test_app.py:187`
+afirman `== 1`); no subir cuesta, en el peor caso, la sesión que esta spec
+existe para rescatar. Cuando un lado del error es un rato de trabajo y el otro
+es el dato del interesado en silencio, no se ponderan probabilidades.
+
+Y con el cambio va **escrita en `session.py:32` la regla de cuándo se sube**:
+*se sube cuando un campo nuevo carga información que una versión anterior
+perdería al reescribir*. Sin esa frase el 2 es tan arbitrario como el 1 y la
+próxima decisión se vuelve a discutir desde cero.
+
 **Por qué no basta con arreglar el modelo.** Los 28 huérfanos ya existen en
 producción y bloquean la exportación definitiva del interesado. Arreglar
 `add_functional_failure` evita el próximo caso pero no rescata éste; migrar sin
@@ -201,6 +263,16 @@ transformación que no verifica lo que aplicó miente sobre su resultado: *«Un
 migración debe volcar el estado previo a fichero, aplicar, y **releer y
 comparar** antes de dar por buena la escritura.
 
+**Lo que esta spec NO promete, con el número.** Simulado sobre el fixture: con
+esta spec **más** la del hash, los bloqueadores pasan de 121 a **42**. Los 42
+restantes son en su mayoría trabajo de análisis RCM que nadie hizo — 24 modos
+decididos sin acción recomendada, los 8 huérfanos esperando decisión, 4 con
+política pero sin tarea, las 3 FF sin modos vivos, 2 de intervalo de búsqueda
+mayor que su FFI, 1 de fuente de TPEF. **Ninguna cantidad de arquitectura los
+resuelve**: hacen falta turnos de conversación con el interesado. Va escrito
+acá para que nadie descubra a mitad de la implementación que la sesión sigue
+sin poder exportar el definitivo.
+
 ## 5. Tareas
 
 1. [ ] Campo de supersesión en `FailureMode` (`domain.py:87-105`), opcional y
@@ -228,11 +300,32 @@ comparar** antes de dar por buena la escritura.
 
 ## Supuestos
 
-- SUPUESTO: los 8 huérfanos se reincorporan al análisis, no se descartan. Son
-  modos legítimos que nadie reemplazó —incluido `FM-006` (aislamiento del
-  motor) y `FM-031` (válvula de aislamiento cerrada), el modo canónico por el
-  que una bomba de reserva no arranca—. La decisión final es del interesado;
-  esta spec sólo garantiza que sigan visibles y bloqueando.
+- **DECIDIDO (ya no es supuesto): los 8 huérfanos siguen vivos y bloqueando, y
+  el sistema no construye un estado «pendiente de arbitraje» para ellos.** Un
+  modo sin supersesión es un modo del análisis: no hay estado nuevo ni código
+  nuevo, y el comportamiento observable es el que ya existe — 8 bloqueadores
+  con el mensaje *«El modo FM-XXX no tiene decisión RCM»*, que es correcto y
+  accionable.
+
+  La alternativa —un tercer estado explícito que los declare en espera— **no
+  es neutral: es una postura peor disfrazada de abstención**. Nombrarlos
+  «pendientes de arbitraje» le comunica al agente y al interesado que son un
+  residuo administrativo de la reestructuración, y no lo son: los 8 tienen
+  valoración S/O/D completa —trabajo de análisis ya hecho y correcto—, 14 de
+  los 28 tienen consecuencia de seguridad o ambiente, y 8 de las 11 fallas
+  ocultas de toda la sesión están en ese conjunto, incluido `FM-031` (válvula
+  de aislamiento manual cerrada), el modo canónico por el que una bomba de
+  reserva no arranca. Un modo con consecuencia de seguridad, ya valorado, no
+  espera arbitraje: espera una decisión RCM, que es lo que el sistema ya dice.
+
+  El criterio general: **el sistema se abstiene sólo cuando el valor por
+  defecto sería destructivo.** «Sigue en el análisis y bloquea» es el defecto
+  no destructivo, el que preserva el trabajo y fuerza la conversación.
+
+  Lo que sí hay que añadir, y no cuesta nada: que el script de migración
+  **imprima los 8 con su ID, descripción y consecuencia** al terminar. Que
+  bloqueen garantiza que no se pierdan; listarlos con su riesgo a la vista es
+  lo que hace que se atiendan.
 - SUPUESTO: el emparejamiento del Anexo es correcto salvo donde se marca lo
   contrario. Se estableció con similitud textual, revisión manual de la falla
   funcional de origen y destino, y comparación del código ISO contra el

@@ -133,28 +133,111 @@ contradice la afirmación falsa en el mismo turno en que se formularía. Por eso
 el criterio 1 va primero y el 3 después: el prompt es el refuerzo, no la
 defensa.
 
-**Dónde se calcula el manifiesto.** Tiene que salir del **libro escrito**, no
-de volver a proyectar la sesión. Si se recalcula desde `RCMSession` se está
-describiendo lo que *debería* haberse escrito, que es exactamente el error que
-esta spec persigue. `export_xlsx` (`excel.py`) ya devuelve el `Path`; lo
-natural es leer el fichero recién guardado con `openpyxl`, o que
-`build_workbook` devuelva el manifiesto junto al `Workbook`. La segunda opción
-evita el round-trip pero vuelve a describir intención en vez de resultado; la
-primera cuesta unos milisegundos —el libro completo se genera en ~50 ms para
-63 modos— y describe el artefacto. **Preferir leer el fichero.**
+**DECIDIDO — el manifiesto se lee del `.xlsx` escrito, con `read_only=True`.**
+La alternativa era que `build_workbook` lo devolviera junto al `Workbook`,
+evitando el round-trip. Se descartó, y el argumento decisivo no es el coste:
 
-**Tamaño del manifiesto.** Va en cada resultado de `export_excel`, así que
-compite por contexto. Las 27 cabeceras de AMEF más las 20 de PLAN no caben sin
-desplazar cosas útiles. Alcanza con: hojas, número de columnas por hoja,
-número de filas de datos, presencia o ausencia de la columna de ID, si es
-borrador, y el recuento de defectos. Si el interesado pregunta por una columna
-concreta, el agente puede decir que la verifique en el fichero — que es la
-respuesta honesta.
+**la versión en memoria se equivoca hoy, y se equivoca justo en la columna del
+pleito.** `build_workbook` escribe las cabeceras desde `amef_headers()` —27
+elementos— empezando en la columna 2, y escribe **aparte** la columna de ID
+(`excel.py`, `_write_id_header` / `_write_id_cell`). El fichero tiene **28
+columnas** en AMEF. Un manifiesto construido desde `headers_a` diría 27 y
+**omitiría la columna de los códigos `FM-`**, que es exactamente aquella sobre
+la que el agente mintió. Fallaría el criterio 2 en su primera ejecución.
 
-**Precedente en el repo.** `errors.py:30` documenta una lección aplicable:
-adjuntar una nota larga a un mensaje de error hizo que el modelo la repitiera
-en vez de actuar. El manifiesto tiene el mismo riesgo si se escribe como
-párrafo. Formato tabular corto y sin adjetivos.
+Y hay una razón más de fondo: un manifiesto derivado de las mismas variables
+con las que se escribió es **tautológico** — no puede detectar ninguna
+divergencia. Todo lo que puede fallar entre la intención y el artefacto
+(`_add_validation`, la hoja oculta, un `save()` parcial, otra versión de
+openpyxl) queda fuera de su alcance por construcción. Un manifiesto es una
+**medición**, y una medición que comparte la fuente con lo medido no mide.
+
+El coste, medido sobre 63 modos: `build_workbook` 27,6 ms; `export_xlsx`
+completo 51,8 ms; **releer con `read_only=True` 2,3 ms** (con `load_workbook()`
+normal serían 20,5). Un +4,4 % sobre una herramienta que se invoca cada muchos
+minutos: ruido.
+
+**Dos trampas al implementar.** `ws.max_row` en AMEF da 73, no 60: las filas de
+datos son `max_row - AMEF_HEADER_ROW`. Informar `max_row` sería mentir con
+precisión. Y `LOOKUPS` es una hoja **oculta** (`excel.py`): o se marca como tal
+o se omite con criterio, porque enumerarla da material para afirmar que el
+entregable tiene cinco hojas visibles.
+
+**DECIDIDO — formato tabular, ~370 caracteres.** Frente a una versión de una
+sola línea (~150), el criterio no es el tamaño: el digest de sesión inyecta
+**6 241 caracteres en cada turno** (`factory.py`), así que la diferencia entre
+ambos formatos es el 0,03 % del contexto por turno. El criterio es la
+**legibilidad para citar**. El defecto que se persigue es una afirmación
+puntual («tiene columnas FF-/FM-»); para desmentirla el agente tiene que poder
+señalar una línea. La versión comprimida con separadores y abreviaturas le pide
+desagregar mentalmente y citar — que es la operación en la que inventa.
+
+Forma:
+
+```
+MANIFIESTO (leído del fichero escrito)
+hoja | columnas | filas de datos
+AMEF | 28 | 60
+PLAN DE MANTENIMIENTO | 21 | 77
+AUDITORIA RCM | 7 | 255
+LOOKUPS (oculta) | 8 | 20
+Columna de ID del modo (FM-): presente, columna A de AMEF y PLAN.
+Borrador: sí. Defectos adjuntos en AUDITORIA: 121.
+```
+
+**Lo que NO debe llevar.** Las 27 + 20 cabeceras completas son ~1 100
+caracteres y convierten el manifiesto en un catálogo que el modelo empezará a
+citar por su cuenta. La ausencia de una columna concreta se responde con «no lo
+sé, verifíquelo» — que es el comportamiento que esta spec quiere producir.
+
+**Precedente en el repo, citado bien.** `errors.py:22-39` (`eco_del_modelo`) no
+documenta «prosa larga → el modelo la repite», como decía una versión anterior
+de esta spec. Documenta una **inyección**: un salto de línea dentro de un valor
+elegido por el modelo mete una línea entera bajo control de quien escribe el
+turno, y quien la lea después la toma por una entrada más de lo que se estaba
+listando (medido con `explain_iso_code`). Aplicado acá: el manifiesto **no debe
+llevar ni una cadena que venga del interesado o del modelo**. En el formato de
+arriba, los nombres de hoja son constantes del código y el resto son enteros.
+Si alguna vez se le añade el nombre del fichero, va por `eco_del_modelo()`.
+
+**DECIDIDO — cómo se testea: tres piezas con costes distintos, no un eval.**
+Las dos opciones obvias fallan, y por motivos que conviene dejar escritos.
+
+Un «eval guionizado» al estilo de `test_scenario_scripted_complete` **no puede
+funcionar**: ese test corre sin modelo porque `run_scripted_eval` llama a las
+herramientas directamente con un `FakeRunContext` (`tests/evals/stakeholder_sim.py`)
+— no hay agente y no hay texto generado. Pero el criterio 5 es una aserción
+sobre **la prosa del agente**. Sin modelo, lo único que se puede escribir es
+una cadena inventada por quien escribe el test, y afirmar que el grader la
+marca. Eso no evalúa al agente: evalúa al grader, se ve honesto en CI y no
+protege nada. Es el mismo patrón que esta spec persigue, aplicado al test.
+
+Y un `@pytest.mark.eval` con modelo real da señal verdadera y **nadie lo
+corre**: los tres que existen llevan meses sin ejecutarse.
+
+La forma que sí funciona:
+
+1. **El grader, como función con test propio en CI.**
+   `afirma_sin_respaldo(respuesta, herramientas_usadas) -> list[str]`. Sus
+   fixtures son las **dos citas literales del UAT** de Pre-requisitos, más
+   contraejemplos que deben pasar (el agente diciendo «lo exporté,
+   verifíquelo usted» con `export_excel` en la lista). Cuesta milisegundos y
+   protege lo único que puede pudrirse en silencio: el criterio de detección.
+2. **Transcripciones grabadas.** Una corrida real con el modelo, guardada en
+   `tests/evals/scenarios/`, con el grader aplicado en CI. Señal de un modelo
+   real a coste cero por corrida. Limitación que hay que escribir y no
+   disimular: **se congela** — no detecta que un cambio de prompt reintrodujo
+   el defecto, sólo que el grader dejó de reconocerlo.
+3. **El runner con modelo vivo**, que aplica el mismo grader. Es el único que
+   detecta regresiones de prompt.
+
+**Y sobre la pieza 3, una decisión de proceso que esta spec debe tomar:**
+decir «queda marcado `eval` y documentado como opt-in» **no alcanza** — ese es
+exactamente el estado actual, y el estado actual es que no corre nadie. Si el
+criterio 5 va a significar algo, hay que decir **cuándo** corre (nightly con la
+clave, o bloqueando cualquier PR que toque `instructions_es.py`) y qué pasa
+cuando falla. No es una decisión de código y es la que decide si el criterio 5
+existe.
 
 **Riesgo de la regla de veracidad.** Una prohibición demasiado amplia («no
 afirmes nada que no hayas verificado») paraliza la conversación: el agente
@@ -164,17 +247,30 @@ propósito a **artefactos y acciones propias**.
 
 ## 5. Tareas
 
-1. [ ] Construir el manifiesto leyendo el `.xlsx` recién escrito, y devolverlo
-       desde `export_xlsx` junto al `Path`.
-2. [ ] Incluirlo en el texto que devuelve `export_excel` (`tools.py:988-1010`),
+**Orden deliberado: la tarea 1 va primera aunque parezca menor.** Es una
+edición de diez líneas, reversible, sin dependencia del manifiesto, y **habría
+evitado una de las dos citas del UAT**. Enterrarla detrás de la tarea más cara
+es la diferencia entre cerrar la mitad del defecto esta semana o dentro de tres.
+
+1. [ ] Enumerar en `INSTRUCTIONS_ES` las capacidades de corrección que existen
+       (`reemplazar=True` en `record_function`, `record_failure_mode`,
+       `record_task`) y prohibir afirmar límites del sistema no observados en
+       un `❌` de herramienta. Criterio 4.
+2. [ ] **Test de sincronía de esa lista**: comparar los nombres del prompt
+       contra las firmas reales de las herramientas (`inspect.signature`,
+       buscar el parámetro `reemplazar`). Sin él, la lista miente en cuanto
+       alguien añada o quite un `reemplazar=` — es un `SCHEMA_VERSION` sin
+       guardián. Hoy son tres herramientas.
+3. [ ] Añadir a `INSTRUCTIONS_ES` la regla de veracidad acotada (criterio 3).
+4. [ ] Construir el manifiesto leyendo el `.xlsx` recién escrito con
+       `read_only=True`, y devolverlo desde `export_xlsx` junto al `Path`.
+5. [ ] Incluirlo en el texto que devuelve `export_excel` (`tools.py:988-1010`),
        sin tocar el formato del enlace de descarga.
-3. [ ] Añadir a `INSTRUCTIONS_ES` la regla de veracidad acotada (criterio 3) y
-       la enumeración de capacidades de corrección (criterio 4).
-4. [ ] Eval guionizado del criterio 5, en `tests/evals/`, siguiendo el patrón
-       de `test_scenario_scripted_complete` (que corre en CI sin modelo real).
-5. [ ] Test del criterio 2: reproducir el escenario del UAT y comprobar que el
+6. [ ] Test del criterio 2: reproducir el escenario del UAT y comprobar que el
        manifiesto no atribuye al fichero columnas que no tiene.
-6. [ ] Verificar con `spec-verifier` antes del PR — lo exige
+7. [ ] El grader y sus tres piezas (ver Notas de arquitectura), incluida la
+       decisión de proceso sobre **cuándo** corre el eval con modelo vivo.
+8. [ ] Verificar con `spec-verifier` antes del PR — lo exige
        `.claude/rules/specs.md:22` — y con `production-validator` en local.
 
 ## Supuestos
