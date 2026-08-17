@@ -273,15 +273,13 @@ def snapshot_hash(*parts: object) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
-def failure_mode_snapshot(
-    fm: FailureMode,
-    effect: Effect | None,
-    controls: list[Control] | None = None,
-) -> str:
-    """Digest of every decision-affecting input: the mode itself (incl. Weibull
-    parameters and credibility), its effect, and the current controls (they justify
-    the Detection rating)."""
-    return snapshot_hash(
+def _insumos_del_modo(fm: FailureMode, effect: Effect | None) -> tuple[object, ...]:
+    """Lo que comparten los dos sellos: el modo (incl. Weibull y credibilidad) y su efecto.
+
+    Son los insumos de `decision_logic.decide(fm, effect, answers)`. Lo que no
+    entra en esa firma no puede cambiar la política, y por tanto no entra aquí.
+    """
+    return (
         fm.description,
         fm.mechanism,
         fm.iso_code,
@@ -294,5 +292,49 @@ def failure_mode_snapshot(
         fm.weibull_beta,
         fm.weibull_eta_hours,
         effect.model_dump_json() if effect else "",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dos sellos, no uno: un hash cubre los insumos de SU artefacto.
+#
+# Había un único `failure_mode_snapshot` para la valoración y para la decisión, y
+# los controles entraban en él. Los controles justifican la Detección, así que
+# son insumo de la valoración; NO son insumo de la decisión: `engine/
+# decision_logic.py` no lee `Control` en ninguna línea y `decide(fm, effect,
+# answers)` no los recibe. Con un solo sello, añadir un control marcaba como
+# obsoleta una decisión que ese control no puede cambiar: en la sesión de UAT,
+# 31 de 32 decisiones invalidadas por un dato que no las alimenta, cuatro de
+# ellas con firma humana JA1011 que habría que volver a pedir para re-sellarlas.
+#
+# Si vas a tocar estas listas: un insumo entra en `decision_snapshot` sólo si
+# `decide()` puede leerlo. Meter los controles «por completitud» reintroduce el
+# defecto entero.
+# ---------------------------------------------------------------------------
+
+
+def score_snapshot(
+    fm: FailureMode,
+    effect: Effect | None,
+    controls: list[Control] | None = None,
+) -> str:
+    """Sello de la valoración S/O/D: el modo, su efecto y **los controles actuales**.
+
+    Los controles van aquí porque justifican la Detección: si aparece un control
+    nuevo, la D deja de estar respaldada y alguien tiene que re-juzgarla.
+    """
+    return snapshot_hash(
+        *_insumos_del_modo(fm, effect),
         "|".join(f"{c.kind}:{c.description}" for c in (controls or [])),
     )
+
+
+def decision_snapshot(fm: FailureMode, effect: Effect | None) -> str:
+    """Sello de la decisión RCM: el modo y su efecto. **Sin los controles.**
+
+    Un control es evidencia de detección, no un insumo de la cascada de decisión:
+    no aparece en `decide(fm, effect, answers)` ni puede cambiar la política que
+    devuelve. Sellarlo aquí sólo produce decisiones «obsoletas» que se re-ejecutan
+    para llegar exactamente a la misma política.
+    """
+    return snapshot_hash(*_insumos_del_modo(fm, effect))

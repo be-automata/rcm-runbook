@@ -108,6 +108,25 @@ política de mantenimiento, pero invalida la decisión que la contiene.**
 6. **Los bloqueadores fantasma desaparecen y no se llevan ninguno real por
    delante.** Sobre el fixture: de 121 se baja a 90, y los 90 restantes son
    exactamente los que había menos los 31 de «valoración desactualizada».
+
+   > CORREGIDO AL IMPLEMENTAR (medido, no estimado). El 90 es el número de la
+   > mitad de reporte sola —partir `stale_decisions()` sin tocar la fórmula del
+   > hash—, y no corresponde a ningún estado alcanzable de la feature completa.
+   > Con las dos mitades aplicadas los números reales son:
+   >
+   > - fórmula nueva, estado sin re-sellar: **91**. Los 31 de valoración se van;
+   >   los de decisión pasan de 31 a 32 porque la fórmula cambió y `FM-019`
+   >   —cuyo sello viejo sí llevaba su control— también queda desfasada. Es el
+   >   mismo motivo por el que el re-sellado es para las 32.
+   > - fórmula nueva + re-sellado: **59**, que es el estado final de esta spec, y
+   >   son exactamente los 121 menos los 31 de valoración y los 31 de decisión.
+   >   Cuadra con el 42 simulado para «esta spec + la supersesión de los 20
+   >   duplicados» (59 − 17) y con la enumeración de esos 42, en la que no hay
+   >   ningún bloqueador de «desactualizada».
+   >
+   > Verificado en `tests/unit/test_resellar_decisiones.py` con los 121 de
+   > partida congelados en `tests/fixtures/bloqueadores_uat_antes.txt`: la
+   > igualdad se comprueba como conjuntos, no por conteo.
 7. **Cada mensaje dice la verdad.** Un modo con valoración obsoleta produce el
    mensaje de valoración; uno con decisión obsoleta, el de decisión; ninguno
    produce los dos salvo que las dos lo estén.
@@ -150,21 +169,59 @@ se descubra que la sesión sigue sin poder exportar.
 
 ## Tareas
 
-1. [ ] Partir `failure_mode_snapshot` (`domain.py:276-298`) en dos funciones, y
+1. [x] Partir `failure_mode_snapshot` (`domain.py:276-298`) en dos funciones, y
        dejar escrito **en el propio código** por qué los controles entran en una
        y no en la otra. Sin ese comentario, el próximo que toque la lista los
        vuelve a meter «por completitud».
-2. [ ] Partir `stale_decisions()` (`session.py:549-559`) en `stale_scores()` y
+       → `score_snapshot` y `decision_snapshot` (`domain.py:316-340`, insumo común en `domain.py:276-296`), con el
+       insumo común factorizado en `_insumos_del_modo` y el porqué escrito en el
+       bloque de comentario que las separa.
+2. [x] Partir `stale_decisions()` (`session.py:549-559`) en `stale_scores()` y
        `stale_decisions()`; ajustar `compliance.py:102-106` y `:131-135` para
        que cada una consuma la suya, y `digest_es` (`session.py:605-607`).
-3. [ ] Tests de los criterios 3, 4 y 5 — la pareja «deja de importar» / «sigue
+       → `session.py:547-578`; P4 consume `stale_scores()` (`compliance.py:104`),
+       P5 `stale_decisions()` (`compliance.py:134`), y el digest emite los dos
+       avisos por separado (`session.py:626-633`).
+3. [x] Tests de los criterios 3, 4 y 5 — la pareja «deja de importar» / «sigue
        importando», con un caso por insumo.
-4. [ ] Script de re-sellado de las 32 decisiones, estilo `scripts/mutar.py`,
+       → `tests/unit/test_hash_decision_vs_valoracion.py` (22 tests; el 7
+       también queda cubierto).
+4. [x] Script de re-sellado de las 32 decisiones, estilo `scripts/mutar.py`,
        con volcado previo y relectura.
-5. [ ] Verificar el criterio 6 sobre el fixture: 121 → 90, y que los 90 son los
+       → `scripts/resellar_decisiones.py`, probado en
+       `tests/unit/test_resellar_decisiones.py` (incluidas sus comprobaciones
+       contra un resultado adulterado a mano).
+5. [x] Verificar el criterio 6 sobre el fixture: 121 → 90, y que los 90 son los
        mismos menos los 31 de valoración.
-6. [ ] `spec-verifier` antes del PR (`.claude/rules/specs.md:22`) y
+       → medido: 121 → 91 sin re-sellar y → 59 re-sellado. Ver la corrección
+       bajo el criterio 6.
+6. [x] `spec-verifier` antes del PR (`.claude/rules/specs.md:22`) y
        `production-validator` en local.
+       → `spec-verifier`: CUMPLE los 8 criterios, con línea base independiente
+       (ejecutó el código de `3433622` sobre el fixture y obtuvo los mismos 121
+       de `bloqueadores_uat_antes.txt`). `production-validator`: apto con
+       reservas, todas del script de migración; las cuatro se corrigieron —
+       guarda de sellos huérfanos (`session.py:559-586`), volcado que ahora es
+       una copia entera y restaurable que no se pisa, escritura atómica, y
+       código de salida 2 sin escribir nada cuando el estado no valida.
+
+## Pendiente de despliegue
+
+**El estado vivo (Neon / contenedor) todavía no está re-sellado.** El orden
+importa: si el código sale sin la migración, la sesión de UAT empeora en un
+bloqueador (32 decisiones desfasadas en vez de 31) antes de mejorar en 62. No
+hay migración automática al cargar, y con razón: `SCHEMA_VERSION` no cambia
+porque esto es migración de datos, no de esquema.
+
+**Dos agujeros del mismo principio que quedan abiertos**, ninguno regresión de
+esta spec:
+
+- `fm.tpef` sigue dentro del sello de la decisión aunque `decide()` no lo lee.
+  Es más estricto que el principio («lo que no entra en `decide()`, no entra en
+  el hash»): produce falsos positivos, nunca falsos negativos.
+- `answers` (los 10 campos del cuestionario) alimenta `decide()` y **no** está
+  en el sello, ni antes ni ahora: cambiar una respuesta no marca la decisión
+  obsoleta. Es el agujero simétrico, y es preexistente.
 
 ## Supuestos
 

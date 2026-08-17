@@ -176,13 +176,19 @@ como estado duplicado; así el consumo en `rows.py` y `compliance.py` cuesta lo
 mismo con las dos formas y deja de ser un criterio.
 
 Primero, un hecho que despeja la mitad del debate: **ninguna de las dos opciones
-toca los hashes.** `failure_mode_snapshot` (`domain.py:284-298`) enumera sus
-campos uno por uno, así que un campo nuevo no entra en el digest salvo que
-alguien lo añada a esa lista. El argumento «un campo invalida las 92
-valoraciones y decisiones» es falso. Pero **hay que escribir en el propio
-`failure_mode_snapshot` por qué la supersesión queda fuera** —no es un insumo
-de la decisión, es un hecho sobre el análisis—: sin ese comentario, el próximo
-que añada un campo lo mete «por completitud» y detona todo.
+toca los hashes.** El sello enumera sus campos uno por uno, así que un campo
+nuevo no entra en el digest salvo que alguien lo añada a esa lista. El argumento
+«un campo invalida las 92 valoraciones y decisiones» es falso. Pero **hay que
+escribir en el propio sello por qué la supersesión queda fuera** —no es un
+insumo de la decisión, es un hecho sobre el análisis—: sin ese comentario, el
+próximo que añada un campo lo mete «por completitud» y detona todo.
+
+> ACTUALIZADO. `failure_mode_snapshot` ya no existe: se partió en
+> `score_snapshot` (con controles) y `decision_snapshot` (sin) —ver
+> [`hash-de-decision-y-de-valoracion.md`](hash-de-decision-y-de-valoracion.md)—.
+> Los campos comunes viven en `_insumos_del_modo` (`domain.py:276-296`), que es
+> donde va ese comentario, junto al que ya explica por qué los controles entran
+> en un sello y no en el otro.
 
 Descartado ese factor, lo que decide es **deshacer**. Un campo que se pone a
 `None` para revertir **borra el hecho de que la supersesión ocurrió**, y eso

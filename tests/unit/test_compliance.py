@@ -89,7 +89,7 @@ def full_session() -> RCMSession:
     s.add_control(fm2.id, kind="preventivo", description="Calibración anual de instrumentos")
 
     for fmid, (sev, occ, det) in {fm1.id: (7, 5, 4), fm2.id: (9, 3, 8)}.items():
-        snap = s.current_snapshot(fmid)
+        snap = s.score_snapshot(fmid)
         s.set_risk_score(RiskScore(
             failure_mode_id=fmid, severity=sev, occurrence=occ, detection=det, input_hash=snap,
         ))
@@ -100,7 +100,7 @@ def full_session() -> RCMSession:
         policy=MaintenancePolicy.MBC,
         justification="Síntoma detectable con intervalo P-F de 2000 h; inspección cada 1000 h.",
         evident_route="B",
-        input_hash=s.current_snapshot(fm1.id),
+        input_hash=s.decision_snapshot(fm1.id),
     ))
     s.request_hitl(fm2.id, "Consecuencia de seguridad en falla múltiple")
     s.confirm_hitl(fm2.id, "Supervisora HSE")
@@ -111,7 +111,7 @@ def full_session() -> RCMSession:
         justification="Falla oculta de dispositivo de protección: prueba funcional (FFI).",
         hidden_route="A",
         hitl_confirmed_by="Supervisora HSE",
-        input_hash=s.current_snapshot(fm2.id),
+        input_hash=s.decision_snapshot(fm2.id),
     ))
     s.add_action(RecommendedAction(
         failure_mode_id=fm1.id,

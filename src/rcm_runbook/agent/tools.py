@@ -569,7 +569,7 @@ def score_risk(
         failure_mode_id=failure_mode_id,
         severity=severity, occurrence=occurrence, detection=detection,
         is_residual=is_residual,
-        input_hash=session.current_snapshot(failure_mode_id)
+        input_hash=session.score_snapshot(failure_mode_id)
         if failure_mode_id in session.failure_modes
         else "",
     )
@@ -646,7 +646,7 @@ def run_decision_logic(
         # el banner técnico delante, el agente lo leía como avería y se paraba.
         raise ReglaDeNegocio(str(exc)) from exc
     decision = decision.model_copy(
-        update={"input_hash": session.current_snapshot(failure_mode_id)}
+        update={"input_hash": session.decision_snapshot(failure_mode_id)}
     )
     session.set_decision(decision)
     _save(run_context, session)

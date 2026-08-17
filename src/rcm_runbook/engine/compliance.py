@@ -101,7 +101,7 @@ def _gate_p4(s: RCMSession) -> list[str]:
             issues.append(f"El modo {fmid} no tiene valoración S/O/D.")
     issues.extend(
         f"La valoración del modo {fmid} está desactualizada (cambiaron sus insumos) — re-evalúe."
-        for fmid in s.stale_decisions()
+        for fmid in s.stale_scores()
         if fmid in s.risk_scores
     )
     return issues

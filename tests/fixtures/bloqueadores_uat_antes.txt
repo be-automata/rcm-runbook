@@ -1,0 +1,121 @@
+[Fase 4] La valoración del modo FM-005 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-014 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-015 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-033 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-034 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-035 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-036 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-037 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-038 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-039 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-040 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-041 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-042 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-043 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-044 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-045 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-046 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-047 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-048 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-049 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-050 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-051 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-052 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-053 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-054 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-055 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-056 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-057 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-058 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-059 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 4] La valoración del modo FM-060 está desactualizada (cambiaron sus insumos) — re-evalúe.
+[Fase 5] El modo FM-001 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-002 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-003 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-004 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-006 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-007 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-008 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-009 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-010 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-011 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-012 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-013 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-016 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-017 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-018 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-019 no tiene acciones recomendadas.
+[Fase 5] El modo FM-020 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-021 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-022 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-023 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-024 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-025 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-026 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-027 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-028 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-029 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-030 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-031 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-032 no tiene decisión RCM (política de mantenimiento).
+[Fase 5] El modo FM-033 no tiene acciones recomendadas.
+[Fase 5] El modo FM-034 no tiene acciones recomendadas.
+[Fase 5] El modo FM-036 no tiene acciones recomendadas.
+[Fase 5] El modo FM-038 no tiene acciones recomendadas.
+[Fase 5] El modo FM-040 no tiene acciones recomendadas.
+[Fase 5] El modo FM-041 no tiene acciones recomendadas.
+[Fase 5] El modo FM-042 no tiene acciones recomendadas.
+[Fase 5] El modo FM-043 no tiene acciones recomendadas.
+[Fase 5] El modo FM-045 no tiene acciones recomendadas.
+[Fase 5] El modo FM-046 no tiene acciones recomendadas.
+[Fase 5] El modo FM-048 no tiene acciones recomendadas.
+[Fase 5] El modo FM-049 no tiene acciones recomendadas.
+[Fase 5] El modo FM-050 no tiene acciones recomendadas.
+[Fase 5] El modo FM-051 no tiene acciones recomendadas.
+[Fase 5] El modo FM-052 no tiene acciones recomendadas.
+[Fase 5] El modo FM-053 no tiene acciones recomendadas.
+[Fase 5] El modo FM-054 no tiene acciones recomendadas.
+[Fase 5] El modo FM-055 no tiene acciones recomendadas.
+[Fase 5] El modo FM-056 no tiene acciones recomendadas.
+[Fase 5] El modo FM-057 no tiene acciones recomendadas.
+[Fase 5] El modo FM-058 no tiene acciones recomendadas.
+[Fase 5] El modo FM-059 no tiene acciones recomendadas.
+[Fase 5] El modo FM-060 no tiene acciones recomendadas.
+[Fase 5] La decisión del modo FM-005 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-014 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-015 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-033 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-034 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-035 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-036 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-037 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-038 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-039 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-040 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-041 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-042 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-043 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-044 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-045 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-046 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-047 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-048 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-049 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-050 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-051 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-052 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-053 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-054 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-055 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-056 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-057 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-058 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-059 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 5] La decisión del modo FM-060 está desactualizada (cambiaron sus insumos) — re-ejecute la lógica de decisión.
+[Fase 6] El modo FM-005 (política MBC) no tiene tarea de mantenimiento en el plan.
+[Fase 6] El modo FM-019 (política MBT) no tiene tarea de mantenimiento en el plan.
+[Fase 6] El modo FM-033 (política MBT) no tiene tarea de mantenimiento en el plan.
+[Fase 6] El modo FM-034 (política MBT) no tiene tarea de mantenimiento en el plan.
+[Fase 6] El modo FM-014 tiene tarea pero falta el TPEF con fuente de dato (OREDA / historial / opinión de experto).
+[Plan] La búsqueda de fallas de FM-014 está calculada cada 526 h, pero su tarea 'Prueba funcional de bomba de reserva P-101B: arrancar bajo carga durante 30 minutos, verificar presión, caudal y temperatura, luego retornar a standby. Documentar resultado en bitácora.' se ejecuta 'Mensual' (730 h) — más espaciada que el intervalo calculado. Ajuste la frecuencia o recalcule el FFI.
+[Plan] La búsqueda de fallas de FM-015 está calculada cada 526 h, pero su tarea 'Prueba funcional del interruptor de bajo caudal: simular condición de bajo caudal (cerrar parcialmente válvula de descarga o desviar caudal), verificar que interruptor dispara alarma visual/sonora, que se detiene el motor de P-101A o se activa protección correspondiente. Documentar resultado en bitácora.' se ejecuta 'Mensual' (730 h) — más espaciada que el intervalo calculado. Ajuste la frecuencia o recalcule el FFI.
