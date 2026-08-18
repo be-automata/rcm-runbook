@@ -372,6 +372,35 @@ def decision_snapshot(fm: FailureMode, effect: Effect | None) -> str:
     return snapshot_hash(*_insumos_de_la_decision(fm, effect))
 
 
+def _sello_de_decision_v1(
+    fm: FailureMode, effect: Effect | None, controls: list[Control] | None
+) -> str:
+    """La fórmula de sello RETIRADA, copiada literal. No llames a las vivas.
+
+    Hoy coincide campo por campo con `score_snapshot`, y por eso es tentador
+    expresarla como una llamada a ella. Sería un acoplamiento silencioso: la de
+    valoración también es una fórmula sujeta a cambio, y el día que se toque,
+    los sellos heredados de la DECISIÓN cambiarían de significado sin que
+    ningún test se entere. Una fórmula retirada es un dato histórico; se
+    congela.
+    """
+    return snapshot_hash(
+        fm.description,
+        fm.mechanism,
+        fm.iso_code,
+        fm.cause,
+        fm.root_cause,
+        fm.failure_pattern,
+        fm.credible,
+        fm.tpef.model_dump_json() if fm.tpef else "",
+        fm.pf_interval_hours,
+        fm.weibull_beta,
+        fm.weibull_eta_hours,
+        effect.model_dump_json() if effect else "",
+        "|".join(f"{c.kind}:{c.description}" for c in (controls or [])),
+    )
+
+
 def sello_de_decision_heredado(
     fm: FailureMode, effect: Effect | None, controls: list[Control] | None
 ) -> set[str]:
@@ -402,6 +431,4 @@ def sello_de_decision_heredado(
     volver a la migración.
     """
     lista = list(controls or [])
-    return {
-        score_snapshot(fm, effect, lista[:k]) for k in range(len(lista) + 1)
-    } | {snapshot_hash(*_insumos_del_modo(fm, effect))}
+    return {_sello_de_decision_v1(fm, effect, lista[:k]) for k in range(len(lista) + 1)}

@@ -561,10 +561,17 @@ class RCMSession(BaseModel):
         """El sello canónico más los heredados que siguen valiendo.
 
         La tolerancia vive en la comparación y NO en `decision_snapshot`: el
-        sello canónico no debe tener variantes, o deja de haber uno. Y vive en
-        la sesión y no en el cargador, para que las dos rutas de lectura —el
-        chat (`tools._load`) y la descarga (`app._sesion_guardada`)— la hereden
-        sin que ninguna se quede con el criterio viejo.
+        sello canónico no debe tener variantes, o deja de haber uno.
+
+        Y vive acá y no en el cargador. El motivo NO es que las dos rutas de
+        lectura se desincronizarían —`tools._load` y `app._sesion_guardada`
+        convergen las dos en `model_validate`, así que un validador serviría a
+        ambas—. Es que normalizar al cargar reescribe un campo de auditoría
+        durante el parseo, sin que nadie lo pida; que la ruta de descarga es de
+        sólo lectura y no persistiría nada, así que el criterio haría falta
+        igual acá; y que `scripts/resellar_decisiones.py` valida con
+        `model_validate`, o sea que un normalizador en el cargador anularía la
+        verificación estricta del propio guion.
         """
         fm = self.failure_modes[failure_mode_id]
         effect = self.effects.get(failure_mode_id)
@@ -590,6 +597,25 @@ class RCMSession(BaseModel):
                 if score.input_hash and score.input_hash != self.score_snapshot(fmid):
                     stale.add(fmid)
         return sorted(stale)
+
+    def decisiones_sin_sello_canonico(self) -> list[str]:
+        """Decisiones que NO llevan el sello de la fórmula vigente, sin tolerancia.
+
+        Es el predicado estricto, y existe acá y no copiado en un guion por dos
+        razones. Una: `scripts/resellar_decisiones.py` necesita exactamente esto
+        para verificar que normalizó de verdad — `stale_decisions()` acepta los
+        sellos heredados y le daría por bueno un fichero en el que no aplicó
+        nada. Dos: es la condición de retirada de la compatibilidad escrita en
+        `sello_de_decision_heredado`, y así pasa de prosa a comprobación —
+        cuando esto dé `[]` sobre la sesión viva, la aceptación se puede borrar.
+        """
+        return sorted(
+            fmid
+            for fmid, decision in self.decisions.items()
+            if fmid in self.failure_modes
+            and decision.input_hash
+            and decision.input_hash != self.decision_snapshot(fmid)
+        )
 
     def stale_decisions(self) -> list[str]:
         """Modos cuya decisión RCM se calculó con insumos que ya cambiaron.

@@ -56,7 +56,14 @@ def _sesion(ruta: Path) -> RCMSession:
 class TestElReSelladoNoCambiaElAnalisis:
     def test_corre_verde_y_deja_cero_decisiones_obsoletas(self, estado, capsys):
         assert resellar_decisiones.procesar(estado) == 0
-        assert _sesion(estado).stale_decisions() == []
+        # NO `stale_decisions() == []`: esa es la comparación tolerante, y ya
+        # daba `[]` ANTES de correr el guion (ver
+        # `test_sin_resellar_no_queda_ninguna_desfasada`). Además `procesar`
+        # sólo devuelve 0 si su propia verificación estricta pasó, así que
+        # afirmarlo después sería afirmar su conclusión. Lo que sí prueba algo
+        # es el sello canónico, medido desde fuera del guion.
+        sesion = _sesion(estado)
+        assert sesion.decisiones_sin_sello_canonico() == []
         assert "ninguna política cambió" in capsys.readouterr().out
 
     def test_criterio_1_ninguna_politica_cambia(self, estado):
@@ -188,7 +195,7 @@ class TestNoCorrompeUnEstadoReal:
         estado.write_text(json.dumps(bruto, ensure_ascii=False), "utf-8")
         assert resellar_decisiones.procesar(estado) == 0
         sesion = _sesion(estado)
-        assert sesion.stale_decisions() == []
+        assert sesion.decisiones_sin_sello_canonico() == []
         # La huérfana se salta: ni se re-sella ni se reporta como obsoleta.
         assert _leer(estado)["decisions"]["FM-999"]["input_hash"] == (
             bruto["decisions"]["FM-999"]["input_hash"]
@@ -245,3 +252,62 @@ class TestLaLineaDeComandos:
 
     def test_un_fichero_que_no_existe_no_pasa_por_verde(self, tmp_path):
         assert resellar_decisiones.main([str(GUION), str(tmp_path / "no-esta.json")]) == 2
+
+
+class TestReconoceElVolcadoDeProduccion:
+    """La forma que baja un operador para migrar es la anidada de agno, y es la
+    que el guion NO reconocía: procesaba el fichero, no tocaba nada, y lo
+    celebraba con un ✔ y salida 0 — la verificación confirmaba su propio no-op.
+    Es justo lo que la cabecera de `scripts/mutar.py` advierte."""
+
+    def _envuelto(self, estado: Path, tmp_path: Path) -> Path:
+        destino = tmp_path / "de_produccion.json"
+        destino.write_text(
+            json.dumps({"session_data": {"session_state": {"rcm": _leer(estado)}}}),
+            "utf-8",
+        )
+        return destino
+
+    def test_resella_las_32_y_conserva_la_envoltura(self, estado, tmp_path):
+        antes = _leer(estado)["decisions"]
+        envuelto = self._envuelto(estado, tmp_path)
+        assert resellar_decisiones.procesar(envuelto) == 0
+        bruto = _leer(envuelto)
+        assert "session_data" in bruto, "la envoltura no puede perderse al escribir"
+        dentro = bruto["session_data"]["session_state"]["rcm"]
+        cambiados = [
+            fmid for fmid, d in dentro["decisions"].items()
+            if d["input_hash"] != antes[fmid]["input_hash"]
+        ]
+        assert len(cambiados) == 32
+        assert RCMSession.model_validate(dentro).decisiones_sin_sello_canonico() == []
+
+    def test_un_json_que_no_es_una_sesion_se_rechaza_sin_escribir(self, tmp_path):
+        """`RCMSession.model_validate({})` acepta el diccionario vacío —todos los
+        campos tienen valor por defecto—, así que validar no distingue «sesión
+        sin decisiones» de «esto no es una sesión»."""
+        ajeno = tmp_path / "cualquiera.json"
+        ajeno.write_text('{"hola": 1}', "utf-8")
+        antes = ajeno.read_bytes()
+        assert resellar_decisiones.procesar(ajeno) == 2
+        assert ajeno.read_bytes() == antes
+        assert not (tmp_path / "cualquiera.antes.json").exists()
+
+
+class TestLaToleranciaNoSeTragaUnCambioReal:
+    """El único punto donde la aceptación de sellos heredados podría volverse
+    permisiva de más sin que nadie se entere.
+
+    Todos los tests de invariancia corren sobre una sesión SIN controles, así
+    que el conjunto tolerante tiene un solo elemento y la aceptación nunca se
+    ejercita en su modo «rechazar». Acá sí: sello heredado, lista de controles
+    no vacía, y un insumo real cambiado.
+    """
+
+    def test_con_sello_heredado_y_controles_un_cambio_real_sigue_obsoleta(self, estado):
+        sesion = _sesion(estado)
+        fmid = next(f for f in sesion.decisions if sesion.controls.get(f))
+        assert sesion.stale_decisions() == [], "de partida, el heredado se acepta"
+        fm = sesion.failure_modes[fmid]
+        sesion.failure_modes[fmid] = fm.model_copy(update={"pf_interval_hours": 12345.0})
+        assert fmid in sesion.stale_decisions()

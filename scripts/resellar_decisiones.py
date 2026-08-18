@@ -24,9 +24,17 @@ resultado. Aquí lo que se verifica, después de releer el fichero escrito, es:
     justificación, provisional),
   · ninguna firma HITL se perdió (`hitl_confirmed_by` y el `hitl_ledger`),
   · ninguna valoración se tocó (su sello sigue llevando los controles),
-  · y las decisiones quedaron frescas: `stale_decisions()` vacío.
+  · y las decisiones quedaron con el sello canónico, comprobado sin la
+    tolerancia que `stale_decisions()` aplica a los sellos heredados.
 
 Correrlo dos veces no cambia nada la segunda: el sello es función del estado.
+
+Y no es opcional, aunque desplegar sin correrlo ya no degrade nada: una decisión
+que conserva su sello heredado conserva también la sobre-sensibilidad vieja —los
+prefijos se reconstruyen con la fórmula de 12 campos—, así que editar la
+`description` de un modo sigue marcando su decisión obsoleta hasta que se
+normaliza. El arreglo del falso positivo llega a las decisiones ya guardadas
+sólo después de esto.
 
 Acepta el volcado de una `RCMSession` o el `session_state` de agno —el que
 lleva la sesión bajo la clave "rcm"—. Devuelve 0 si todo cuadra, 1 si alguna
@@ -68,13 +76,55 @@ CAMPOS_INTOCABLES = (
 )
 
 
+class NoParece(ValueError):
+    """El fichero no contiene una sesión RCM reconocible."""
+
+
+# Las tres formas en las que aparece el estado, de fuera hacia dentro. La
+# primera es la que devuelve producción —`app.py:378` y la API de agno—, o sea
+# JUSTO la que baja un operador para migrar. Reconocer sólo las otras dos hacía
+# que el guion procesara un volcado de producción, no tocara nada, y lo
+# celebrara con un ✔ y salida 0: el estado desenvuelto salía vacío, `resellar`
+# no encontraba decisiones y la verificación confirmaba su propio no-op.
+_ENVOLTURAS: tuple[tuple[str, ...], ...] = (
+    ("session_data", "session_state", SESSION_KEY),
+    (SESSION_KEY,),
+    (),
+)
+
+# Claves que sólo tiene una sesión RCM. `RCMSession.model_validate({})` acepta
+# el diccionario vacío porque todos sus campos tienen valor por defecto, así que
+# validar no distingue «sesión sin decisiones» de «esto no es una sesión». Sin
+# este centinela, cualquier JSON pasa por el guion sin ruido.
+_SENAS = ("schema_version", "failure_modes", "decisions")
+
+
 def _estado(bruto: dict[str, Any]) -> dict[str, Any]:
-    """La sesión dentro del fichero: directa o bajo la clave de agno."""
-    if SESSION_KEY in bruto and isinstance(bruto[SESSION_KEY], dict):
-        estado = bruto[SESSION_KEY]
-        assert isinstance(estado, dict)
-        return estado
-    return bruto
+    """La sesión dentro del fichero, sea cual sea la envoltura que la traiga.
+
+    Devuelve una REFERENCIA al diccionario anidado, no una copia: `resellar`
+    muta en el sitio y luego se escribe `bruto` entero, así que la envoltura se
+    conserva tal cual venía.
+    """
+    for camino in _ENVOLTURAS:
+        nodo: Any = bruto
+        for clave in camino:
+            if not isinstance(nodo, dict) or clave not in nodo:
+                nodo = None
+                break
+            nodo = nodo[clave]
+        if isinstance(nodo, dict) and any(s in nodo for s in _SENAS):
+            return nodo
+    raise NoParece(
+        "no encontré una sesión RCM. Formas que entiendo: "
+        "{'session_data': {'session_state': {'rcm': …}}} (lo que devuelve "
+        "producción), {'rcm': …}, o el estado directo."
+    )
+
+
+def _sellos(estado: dict[str, Any], clave: str) -> dict[str, str]:
+    """Los `input_hash` de una colección de valoraciones, por id."""
+    return {fmid: s.get("input_hash", "") for fmid, s in estado.get(clave, {}).items()}
 
 
 def volcado(estado: dict[str, Any]) -> dict[str, Any]:
@@ -83,14 +133,8 @@ def volcado(estado: dict[str, Any]) -> dict[str, Any]:
     return {
         "decisions": json.loads(json.dumps(estado.get("decisions", {}))),
         "hitl_ledger": json.loads(json.dumps(estado.get("hitl_ledger", []))),
-        "risk_scores": {
-            fmid: s.get("input_hash", "")
-            for fmid, s in estado.get("risk_scores", {}).items()
-        },
-        "residual_scores": {
-            fmid: s.get("input_hash", "")
-            for fmid, s in estado.get("residual_scores", {}).items()
-        },
+        "risk_scores": _sellos(estado, "risk_scores"),
+        "residual_scores": _sellos(estado, "residual_scores"),
     }
 
 
@@ -136,10 +180,7 @@ def _comparar(previo: dict[str, Any], estado: dict[str, Any]) -> list[str]:
     if previo["hitl_ledger"] != estado.get("hitl_ledger", []):
         fallos.append("cambió el hitl_ledger")
     for clave in ("risk_scores", "residual_scores"):
-        ahora = {
-            fmid: s.get("input_hash", "") for fmid, s in estado.get(clave, {}).items()
-        }
-        if ahora != previo[clave]:
+        if _sellos(estado, clave) != previo[clave]:
             fallos.append(f"cambió algún sello de {clave}")
     sesion = RCMSession.model_validate(estado)
     # ESTRICTO a propósito, y NO `stale_decisions()`: esa acepta los sellos de
@@ -148,13 +189,7 @@ def _comparar(previo: dict[str, Any], estado: dict[str, Any]) -> list[str]:
     # de este guion es justamente normalizar al sello canónico, de modo que la
     # compatibilidad se pueda retirar; su verificación tiene que exigir la
     # igualdad exacta, no la tolerancia.
-    sin_normalizar = sorted(
-        fmid
-        for fmid, d in sesion.decisions.items()
-        if fmid in sesion.failure_modes
-        and d.input_hash
-        and d.input_hash != sesion.decision_snapshot(fmid)
-    )
+    sin_normalizar = sesion.decisiones_sin_sello_canonico()
     if sin_normalizar:
         fallos.append(
             f"siguen sin el sello canónico {len(sin_normalizar)} decisiones: "
@@ -163,7 +198,7 @@ def _comparar(previo: dict[str, Any], estado: dict[str, Any]) -> list[str]:
     return fallos
 
 
-def procesar(ruta: Path, dump_dir: Path | None = None) -> int:
+def procesar(ruta: Path) -> int:
     try:
         bruto = json.loads(ruta.read_text("utf-8"))
         estado = _estado(bruto)
@@ -182,7 +217,7 @@ def procesar(ruta: Path, dump_dir: Path | None = None) -> int:
     # `.antes.json` parcial no se puede restaurar, y el mensaje de error decía
     # que sí. Y no se pisa: correr el script dos veces borraría el único
     # registro del estado previo dejando en su lugar el ya migrado.
-    destino = (dump_dir or ruta.parent) / f"{ruta.stem}.antes.json"
+    destino = ruta.parent / f"{ruta.stem}.antes.json"
     if destino.exists():
         print(f"  volcado previo: {destino} ya existe, se conserva el de la primera corrida")
     else:

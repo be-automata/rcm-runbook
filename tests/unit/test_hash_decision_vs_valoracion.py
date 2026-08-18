@@ -27,6 +27,16 @@ from rcm_runbook.models.domain import DecisionResult, RiskScore
 from .test_models import make_session_with_mode
 
 
+def _revalorar(s, fmid: str) -> None:  # noqa: ANN001
+    """Vuelve a valorar el modo con el sello vigente. Estaba copiado cinco veces."""
+    s.set_risk_score(
+        RiskScore(
+            failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
+            input_hash=s.score_snapshot(fmid),
+        )
+    )
+
+
 def _sesion_valorada_y_decidida(**fm_overrides):
     """Un modo con efecto, valoración y decisión, los dos sellos al día."""
     s, fmid = make_session_with_mode(**fm_overrides)
@@ -38,12 +48,7 @@ def _sesion_valorada_y_decidida(**fm_overrides):
         is_hidden=False,
         operational=True,
     )
-    s.set_risk_score(
-        RiskScore(
-            failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
-            input_hash=s.score_snapshot(fmid),
-        )
-    )
+    _revalorar(s, fmid)
     s.set_decision(
         DecisionResult(
             failure_mode_id=fmid,
@@ -70,12 +75,7 @@ class TestCriterio3LaValoracionSigueProtegida:
     def test_un_control_nuevo_sobre_una_lista_que_ya_tenia_uno_tambien(self):
         s, fmid = _sesion_valorada_y_decidida()
         s.add_control(fmid, kind="detectivo", description="Ronda operativa diaria de presión")
-        s.set_risk_score(
-            RiskScore(
-                failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
-                input_hash=s.score_snapshot(fmid),
-            )
-        )
+        _revalorar(s, fmid)
         assert s.stale_scores() == []
         s.add_control(fmid, kind="preventivo", description="Calibración anual del transmisor")
         assert s.stale_scores() == [fmid]
@@ -83,12 +83,7 @@ class TestCriterio3LaValoracionSigueProtegida:
     def test_el_mismo_control_repetido_no_ensucia_nada(self):
         s, fmid = _sesion_valorada_y_decidida()
         s.add_control(fmid, kind="detectivo", description="Ronda operativa diaria de presión")
-        s.set_risk_score(
-            RiskScore(
-                failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
-                input_hash=s.score_snapshot(fmid),
-            )
-        )
+        _revalorar(s, fmid)
         s.add_control(fmid, kind="detectivo", description="Ronda operativa diaria de presión")
         assert s.stale_scores() == []
 
@@ -234,12 +229,7 @@ class TestCriterio7CadaMensajeDiceLaVerdad:
         s, fmid = _sesion_valorada_y_decidida()
         s.update_failure_mode(fmid, pf_interval_hours=2000.0)
         # La valoración se re-sella: lo que se está probando es la decisión sola.
-        s.set_risk_score(
-            RiskScore(
-                failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
-                input_hash=s.score_snapshot(fmid),
-            )
-        )
+        _revalorar(s, fmid)
         digest = s.digest_es()
         assert "Decisiones desactualizadas" in digest
         assert "Valoraciones desactualizadas" not in digest
@@ -259,12 +249,7 @@ class TestCriterio7CadaMensajeDiceLaVerdad:
 
         s, fmid = _sesion_valorada_y_decidida()
         s.update_failure_mode(fmid, pf_interval_hours=2000.0)
-        s.set_risk_score(
-            RiskScore(
-                failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
-                input_hash=s.score_snapshot(fmid),
-            )
-        )
+        _revalorar(s, fmid)
         p4 = check_gate(s, Phase.P4_RIESGO)
         assert not [i for i in p4 if "valoración" in i and "desactualizada" in i]
         p5 = check_gate(s, Phase.P5_DECISION)
