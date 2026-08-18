@@ -10,6 +10,27 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.2.1] — 2026-08-18
+
+### Corregido
+
+- **«Bi-Anual» vale dos años y la RAE dice que bianual es dos veces al año.** Un
+  factor 4 en la dirección insegura si el interesado lo lee como semestral, y
+  sobre una tarea de búsqueda de fallos ocultos eso significa probar el
+  dispositivo de protección cuatro veces menos seguido de lo calculado.
+  «Tri-Anual» y «Tetra-Anual» tienen el mismo problema. La etiqueta no se puede
+  cambiar —es el MENU del cliente y va verbatim al Excel— así que el agente pasa
+  a glosar siempre la frecuencia en horas.
+- **El agente declaraba imposibles correcciones que sí podía hacer.** Dijo al
+  interesado que «el sistema no permite editar retroactivamente las
+  descripciones» cuando `reemplazar=True` existe y el propio prompt lo
+  documentaba. Ahora enumera qué acepta corregirse y tiene prohibido declarar un
+  límite del sistema que no haya observado en un `❌` de herramienta. Un test
+  compara esa lista contra las firmas reales para que no se pudra.
+- **El prompt se contradecía consigo mismo en seis líneas**: «ingeniero de
+  confiabilidad» y, dos más abajo, «Mantenimiento Centrado en la Fiabilidad». El
+  mercado es España: fiabilidad.
+
 ### Corregido
 
 - **Un sello por artefacto: los controles ya no invalidan la decisión.**
