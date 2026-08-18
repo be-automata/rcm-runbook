@@ -63,7 +63,7 @@ class TestLaListaDeCapacidadesNoSePudre:
         assert all(n in seccion for n in reales)
 
     def test_prohibe_declarar_limites_no_observados(self):
-        assert "Nunca declares imposible algo que no hayas intentado" in INSTRUCTIONS_ES
+        assert "No declares imposible" in INSTRUCTIONS_ES
 
 
 class TestLaGlosaDeFrecuencias:
@@ -95,7 +95,7 @@ class TestRegistroDeEspana:
         # La palabra sigue apareciendo UNA vez, en la regla que la prohíbe. Eso
         # es correcto: la regla tiene que nombrar lo que corrige.
         assert INSTRUCTIONS_ES.count("confiabilidad") == 1
-        assert "**Fiabilidad**, no «confiabilidad»" in INSTRUCTIONS_ES
+        assert "Fiabilidad (no confiabilidad)" in INSTRUCTIONS_ES
 
 
 class TestElContratoDeTerminologia:
@@ -109,12 +109,13 @@ class TestElContratoDeTerminologia:
 
     def test_el_eje_fallo_averia_esta_en_el_prompt(self):
         assert "**Fallo** es el evento" in INSTRUCTIONS_ES
-        assert "**Avería** es el ESTADO" in INSTRUCTIONS_ES
+        assert "**Avería** es el estado" in INSTRUCTIONS_ES
 
     def test_prohibe_averia_oculta(self):
         """En RCM lo oculto es el fallo (el evento), no la avería (el estado).
         Confundirlos es un error técnico, no de registro."""
-        assert "Nunca digas «avería oculta»" in INSTRUCTIONS_ES
+        assert "«avería oculta»" in INSTRUCTIONS_ES
+        assert "nunca digas" in INSTRUCTIONS_ES
 
     def test_manda_citar_verbatim_las_cadenas_congeladas(self):
         assert "verbatim y entre comillas" in INSTRUCTIONS_ES

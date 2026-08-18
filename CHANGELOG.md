@@ -10,6 +10,27 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.3.2] — 2026-08-18
+
+### Corregido
+
+- **El agente había dejado de consultar la compuerta y empezado a predecirla.**
+  Ante «genera el Excel definitivo» sobre un análisis vacío contestaba «el
+  sistema bloqueará la exportación» sin llamar a `export_excel`. El rechazo era
+  correcto, el procedimiento no: anunciar lo que hará el sistema suena fundado y
+  no lo está.
+
+  Es una regresión de la 0.3.0: el contrato de terminología llevó el prompt de
+  157 a 225 líneas y diluyó la instrucción. Aislado ejecutando el mismo escenario
+  contra el prompt anterior, que sí llamaba a la herramienta.
+
+  El arreglo no fue subir el volumen de la regla. Resultó que la regla de la
+  compuerta y la de «no declares imposible una corrección» **son la misma regla**
+  —no afirmes lo que hará el sistema sin consultarlo— y como dos secciones
+  separadas competían en vez de reforzarse. Ahora es un principio con sus tres
+  casos, y el contrato de terminología se recorta a lo operativo: el detalle ya
+  vive en `docs/GLOSARIO.md`.
+
 ## [0.3.1] — 2026-08-18
 
 ### Corregido
