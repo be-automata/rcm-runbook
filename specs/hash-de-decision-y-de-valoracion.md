@@ -105,6 +105,14 @@ política de mantenimiento, pero invalida la decisión que la contiene.**
    Cambiar el efecto, el patrón de falla, el P-F o la credibilidad **sí** marca
    la decisión obsoleta. Test explícito, uno por insumo: partir un hash es
    fácil de hacer de más y dejarlo insensible a todo.
+5b. **Y dejan de serlo a lo que no.** Cambiar `description`, `mechanism`,
+   `iso_code`, `cause`, `root_cause`, `tpef` o `weibull_beta` **no** marca la
+   decisión obsoleta, y **sí** marca la valoración. Los dos tests van en pareja:
+   sale de un sello, no de los dos. (Segunda vuelta; ver la sección de abajo.)
+5c. **La tolerancia no se traga un cambio real.** Con controles presentes en el
+   modo, un cambio de efecto o de P-F sigue marcando la decisión obsoleta pese a
+   la aceptación de sellos heredados. Es el riesgo propio de esa aceptación y
+   necesita su test.
 6. **Los bloqueadores fantasma desaparecen y no se llevan ninguno real por
    delante.** Sobre el fixture: de 121 se baja a 90, y los 90 restantes son
    exactamente los que había menos los 31 de «valoración desactualizada».
@@ -127,6 +135,11 @@ política de mantenimiento, pero invalida la decisión que la contiene.**
    > Verificado en `tests/unit/test_resellar_decisiones.py` con los 121 de
    > partida congelados en `tests/fixtures/bloqueadores_uat_antes.txt`: la
    > igualdad se comprueba como conjuntos, no por conteo.
+   >
+   > SEGUNDA VUELTA: el 91 también quedó superado. Con la aceptación de sellos
+   > heredados, el estado **sin migrar** da ya **59** — los mismos que el
+   > migrado. Ése es el número que hay que esperar el día del despliegue, y por
+   > eso la ventana de degradación dejó de existir.
 7. **Cada mensaje dice la verdad.** Un modo con valoración obsoleta produce el
    mensaje de valoración; uno con decisión obsoleta, el de decisión; ninguno
    produce los dos salvo que las dos lo estén.
@@ -195,6 +208,19 @@ se descubra que la sesión sigue sin poder exportar.
        mismos menos los 31 de valoración.
        → medido: 121 → 91 sin re-sellar y → 59 re-sellado. Ver la corrección
        bajo el criterio 6.
+5b.[x] **Segunda vuelta — estrechar el sello a lo que `decide()` lee.** Sacar de
+       `decision_snapshot` los siete campos descriptivos; siguen en la
+       valoración.
+       → `_insumos_de_la_decision` (`domain.py`), con la contrapartida asumida
+       escrita al lado. Tests en pareja en
+       `tests/unit/test_hash_decision_vs_valoracion.py`
+       (`TestLosCamposDescriptivosNoEnsucianLaDecision`).
+5c.[x] **Segunda vuelta — aceptar sellos heredados por prefijo de controles**,
+       para que desplegar no degrade el estado vivo.
+       → `sello_de_decision_heredado` (`domain.py`) y
+       `_sellos_de_decision_validos` (`session.py`), consumido por
+       `stale_decisions()`. La verificación de `resellar_decisiones.py` pasa a
+       estricta por la misma razón.
 6. [x] `spec-verifier` antes del PR (`.claude/rules/specs.md:22`) y
        `production-validator` en local.
        → `spec-verifier`: CUMPLE los 8 criterios, con línea base independiente
@@ -205,23 +231,121 @@ se descubra que la sesión sigue sin poder exportar.
        una copia entera y restaurable que no se pisa, escritura atómica, y
        código de salida 2 sin escribir nada cuando el estado no valida.
 
-## Pendiente de despliegue
+## Segunda vuelta: el sello sellaba de más, y la ventana de despliegue
 
-**El estado vivo (Neon / contenedor) todavía no está re-sellado.** El orden
-importa: si el código sale sin la migración, la sesión de UAT empeora en un
-bloqueador (32 decisiones desfasadas en vez de 31) antes de mejorar en 62. No
-hay migración automática al cargar, y con razón: `SCHEMA_VERSION` no cambia
-porque esto es migración de datos, no de esquema.
+Una investigación posterior sobre los dos agujeros que esta sección declaraba
+abiertos encontró que el primero era mucho mayor de lo descrito y el segundo
+mucho menor. Ambos resueltos o cerrados; queda una interacción que hay que
+conocer antes de desplegar.
 
-**Dos agujeros del mismo principio que quedan abiertos**, ninguno regresión de
-esta spec:
+### El sello de la decisión incluía siete campos que `decide()` no lee
 
-- `fm.tpef` sigue dentro del sello de la decisión aunque `decide()` no lo lee.
-  Es más estricto que el principio («lo que no entra en `decide()`, no entra en
-  el hash»): produce falsos positivos, nunca falsos negativos.
-- `answers` (los 10 campos del cuestionario) alimenta `decide()` y **no** está
-  en el sello, ni antes ni ahora: cambiar una respuesta no marca la decisión
-  obsoleta. Es el agujero simétrico, y es preexistente.
+No era sólo `tpef`. Enumerado contra el código: de `fm`, `decide()` toca
+`failure_pattern`, `credible`, `pf_interval_hours` y `weibull_eta_hours` — más
+`id` y `non_credible_discard`, que sólo entran en el texto de un error. El sello
+llevaba **once** campos. Los siete de más —`description`, `mechanism`,
+`iso_code`, `cause`, `root_cause`, `tpef`, `weibull_beta`— no pueden cambiar la
+política.
+
+El daño es el mismo que motivó esta spec, por otra puerta: **corregir una errata
+en una descripción marcaba la decisión como obsoleta**, y en los cuatro modos con
+firma JA1011 eso vuelve a pedir la firma. Durante el UAT el interesado corrigió
+descripciones de modos repetidamente.
+
+**Decidido: el sello se estrecha a los cuatro campos reales** (más el efecto
+entero, que `classify_consequence` recorre). La contrapartida asumida es que
+reescribir una descripción hasta convertir el modo en otro distinto ya no
+invalida su decisión: el sello es «los insumos de la conclusión», no «la
+identidad del modo». Si alguna vez hace falta lo segundo, es otro mecanismo y
+otro nombre. Los siete siguen sellados en la **valoración**, que es donde
+pertenecen.
+
+Se descartó dejarlo como estaba y limitarse a corregir el docstring: convive con
+falsos positivos que ya cuestan firmas humanas, que es exactamente lo que esta
+spec vino a eliminar.
+
+### `answers` no es un agujero alcanzable
+
+Es cierto que cambiar una respuesta del cuestionario cambia la política —medido:
+`MBT` frente a `OHF`— y que no está en ningún sello. Pero **no puede derivar**:
+`run_decision_logic` (`tools.py:600-660`) es el único camino de escritura,
+siempre re-ejecuta `decide()` y vuelve a sellar, y las answers no se almacenan
+en ninguna parte. No existe un estado donde la decisión guardada contradiga unas
+respuestas guardadas, porque no hay respuestas guardadas.
+
+Lo que sí hay es un hueco de **procedencia**, y es parcial: `justification`
+registra qué rama de la cascada disparó — 7 justificaciones distintas sobre 32
+decisiones, del tipo *«Patrón de fin de vida útil con restauración/sustitución
+programada viable»*, que implica `aging_related` y `restoration_feasible`. Es un
+registro con pérdida, no una ausencia. Persistir las answers cerraría la
+reproducibilidad JA1011 del todo, pero es un cambio de modelo y va aparte.
+
+### La ventana de despliegue ya no existe
+
+Esta sección decía que desplegar sin migrar dejaba la sesión **peor** que antes
+(32 desfasadas en vez de 31). Ya no.
+
+Un sello guardado con una fórmula anterior se reconoce **reconstruyéndolo**. Los
+controles son *append-only* —`RCMSession.add_control` (`session.py:415-429`)
+sólo hace `append`, y no hay ninguna ruta de borrado ni de edición en el repo—,
+así que la lista de controles de cualquier instante pasado es necesariamente un
+**prefijo** de la actual. Enumerar prefijos no es una heurística: es enumerar la
+historia completa. Sobre la sesión de UAT reconstruye **32 de 32**, con 3
+candidatos por modo como máximo.
+
+De ahí la propiedad que elimina la ventana, y es una demostración y no una
+medición: el conjunto aceptado incluye `controls[:len(controls)]`, que **es** la
+fórmula anterior. Los sellos que la app nueva acepta son un superconjunto de los
+que aceptaba la vieja, luego **ninguna decisión fresca hoy puede quedar obsoleta
+al desplegar**. Medido de todos modos: el estado sin migrar da ya los mismos
+**59** bloqueadores que el migrado.
+
+Dos decisiones de dónde vive esa tolerancia:
+
+- **En la comparación, no en `decision_snapshot`.** El sello canónico no puede
+  tener variantes o deja de haber uno.
+- **En la sesión, no en el cargador.** Así la heredan las dos rutas de lectura —
+  el chat (`tools._load`) y la descarga (`app._sesion_guardada`)— sin que
+  ninguna se quede con el criterio viejo.
+
+Y la verificación del guion de re-sellado pasa a ser **estricta**: usaba
+`stale_decisions()`, que ahora es tolerante, así que habría dado por bueno un
+fichero en el que no aplicó nada. Normalizar al sello canónico es justamente su
+trabajo.
+
+Se descartaron: migrar antes de desplegar (invierte la ventana y la agrava —
+bajo la fórmula vieja un estado re-sellado da 32 desfasadas, alcanza a los
+cuatro modos firmados y dispara `HITLRequired`); la aceptación dual ingenua
+(rescata 1 de 32); y el re-sellado perezoso al escribir en `_load`, que sin el
+criterio de reconocimiento no tiene definición y además destruye el sello viejo,
+cerrando la puerta a revertir el código.
+
+### La interacción que hay que conocer antes de desplegar
+
+Las dos correcciones se combinan de una forma que conviene tener presente:
+**una decisión que todavía lleva sello heredado conserva la sensibilidad
+vieja.** Medido: sobre el estado sin migrar, una errata en la descripción sí
+marca la decisión obsoleta; sobre el estado ya normalizado, no.
+
+Consecuencia práctica: la migración de Neon **deja de ser urgente** —no hay
+ventana de degradación, y se puede correr cuando convenga, con el interesado
+desconectado— pero **sigue siendo necesaria** para que el arreglo del falso
+positivo llegue a la sesión real. Alternativa válida si se prefiere no tocar
+Neon nunca: se normaliza sola, porque cualquier `run_decision_logic` futuro
+reescribe el sello con la fórmula nueva.
+
+`SCHEMA_VERSION` se queda en 1 en todos los pasos: no cambia la forma de nada, y
+subirlo activaría el guardián de `tools.py:96-101` contra uno mismo si hiciera
+falta revertir el contenedor.
+
+### Retirada de la compatibilidad
+
+El código de aceptación es temporal y lleva su condición de retirada escrita al
+lado: **borrable cuando `stale_decisions()` de la sesión viva sea `[]` con la
+aceptación desactivada.** Depende del invariante *append-only*; si alguien añade
+borrado o edición de controles, deja de ser exhaustivo y hay que volver a la
+migración. Comprobado que la spec de supersesión no lo rompe: es un libro que
+conserva los modos y no toca ni los sellos ni los controles.
 
 ## Supuestos
 
