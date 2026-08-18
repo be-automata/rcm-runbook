@@ -273,14 +273,117 @@ def snapshot_hash(*parts: object) -> str:
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
 
 
-def failure_mode_snapshot(
+def _insumos_del_modo(fm: FailureMode, effect: Effect | None) -> tuple[object, ...]:
+    """Los campos descriptivos del modo y su efecto. Insumos de la VALORACIÓN.
+
+    Ojo con el nombre: esto NO es «lo que lee `decide()`». Una versión anterior
+    de este docstring lo afirmaba y era falso para 7 de sus 11 campos. Lo que
+    `decide()` lee está en `_insumos_de_la_decision`.
+    """
+    return (
+        fm.description,
+        fm.mechanism,
+        fm.iso_code,
+        fm.cause,
+        fm.root_cause,
+        fm.failure_pattern,
+        fm.credible,
+        fm.tpef.model_dump_json() if fm.tpef else "",
+        fm.pf_interval_hours,
+        fm.weibull_beta,
+        fm.weibull_eta_hours,
+        effect.model_dump_json() if effect else "",
+    )
+
+
+def _insumos_de_la_decision(fm: FailureMode, effect: Effect | None) -> tuple[object, ...]:
+    """Exactamente lo que `decision_logic.decide(fm, effect, answers)` puede leer.
+
+    Enumerado contra el código, no contra la intuición: de `fm`, `decide()` toca
+    `failure_pattern`, `credible`, `pf_interval_hours` y `weibull_eta_hours` (más
+    `id` y `non_credible_discard`, que sólo entran en el texto de un error). El
+    efecto entero sí, porque `classify_consequence` lo recorre.
+
+    Los siete campos descriptivos —description, mechanism, iso_code, cause,
+    root_cause, tpef, weibull_beta— quedan fuera **a propósito**: no pueden
+    cambiar la política, y sellarlos hacía que corregir una errata en la
+    descripción marcara la decisión como obsoleta. En la sesión de UAT eso
+    alcanzaba a cuatro decisiones con firma JA1011, o sea que una tilde costaba
+    una firma humana. Es el mismo defecto que motivó partir el sello, entrando
+    por otra puerta.
+
+    Contrapartida asumida: reescribir la descripción de un modo hasta
+    convertirlo en otro modo distinto ya no invalida su decisión. Se aceptó
+    porque el sello es «los insumos de la conclusión», no «la identidad del
+    modo»; si alguna vez hace falta lo segundo, es otro mecanismo y otro nombre.
+    """
+    return (
+        fm.failure_pattern,
+        fm.credible,
+        fm.pf_interval_hours,
+        fm.weibull_eta_hours,
+        effect.model_dump_json() if effect else "",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dos sellos, no uno: un hash cubre los insumos de SU artefacto.
+#
+# Había un único `failure_mode_snapshot` para la valoración y para la decisión, y
+# los controles entraban en él. Los controles justifican la Detección, así que
+# son insumo de la valoración; NO son insumo de la decisión: `engine/
+# decision_logic.py` no lee `Control` en ninguna línea y `decide(fm, effect,
+# answers)` no los recibe. Con un solo sello, añadir un control marcaba como
+# obsoleta una decisión que ese control no puede cambiar: en la sesión de UAT,
+# 31 de 32 decisiones invalidadas por un dato que no las alimenta, cuatro de
+# ellas con firma humana JA1011 que habría que volver a pedir para re-sellarlas.
+#
+# Si vas a tocar estas listas: un insumo entra en `decision_snapshot` sólo si
+# `decide()` puede leerlo. Meter los controles «por completitud» reintroduce el
+# defecto entero.
+# ---------------------------------------------------------------------------
+
+
+def score_snapshot(
     fm: FailureMode,
     effect: Effect | None,
     controls: list[Control] | None = None,
 ) -> str:
-    """Digest of every decision-affecting input: the mode itself (incl. Weibull
-    parameters and credibility), its effect, and the current controls (they justify
-    the Detection rating)."""
+    """Sello de la valoración S/O/D: el modo, su efecto y **los controles actuales**.
+
+    Los controles van aquí porque justifican la Detección: si aparece un control
+    nuevo, la D deja de estar respaldada y alguien tiene que re-juzgarla.
+    """
+    return snapshot_hash(
+        *_insumos_del_modo(fm, effect),
+        "|".join(f"{c.kind}:{c.description}" for c in (controls or [])),
+    )
+
+
+def decision_snapshot(fm: FailureMode, effect: Effect | None) -> str:
+    """Sello de la decisión RCM: sólo lo que `decide()` puede leer.
+
+    Sin los controles —un control es evidencia de detección, no un insumo de la
+    cascada— y sin los siete campos descriptivos, por lo que explica
+    `_insumos_de_la_decision`. Sellar de más produce decisiones «obsoletas» que
+    se re-ejecutan para llegar exactamente a la misma política, y que en los
+    modos de seguridad piden otra vez la firma humana.
+    """
+    return snapshot_hash(*_insumos_de_la_decision(fm, effect))
+
+
+def _sello_de_decision_v1(
+    fm: FailureMode, effect: Effect | None, controls: list[Control] | None
+) -> str:
+    """La fórmula de sello RETIRADA, copiada literal. No llames a las vivas.
+
+    Hoy coincide campo por campo con `score_snapshot`, y por eso es tentador
+    expresarla como una llamada a ella. Sería un acoplamiento silencioso: la de
+    valoración también es una fórmula sujeta a cambio, y el día que se toque,
+    los sellos heredados de la DECISIÓN cambiarían de significado sin que
+    ningún test se entere. Una fórmula retirada es un dato histórico; se
+    congela.
+    """
     return snapshot_hash(
         fm.description,
         fm.mechanism,
@@ -296,3 +399,36 @@ def failure_mode_snapshot(
         effect.model_dump_json() if effect else "",
         "|".join(f"{c.kind}:{c.description}" for c in (controls or [])),
     )
+
+
+def sello_de_decision_heredado(
+    fm: FailureMode, effect: Effect | None, controls: list[Control] | None
+) -> set[str]:
+    """Sellos de decisión de fórmulas anteriores que siguen valiendo para este modo.
+
+    Existe para que desplegar un cambio de fórmula no deje peor el estado vivo.
+    Un sello guardado se calculó con la fórmula de su momento y con la lista de
+    controles de su momento; si no se reconociera, todas las decisiones ya
+    tomadas aparecerían como obsoletas el día del despliegue — incluidas las
+    firmadas.
+
+    Reconstruir la lista de controles de entonces **no es adivinar**: los
+    controles son *append-only* (`RCMSession.add_control` sólo hace `append`, y
+    no hay ninguna ruta de borrado ni de edición en el repo), así que la lista
+    de cualquier instante pasado es necesariamente un **prefijo** de la actual.
+    Enumerar prefijos enumera la historia completa. Sobre la sesión de UAT
+    reconstruye 32 de 32, con 3 candidatos por modo como máximo.
+
+    Consecuencia que hace innecesaria la migración para no degradar: el conjunto
+    aceptado incluye `controls[:len(controls)]`, que es literalmente la fórmula
+    anterior. Los sellos que la app nueva acepta son un superconjunto de los que
+    aceptaba la vieja, así que **ninguna decisión fresca hoy puede quedar
+    obsoleta al desplegar**. Es una propiedad por construcción, no una medición.
+
+    Retirable cuando `stale_decisions()` de la sesión viva sea `[]` con esta
+    aceptación desactivada. Depende del invariante *append-only*: si alguien
+    añade borrado o edición de controles, esto deja de ser exhaustivo y hay que
+    volver a la migración.
+    """
+    lista = list(controls or [])
+    return {_sello_de_decision_v1(fm, effect, lista[:k]) for k in range(len(lista) + 1)}

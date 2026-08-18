@@ -141,7 +141,7 @@ controles actuales de cada modo.
 3. Pida el export definitivo.
    - [ ] Responde con un enlace markdown clicable
      `[Descargar el Excel](/exports/<session_id>/AMEF_P-101.xlsx)`.
-     **Sin `?key=`**: se quitó a propósito (commit 05cd9d8) porque un enlace con
+     **Sin `?key=`**: se quitó a propósito (commit da3c7b0) porque un enlace con
      la llave a la vista se reenvía por WhatsApp con la llave dentro. La página
      la adjunta como cabecera al pulsar.
    - [ ] El enlace **funciona al hacer clic** desde la propia página del chat.
@@ -153,7 +153,10 @@ controles actuales de cada modo.
    verificador, no la que usa el cliente (él pulsa el enlace del chat, que lleva
    la llave en la cabecera):
    `$BASE/exports/<session_id>/AMEF_P-101.xlsx?key=<OS_SECURITY_KEY>`
-   El archivo se **regenera** desde la base de datos, no se lee de disco.
+   Si el archivo ya no está en el disco del contenedor —que es efímero y se
+   vacía en cada reinicio— **se regenera desde la base de datos**; para el
+   cliente el resultado es el mismo. La compuerta del definitivo se evalúa
+   siempre contra el estado de la sesión, nunca contra el archivo guardado.
    - [ ] Descarga un `.xlsx` válido (no un error 404/400). **Este paso presupone
      el análisis completo**: con uno incompleto, el definitivo responde 404 a
      propósito (ver §9b, paso 4).
@@ -186,7 +189,11 @@ Abra en Excel, lado a lado, el archivo exportado y el benchmark del cliente:
   con su justificación — nunca se borra.
 - [ ] Frecuencias y disciplinas del plan provienen del catálogo del cliente
   (Diario…Según sea el caso; Mecánico…Instrumentista).
-- [ ] El TPEF y su fuente (OREDA/historial/experto) acompañan cada tarea.
+- [ ] El bloque «FRECUENCIA DE FALLAS (TPEF)» de la hoja PLAN muestra los
+  primeros modos y remite a AUDITORIA RCM; el aviso «… ver hoja AUDITORIA RCM»
+  ocupa su propia fila, sin horas ni fuente al lado. **La tabla completa** —TPEF
+  en horas y años, y su fuente (OREDA/historial/experto)— está en AUDITORIA RCM,
+  con una fila por modo creíble con TPEF.
 
 ## 9. Enlace directo de demo: continuidad de sesión (5 min)
 
@@ -301,7 +308,7 @@ done
 | 8 | Export prematuro rechazado con lista de faltantes | ☐ |
 | 9 | Descarga vía `/exports/...` funciona | ☐ |
 | 10 | Reanudación tras cerrar el navegador con el mismo `session_id` | ☐ |
-| 11 | `.xlsx` equivalente al benchmark del cliente (hojas y encabezados) | ☐ |
+| 11 | `.xlsx` equivalente al benchmark del cliente: mismas hojas y encabezados verbatim **desde la columna B**; la columna A (`FM-`) es nuestra y no desplaza nada | ☐ |
 | 12 | La demo retoma la sesión al recargar y al cambiar de dispositivo | ☐ |
 | 13 | «Nuevo análisis» empieza de cero sin arrastrar la sesión anterior | ☐ |
 | 14 | Toda la API responde 401 sin llave, salvo `/demo`, `/health` y `/favicon.ico` | ☐ |
@@ -311,6 +318,7 @@ done
 | 18 | Todo análisis incompleto baja como `BORRADOR_` y se avisa en pantalla | ☐ |
 | 18b | Renombrando el archivo, el borrador **sigue** distinguiéndose: sello `BORRADOR — NO APTO PARA EJECUCIÓN` en la fila 2 de AMEF y de PLAN, y los defectos listados en AUDITORIA RCM con su `FM-` al lado | ☐ |
 | 18c | Cada `FM-` citado en la conversación se localiza en el Excel por la columna A, sin leer descripciones | ☐ |
+| 18d | Ninguna fila del AMEF ni del PLAN queda sin clasificar: donde no hay decisión, el centinela `PENDIENTE — …` va en la columna que marca la visibilidad, y nunca quedan vacías las dos | ☐ |
 | 19 | La llave no aparece en la URL de descarga del botón | ☐ |
 | 20 | Las respuestas del agente se leen formateadas, sin asteriscos en pantalla | ☐ |
 | 21 | Lo que escribe el cliente sigue siendo texto plano | ☐ |

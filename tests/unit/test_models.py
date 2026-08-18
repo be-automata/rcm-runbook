@@ -179,9 +179,11 @@ class TestStaleness:
             is_hidden=False,
             operational=True,
         )
-        snap = s.current_snapshot(fmid)
         s.set_risk_score(
-            RiskScore(failure_mode_id=fmid, severity=7, occurrence=5, detection=4, input_hash=snap)
+            RiskScore(
+                failure_mode_id=fmid, severity=7, occurrence=5, detection=4,
+                input_hash=s.score_snapshot(fmid),
+            )
         )
         s.set_decision(
             DecisionResult(
@@ -189,7 +191,7 @@ class TestStaleness:
                 consequence_class=ConsequenceClass.OPERACIONAL,
                 policy=MaintenancePolicy.MBC,
                 justification="Síntoma detectable con intervalo P-F suficiente para inspección.",
-                input_hash=snap,
+                input_hash=s.decision_snapshot(fmid),
             )
         )
         return s, fmid
@@ -197,7 +199,8 @@ class TestStaleness:
     def test_edit_after_decision_detected(self):
         s, fmid = self._decided_session()
         assert s.stale_decisions() == []
-        s.update_failure_mode(fmid, root_cause="Nivel bajo en el tanque de succión")
+        # `root_cause` es descriptivo y decide() no lo lee; el patrón sí.
+        s.update_failure_mode(fmid, pf_interval_hours=999.0)
         assert s.stale_decisions() == [fmid]
 
     def test_digest_flags_stale(self):

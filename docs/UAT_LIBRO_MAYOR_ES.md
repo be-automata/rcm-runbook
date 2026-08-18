@@ -23,7 +23,9 @@ diferencia entre este documento y una lista de deseos.
 ## Corrida con saldo — 2 de agosto de 2026
 
 `uv run --env-file .env python scripts/verificar_en_produccion.py`, contra la
-versión `7ed1782c` y con `/health/modelo` en `{"estado":"ok"}`.
+corrida del 02-ago-2026 (`f9dec71`) y con `/health/modelo` en
+`{"estado":"ok"}`. (El hash anterior, `7ed1782c`, no existe en esta historia:
+la rama se reescribió y quedó colgado.)
 
 **7/7 criterios obligatorios en verde**, «Limpieza: sin residuos», salida 0.
 Censo posterior: 4 sesiones, las 4 `demo-*` del cliente, cero `uat-*`.
@@ -89,7 +91,7 @@ El **29** conserva veredicto solo en su mitad medible —que llame a
 le atribuye un significado se imprimen para revisión y no puntúan. El porqué
 está en `UAT_SCRIPT_ES.md`.
 
-## Verificados en producción — 9
+## Verificados en producción — 12
 
 | # | criterio | cuándo | evidencia |
 |---|---|---|---|
@@ -145,20 +147,22 @@ Dos salvedades que no son verdes enteros:
   decisión sí está probado. Que el aprobador traiga nombre **y** cargo no lo
   exige nada: `approver` es texto libre, y los propios tests firman con «HSE».
   Media casilla.
-- **[11]** compara el `.xlsx` contra el benchmark celda a celda, pero sobre un
-  libro generado en la suite, no descargado de producción.
+- **[11]** compara contra el fixture del benchmark los encabezados verbatim,
+  los nombres de hoja y los vocabularios de los desplegables; las celdas de
+  datos se comprueban contra la sesión de prueba, no contra el libro del
+  cliente. Y sobre un libro generado en la suite, no descargado de producción.
 
 ## Recuento
 
 | | |
 |---|---|
-| ✅ producción | **18** — 9 de las rondas 37/41 más 9 de la corrida con saldo (1, 4, 10, 23, 25, 29, 36, 40, 46) |
+| ✅ producción | **21** — 12 de las rondas 37/41/47 más 9 de la corrida con saldo (1, 4, 10, 23, 25, 29, 36, 40, 46) |
 | ✅ navegador | 8 |
 | ✅ solo test | 21 |
 | ❌ | **0** |
 | 📏 medido sin aprobar | 2 — el **8** en 2/3 y el **27**, los dos por ALTA-2 |
 | ⊘ sin ejecutar | 1 — el **26** |
-| **total** | **50** |
+| **total** | **53** |
 
 Ningún criterio en rojo. Lo que queda por observar son los 21 que solo tienen
 un test detrás, y los dos que miden ALTA-2 en vez de aprobarla.

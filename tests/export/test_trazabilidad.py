@@ -82,6 +82,20 @@ class TestCriterio1Trazabilidad:
         for _, fila in amef_rows_with_ids(sesion):
             assert fila.falla_funcional.startswith("FF-"), fila.falla_funcional
 
+    def test_el_aviso_del_bloque_tpef_no_pisa_una_fila_poblada(self, libro):
+        """El aviso «ver AUDITORIA» va en su propia fila. Antes se escribía
+        encima de la última fila ya poblada: pisaba su FM- y dejaba las horas,
+        los años y la fuente sin el modo al que pertenecen."""
+        ws = libro["PLAN DE MANTENIMIENTO"]
+        avisos = [
+            r for r in range(1, PLAN_HEADER_ROW)
+            if "ver hoja AUDITORIA" in str(ws.cell(row=r, column=14).value or "")
+        ]
+        assert avisos, "el fixture ya no desborda el bloque TPEF"
+        for r in avisos:
+            resto = [ws.cell(row=r, column=c).value for c in (15, 16, 17)]
+            assert resto == [None, None, None], f"fila {r} dejó datos huérfanos: {resto}"
+
     def test_el_bloque_tpef_no_invade_la_columna_a(self, libro):
         """El bloque TPEF vive encima de la cabecera del PLAN y deja A vacía."""
         ws = libro["PLAN DE MANTENIMIENTO"]
