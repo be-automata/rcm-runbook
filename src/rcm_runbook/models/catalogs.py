@@ -107,7 +107,7 @@ METODOS_FFI_ES: dict[str, str] = {
     "single_single": "una función protegida, un dispositivo",
     "multi_single": "varias funciones protegidas, un solo dispositivo",
     "single_multi": "una función protegida, varios dispositivos redundantes",
-    "economic": "por equilibrio de costos",
+    "economic": "por equilibrio de costes",
 }
 
 
@@ -299,7 +299,7 @@ Discipline = Annotated[str, AfterValidator(_valid_discipline)]
 # The benchmark MENU does not enumerate these; these lists follow ISO 14224 Annex B and the
 # vocabulary observed in the client's own AMEF rows.
 MECHANISMS_ES: list[str] = [
-    "Falla Mecánica",
+    "Fallo Mecánico",
     "Fuga",
     "Cavitación",
     "Corrosión",
@@ -307,9 +307,9 @@ MECHANISMS_ES: list[str] = [
     "Erosión",
     "Fatiga",
     "Recalentamiento",
-    "Falla Eléctrica",
-    "Falla de Instrumentación",
-    "Falla de Material",
+    "Fallo Eléctrico",
+    "Fallo de Instrumentación",
+    "Fallo de Material",
     "Bloqueo/Obstrucción",
     "Otro",
 ]
@@ -319,7 +319,7 @@ CAUSE_CATEGORIES_ES: list[str] = [
     "Error de Fabricación/Instalación",
     "Error de Operación",
     "Error de Mantenimiento",
-    "Falla por desgaste",
+    "Fallo por desgaste",
     "Operación fuera de las condiciones de diseño",
     "Causa externa/ambiental",
     "Envejecimiento",
@@ -375,5 +375,5 @@ SAE_DETECTION_ES: dict[int, str] = {
     4: "Moderadamente alta — capacidad moderadamente alta",
     3: "Alta — capacidad alta de detección",
     2: "Muy alta — capacidad muy alta de detección",
-    1: "Casi segura — el control detecta casi con certeza (monitoreo online confiable)",
+    1: "Casi segura — el control detecta casi con certeza (monitorización online fiable)",
 }

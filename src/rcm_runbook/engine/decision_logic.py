@@ -114,7 +114,7 @@ def _proactive_policy(
             f"intervalo P-F de {fm.pf_interval_hours:.0f} h con inspección ≤ P-F/2 "
             f"({fm.pf_interval_hours / 2:.0f} h)"
             if answers.pf_interval_sufficient and fm.pf_interval_hours
-            else "monitoreo automatizado disponible"
+            else "monitorización automatizado disponible"
         )
         return MaintenancePolicy.MBC, f"Falla detectable antes del fallo funcional: {detail}."
     if answers.pf_interval_sufficient:

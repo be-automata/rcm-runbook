@@ -88,5 +88,63 @@ class TestRegistroDeEspana:
     def test_el_prompt_no_se_contradice_sobre_fiabilidad(self):
         """Decía «ingeniero de confiabilidad» y dos líneas después «Mantenimiento
         Centrado en la Fiabilidad». El mercado es España: fiabilidad."""
-        assert "confiabilidad" not in INSTRUCTIONS_ES
-        assert "Fiabilidad" in INSTRUCTIONS_ES
+        assert "ingeniero de confiabilidad" not in INSTRUCTIONS_ES
+        assert "ingeniero de fiabilidad" in INSTRUCTIONS_ES
+        # La palabra sigue apareciendo UNA vez, en la regla que la prohíbe. Eso
+        # es correcto: la regla tiene que nombrar lo que corrige.
+        assert INSTRUCTIONS_ES.count("confiabilidad") == 1
+        assert "**Fiabilidad**, no «confiabilidad»" in INSTRUCTIONS_ES
+
+
+class TestElContratoDeTerminologia:
+    """Las reglas de habla viven en el prompt, no en `consult_handbook`.
+
+    `docs/GLOSARIO.md` es una tabla de correspondencia para quien programa; no
+    contiene ninguna regla sobre cómo habla el agente y no debería estar en
+    `_SOURCES`. Conectarla la volvería buscable, o sea dependiente de que el
+    agente decida consultarla.
+    """
+
+    def test_el_eje_fallo_averia_esta_en_el_prompt(self):
+        assert "**Fallo** es el evento" in INSTRUCTIONS_ES
+        assert "**Avería** es el ESTADO" in INSTRUCTIONS_ES
+
+    def test_prohibe_averia_oculta(self):
+        """En RCM lo oculto es el fallo (el evento), no la avería (el estado).
+        Confundirlos es un error técnico, no de registro."""
+        assert "Nunca digas «avería oculta»" in INSTRUCTIONS_ES
+
+    def test_manda_citar_verbatim_las_cadenas_congeladas(self):
+        assert "verbatim y entre comillas" in INSTRUCTIONS_ES
+        assert '"Falla Funcional"' in INSTRUCTIONS_ES, "el ejemplo tiene que ser literal"
+
+    def test_las_cuatro_equivalencias_estan(self):
+        for termino in ("en reserva", "búsqueda de fallos ocultos", "repuesto", "intervalo P-F"):
+            assert termino in INSTRUCTIONS_ES, f"falta el equivalente de {termino!r}"
+        assert "nunca «búsqueda de averías»" in INSTRUCTIONS_ES
+
+    def test_el_glosario_sigue_sin_conectarse(self):
+        """La tabla de correspondencia no va al contexto: no cabe y no gobierna
+        el habla. Si alguien la añade a `_SOURCES`, este test lo dice."""
+        from rcm_runbook.knowledge.handbook import _SOURCES
+
+        assert "GLOSARIO.md" not in _SOURCES
+
+
+class TestLaColisionDeFallo:
+    """«fallo» pasó a ser el término del dominio, así que el error de software no
+    puede seguir llamándose igual: la sección del prompt que enseña a
+    distinguirlos quedaría ambigua justo donde exige precisión."""
+
+    def test_el_prompt_llama_error_al_error_de_software(self):
+        assert "**2. Error del sistema**" in INSTRUCTIONS_ES
+        assert "**2. Fallo técnico**" not in INSTRUCTIONS_ES
+
+    def test_y_lo_dice_explicitamente(self):
+        assert "Nunca lo llames «fallo»" in INSTRUCTIONS_ES
+
+    def test_el_mensaje_al_cliente_tambien(self):
+        from rcm_runbook.app import _FALLO_GENERICO  # type: ignore[attr-defined]
+
+        assert "fallo técnico" not in _FALLO_GENERICO
+        assert "error" in _FALLO_GENERICO

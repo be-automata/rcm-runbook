@@ -176,7 +176,7 @@ class TestCascade:
                             pf_interval_sufficient=False),
         )
         assert result.policy == MaintenancePolicy.MBC
-        assert "monitoreo automatizado" in result.justification
+        assert "monitorización automatizado" in result.justification
         assert "P-F de 48" not in result.justification
 
 

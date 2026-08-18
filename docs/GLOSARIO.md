@@ -1,6 +1,82 @@
 # Glosario — Lenguaje ubicuo del proyecto RCM Runbook
 
-Tabla de correspondencia entre el término de dominio en español, su identificador en el código, la columna del Excel del cliente (ortografía exacta según `src/rcm_runbook/data/benchmark_fixture.json`, hoja AMEF) y la herramienta o argumento asociado.
+Este documento tiene **dos partes con públicos distintos**, y conviene no
+confundirlas:
+
+1. **El contrato de terminología** — cómo habla el agente. Es lo único de aquí
+   que está CONECTADO a su contexto, y vive de verdad en
+   `src/rcm_runbook/agent/instructions_es.py`. Esta sección lo explica y
+   argumenta; la fuente de verdad ejecutable es el prompt.
+2. **La tabla de correspondencia** — término ↔ identificador ↔ columna ↔
+   herramienta. Es documentación para quien programa. **No** está conectada al
+   agente, y no debería estarlo: una tabla de 25 filas no cabe en un prompt que
+   se inyecta en cada turno, y no gobierna cómo se habla.
+
+Por qué la separación importa: meter la tabla en `_SOURCES` la volvería buscable
+vía `consult_handbook`, o sea dependiente de que el agente decida consultarla. El
+repo ya pagó ese modo de fallo una vez —`factory.py` lo documenta: «31 turnos, 0
+modos de falla registrados»— y por eso las reglas de habla van en el prompt.
+
+---
+
+## 1. Contrato de terminología (español de España)
+
+Mercado: **España**. Referencia normativa: **UNE-EN 13306**, *Mantenimiento.
+Terminología del mantenimiento*.
+
+| Concepto | Término | Apartado |
+|---|---|---|
+| failure | **fallo** — el EVENTO: cese de la aptitud para cumplir una función | 5.1 |
+| fault | **avería** — el ESTADO que sigue al fallo | 6.1 |
+| failure mode | **modo de fallo** («modo de avería» queda desaconsejado) | 5.2 |
+| hidden failure | **fallo oculto** | 5.12 |
+| spare part | **repuesto** | 3.5 |
+| standby | **estado de espera** / **redundancia en espera** | 6.11 / 4.8 |
+
+La nota 5.1 es literal: *«El "fallo" es un evento que se debe diferenciar de la
+"avería", que es un estado»*. De ahí la regla que más fácil se incumple: en RCM
+lo oculto es el **fallo**, no la avería, y decir «avería oculta» cambia el
+concepto, no el registro.
+
+**Dos avisos de atribución.** `fallo funcional`, `intervalo P-F` y
+`failure finding` **no** están en la 13306: vienen de SAE JA1011/JA1012. Y **no
+existe ISO 14224 en español** — `UNE-EN ISO 14224` está ratificada, no traducida,
+así que el agente nunca debe decir «según ISO 14224, en español se dice X».
+
+### Equivalencias de los términos que se filtran
+
+| Inglés | En España | Nota |
+|---|---|---|
+| `standby` | «en reserva» (el equipo) / «en espera» (el modelo) | «de respaldo» es calco |
+| `P-F interval` | «intervalo P-F» | no se deja en inglés |
+| `failure finding` | «búsqueda de fallos ocultos» | **nunca** «búsqueda de averías»: eso es *troubleshooting* |
+| `spare` | «repuesto» | término normativo |
+| `FFI` | sigla, glosada la primera vez | |
+
+### Lo que NO se traduce: el dialecto del cliente
+
+Encabezados, nombres de hoja y valores del MENU van al Excel verbatim y **se
+citan entre comillas sin adaptarlos**: la columna "Falla Funcional", la hoja
+"AMEF", la política "Operar hasta la falla".
+
+No es estilo. Los valores del catálogo son lo que el interesado teclea y lo que
+acaba en su CMMS; si el agente hispaniza "Búsqueda de Falla" y él lo copia, el
+validador lo rechaza. La asimetría se declara una vez al empezar en vez de
+disimularse.
+
+Siglas del libro con su equivalente español la primera vez: "AMEF" (AMFE),
+"RPN" (NPR), "TPEF" (tiempo medio entre fallos, MTBF).
+
+### Frecuencias: siempre glosadas en horas
+
+«"Bi-Anual" (en su catálogo, cada 2 años = 17.520 h)». La RAE define *bianual*
+como «dos veces al año» y en este catálogo vale dos años: factor 4 en la
+dirección insegura. Igual con "Tri-Anual" y "Tetra-Anual". La etiqueta es del
+cliente y no se toca; la defensa es decir el número.
+
+---
+
+## 2. Tabla de correspondencia (para quien programa — NO conectada al agente)
 
 | Término (ES) | Identificador en código | Columna Excel | Herramienta/argumento |
 |---|---|---|---|

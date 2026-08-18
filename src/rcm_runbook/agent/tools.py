@@ -218,7 +218,7 @@ METODOS_FFI: tuple[tuple[str, str], ...] = (
     ("single_single", "UNA función protegida, UN dispositivo, sin redundancia"),
     ("multi_single", "VARIAS funciones protegidas, UN SOLO dispositivo"),
     ("single_multi", "UNA función protegida, VARIOS dispositivos redundantes"),
-    ("economic", "equilibra costos; solo si la consecuencia es puramente económica"),
+    ("economic", "equilibra costes; solo si la consecuencia es puramente económica"),
 )
 
 
@@ -706,7 +706,7 @@ def calculate_ffi(
       supresor de sobretensión que protege varios equipos). Usa mted_list_hours.
     - 'single_multi' — UNA función protegida, VARIOS dispositivos redundantes.
       Usa n_devices.
-    - 'economic' — equilibra costos. SOLO si la falla múltiple tiene consecuencia
+    - 'economic' — equilibra costes. SOLO si la falla múltiple tiene consecuencia
       puramente económica: seguridad y ambiente no se negocian por costo.
 
     Parámetros (todos en horas salvo donde se indique):

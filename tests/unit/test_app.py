@@ -3234,12 +3234,12 @@ class TestLaEnvolturaDelErrorEsLaQueDecide:
             "'message': 'Something went wrong in our datacenter'}}"
         )
         assert "datacenter" not in salida and "Something" not in salida
-        assert "fallo técnico" in salida
+        assert "tuvo un error" in salida
 
 
 class TestSoloSeTraduceLoQueDijoElAsistente:
     """Se observó en producción la pregunta que escribió el usuario sustituida
-    por «el sistema tuvo un fallo técnico» —un aviso que además miente— y
+    por «el sistema tuvo un error» —un aviso que además miente— y
     visible cada vez que alguien recargaba la conversación. Recorrer todo
     `content` sin mirar de quién es aplica a la ENTRADA del cliente una regla
     pensada para la SALIDA del modelo. Por buena que sea la detección, ese texto
