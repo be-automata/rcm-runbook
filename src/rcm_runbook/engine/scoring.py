@@ -38,7 +38,7 @@ def summarize(score: RiskScore) -> ScoreSummary:
     if score.detection >= 8:
         caveats.append(
             "Detección muy pobre (≥8): considere agregar capacidad de detección "
-            "(monitoreo, alarmas) además de la política seleccionada."
+            "(monitorización, alarmas) además de la política seleccionada."
         )
     priority = _priority_es(score)
     return ScoreSummary(

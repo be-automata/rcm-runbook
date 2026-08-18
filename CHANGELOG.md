@@ -10,6 +10,38 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.3.0] — 2026-08-18
+
+### Cambiado
+
+- **El agente habla español de España.** El mercado es España y la referencia es
+  UNE-EN 13306: «fallo» es el evento y «avería» el estado, así que el agente dice
+  fallo, modo de fallo, fallo funcional y fallo oculto — y tiene prohibido decir
+  «avería oculta», que en RCM cambia el concepto y no sólo el registro. Con las
+  equivalencias de los cuatro términos que se filtraban en inglés: «en reserva»,
+  «intervalo P-F», «búsqueda de fallos ocultos» —nunca «búsqueda de averías», que
+  en la norma es otra cosa— y «repuesto».
+- **El dialecto del cliente se cita, no se traduce.** Encabezados, hojas y
+  valores del MENU van verbatim y entre comillas, con la asimetría declarada una
+  vez en vez de disimulada. No es estilo: los valores del catálogo son lo que el
+  interesado teclea y lo que acaba en su CMMS, así que hispanizar «Búsqueda de
+  Falla» en la prosa hace que el validador rechace lo que él copia.
+- Registro: `fiabilidad` en vez de `confiabilidad`, `monitorización` en vez de
+  `monitoreo`, `costes` en vez de `costos`, `ordenador` en vez de `computadora`.
+  Y `MECHANISMS_ES`/`CAUSE_CATEGORIES_ES` pasan a «Fallo Mecánico», etc., que se
+  puede porque el MENU del benchmark no los enumera: son invención nuestra.
+- **`docs/GLOSARIO.md` se reescribe en dos partes marcadas**: el contrato de
+  terminología (conectado al agente vía el prompt) y la tabla de correspondencia
+  (para quien programa, deliberadamente NO conectada — meterla en `_SOURCES` la
+  volvería dependiente de que el agente decida consultarla).
+
+### Corregido
+
+- **«fallo» ya no significa dos cosas.** El error de software se llamaba «fallo
+  técnico», y al pasar «fallo» a ser el término del dominio, la sección del
+  prompt que enseña a distinguir una regla del método de un error del sistema
+  quedaba ambigua justo donde exige precisión. El software da «error».
+
 ## [0.2.1] — 2026-08-18
 
 ### Corregido

@@ -140,7 +140,7 @@ MAINTENANCE_ASSUMPTION_MARKERS = (
     "mantenimiento previene",
     "se detecta en el pm",
     "el preventivo lo",
-    "lo detecta el monitoreo",
+    "lo detecta el monitorización",
     "no pasa nada porque",
     "se corrige en la inspección",
     "la inspección lo detecta",

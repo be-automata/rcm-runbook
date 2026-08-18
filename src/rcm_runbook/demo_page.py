@@ -6,7 +6,7 @@ la URL y escriba. La llave viaja en el enlace, no está incrustada en el HTML.
 
 La sesión sobrevive recargas y cambios de dispositivo: el id se guarda en
 `localStorage` y se refleja en la barra de direcciones como `&session=`, así
-que copiar la URL del teléfono a la computadora retoma el mismo análisis, con
+que copiar la URL del teléfono a la ordenador retoma el mismo análisis, con
 el historial repintado desde `/sessions/{id}/runs`.
 
 El HTML vive en `static/demo.html`, no en un string de Python: incrustado, todo

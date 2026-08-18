@@ -227,7 +227,7 @@ _FALLOS_DEL_PROVEEDOR: tuple[tuple[re.Pattern[str], str], ...] = (
 # Un error del proveedor que no reconozco sigue siendo un error del proveedor:
 # dejarlo pasar en inglés era el defecto original.
 _FALLO_GENERICO = (
-    "El sistema tuvo un fallo técnico al procesar su mensaje. Avise a quien le "
+    "El sistema tuvo un error al procesar su mensaje. Avise a quien le "
     "compartió este enlace; su análisis queda guardado."
 )
 
@@ -312,7 +312,7 @@ def _traducir_contenidos(datos: Any) -> Any:
     # es aplicaba a la entrada del cliente una regla pensada para la salida del
     # modelo: se observó en producción la pregunta que escribió el usuario
     # —«el modo dominante es human_error durante el arranque»— sustituida por
-    # «el sistema tuvo un fallo técnico», un aviso que además miente, y visible
+    # «el sistema tuvo un error», un aviso que además miente, y visible
     # cada vez que alguien recargaba la conversación. Ese texto no lo escribió
     # el proveedor; por buena que sea la detección, traducirlo nunca es
     # correcto. El prompt de sistema se salvaba por suerte, no por diseño.
