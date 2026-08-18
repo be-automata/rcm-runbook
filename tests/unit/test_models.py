@@ -199,7 +199,8 @@ class TestStaleness:
     def test_edit_after_decision_detected(self):
         s, fmid = self._decided_session()
         assert s.stale_decisions() == []
-        s.update_failure_mode(fmid, root_cause="Nivel bajo en el tanque de succión")
+        # `root_cause` es descriptivo y decide() no lo lee; el patrón sí.
+        s.update_failure_mode(fmid, pf_interval_hours=999.0)
         assert s.stale_decisions() == [fmid]
 
     def test_digest_flags_stale(self):

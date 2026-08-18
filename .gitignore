@@ -82,3 +82,9 @@ node_modules/
 # corregir su comentario. Esto solo impide commitear el residuo; que no se
 # RECOLECTE lo hace `norecursedirs` en pyproject.toml.
 tests/unit/_arnes_tmp*/
+
+# Artefactos de herramientas de agentes: se generan solos y no son del proyecto.
+# Entraron una vez por un `git add -A` y metieron 27.000 líneas en un PR de 543.
+.agents/
+.codex/
+.swarm/

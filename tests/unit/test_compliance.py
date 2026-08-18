@@ -181,7 +181,9 @@ class TestGates:
 
     def test_stale_decision_blocks_p5(self):
         s = full_session()
-        s.update_failure_mode("FM-001", root_cause="Nivel bajo en tanque de succión")
+        # Un insumo REAL de decide(): `root_cause` ya no ensucia la decisión
+        # porque la cascada no lo lee. El patrón de falla sí.
+        s.update_failure_mode("FM-001", pf_interval_hours=999.0)
         issues = check_gate(s, Phase.P5_DECISION)
         assert any("desactualizada" in i for i in issues)
 

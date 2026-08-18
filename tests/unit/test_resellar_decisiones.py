@@ -125,15 +125,23 @@ class TestCriterio6LosBloqueadoresFantasma:
         assert len(despues) == 59
         assert not [b for b in despues if "desactualizada" in b]
 
-    def test_sin_resellar_solo_desaparecen_los_fantasma(self, estado):
-        """La mitad de reporte, aislada: con el estado sin re-sellar, las 32
-        decisiones están desfasadas (la fórmula cambió) y ninguna valoración."""
+    def test_sin_resellar_no_queda_ninguna_desfasada(self, estado):
+        """Sin tocar la base: la aceptación de sellos heredados reconoce los 32.
+
+        Antes de existir esa aceptación este test afirmaba 32 desfasadas y 91
+        bloqueadores — o sea, una ventana en la que desplegar dejaba el estado
+        vivo PEOR que antes (32 en vez de 31) hasta correr la migración. Los
+        controles son append-only, así que la lista de cualquier instante pasado
+        es un prefijo de la actual y los sellos viejos se reconstruyen: 32 de 32.
+        El estado sin migrar da ya los mismos 59 que el migrado.
+        """
         sesion = _sesion(estado)
         assert sesion.stale_scores() == []
-        assert len(sesion.stale_decisions()) == 32
+        assert sesion.stale_decisions() == []
         bloqueadores = export_blockers(sesion)
         assert not [b for b in bloqueadores if "La valoración del modo" in b]
-        assert len(bloqueadores) == 91
+        assert not [b for b in bloqueadores if "desactualizada" in b]
+        assert len(bloqueadores) == 59
 
 
 class TestElGuionVerificaLoQueAplico:
@@ -161,7 +169,10 @@ class TestElGuionVerificaLoQueAplico:
     def test_una_decision_que_sigue_obsoleta_se_denuncia(self, estado):
         previo = resellar_decisiones.volcado(_leer(estado))
         fallos = resellar_decisiones._comparar(previo, _leer(estado))  # sin aplicar nada
-        assert any("siguen obsoletas 32" in f for f in fallos)
+        # ESTRICTO, no `stale_decisions()`: esa acepta los sellos heredados para
+        # que desplegar no degrade el estado vivo, y daría por bueno un fichero
+        # en el que el guion no aplicó nada. Normalizar es justo su trabajo.
+        assert any("siguen sin el sello canónico 32" in f for f in fallos)
 
 
 class TestNoCorrompeUnEstadoReal:

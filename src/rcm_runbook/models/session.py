@@ -28,6 +28,7 @@ from rcm_runbook.models.domain import (
     RiskScore,
     decision_snapshot,
     score_snapshot,
+    sello_de_decision_heredado,
 )
 
 SCHEMA_VERSION = 1
@@ -552,9 +553,24 @@ class RCMSession(BaseModel):
         )
 
     def decision_snapshot(self, failure_mode_id: str) -> str:
-        """Sello de la decisión RCM — sin los controles (no entran en `decide()`)."""
+        """Sello de la decisión RCM — sólo lo que `decide()` puede leer."""
         fm = self.failure_modes[failure_mode_id]
         return decision_snapshot(fm, self.effects.get(failure_mode_id))
+
+    def _sellos_de_decision_validos(self, failure_mode_id: str) -> set[str]:
+        """El sello canónico más los heredados que siguen valiendo.
+
+        La tolerancia vive en la comparación y NO en `decision_snapshot`: el
+        sello canónico no debe tener variantes, o deja de haber uno. Y vive en
+        la sesión y no en el cargador, para que las dos rutas de lectura —el
+        chat (`tools._load`) y la descarga (`app._sesion_guardada`)— la hereden
+        sin que ninguna se quede con el criterio viejo.
+        """
+        fm = self.failure_modes[failure_mode_id]
+        effect = self.effects.get(failure_mode_id)
+        return {decision_snapshot(fm, effect)} | sello_de_decision_heredado(
+            fm, effect, self.controls.get(failure_mode_id)
+        )
 
     def stale_scores(self) -> list[str]:
         """Modos cuya valoración S/O/D se calculó con insumos que ya cambiaron.
@@ -583,6 +599,10 @@ class RCMSession(BaseModel):
         maneras, y la sesión de UAT reportaba 31 «valoraciones desactualizadas»
         sobre scores que estaban frescos.
 
+        Se acepta también un sello de una fórmula anterior — ver
+        `_sellos_de_decision_validos` — para que cambiar la fórmula no marque
+        como obsoletas, el día del despliegue, decisiones que nadie tocó.
+
         Las decisiones huérfanas se ignoran, por lo mismo que en `stale_scores`.
         """
         return sorted(
@@ -590,7 +610,7 @@ class RCMSession(BaseModel):
             for fmid, decision in self.decisions.items()
             if fmid in self.failure_modes
             and decision.input_hash
-            and decision.input_hash != self.decision_snapshot(fmid)
+            and decision.input_hash not in self._sellos_de_decision_validos(fmid)
         )
 
     # ------------------------------------------------------------------

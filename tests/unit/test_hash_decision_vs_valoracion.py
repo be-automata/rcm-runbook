@@ -154,6 +154,25 @@ class TestCriterio5LaDecisionSigueSiendoSensibleALoQueSiLaAlimenta:
         )
         assert s.stale_decisions() == [fmid]
 
+    @pytest.mark.parametrize("campo,valor", [("weibull_eta_hours", 18000.0)])
+    def test_el_resto_de_los_insumos_de_la_decision_tambien(self, campo, valor):
+        s, fmid = _sesion_valorada_y_decidida()
+        s.update_failure_mode(fmid, **{campo: valor})
+        assert s.stale_decisions() == [fmid], f"'{campo}' salió del sello de la decisión"
+
+
+class TestLosCamposDescriptivosNoEnsucianLaDecision:
+    """`decide()` no los lee, así que no pueden cambiar la política.
+
+    Sellarlos hacía que corregir una errata en la descripción marcara la
+    decisión como obsoleta — y en los cuatro modos firmados de la sesión de UAT,
+    que se volviera a pedir la firma JA1011 por una tilde. Se enumeraron contra
+    el código: de `fm`, `decide()` sólo toca `failure_pattern`, `credible`,
+    `pf_interval_hours` y `weibull_eta_hours`.
+
+    Siguen sellados en la VALORACIÓN, que es donde sí pertenecen.
+    """
+
     @pytest.mark.parametrize(
         ("campo", "valor"),
         [
@@ -163,13 +182,22 @@ class TestCriterio5LaDecisionSigueSiendoSensibleALoQueSiLaAlimenta:
             ("cause", "Válvula de succión parcialmente cerrada"),
             ("root_cause", "Nivel bajo en el tanque de succión"),
             ("weibull_beta", 2.5),
-            ("weibull_eta_hours", 18000.0),
         ],
     )
-    def test_el_resto_de_los_insumos_del_modo_tambien(self, campo, valor):
+    def test_un_campo_descriptivo_no_ensucia_la_decision(self, campo, valor):
         s, fmid = _sesion_valorada_y_decidida()
         s.update_failure_mode(fmid, **{campo: valor})
-        assert s.stale_decisions() == [fmid], f"'{campo}' salió del sello de la decisión"
+        assert s.stale_decisions() == [], f"'{campo}' no lo lee decide(): no debe sellarse"
+
+    @pytest.mark.parametrize(
+        ("campo", "valor"),
+        [("description", "Cavitación severa por NPSH insuficiente"), ("weibull_beta", 2.5)],
+    )
+    def test_pero_si_ensucia_la_valoracion(self, campo, valor):
+        """La pareja del test de arriba: sale de un sello, no de los dos."""
+        s, fmid = _sesion_valorada_y_decidida()
+        s.update_failure_mode(fmid, **{campo: valor})
+        assert s.stale_scores() == [fmid], f"'{campo}' tiene que seguir en el sello de la S/O/D"
 
 
 class TestUnSelloHuerfanoNoRevientaElReporte:

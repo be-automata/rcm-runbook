@@ -142,9 +142,24 @@ def _comparar(previo: dict[str, Any], estado: dict[str, Any]) -> list[str]:
         if ahora != previo[clave]:
             fallos.append(f"cambió algún sello de {clave}")
     sesion = RCMSession.model_validate(estado)
-    obsoletas = sesion.stale_decisions()
-    if obsoletas:
-        fallos.append(f"siguen obsoletas {len(obsoletas)} decisiones: {', '.join(obsoletas)}")
+    # ESTRICTO a propósito, y NO `stale_decisions()`: esa acepta los sellos de
+    # fórmulas anteriores para que desplegar no degrade el estado vivo, así que
+    # daría por bueno un fichero en el que este guion no aplicó nada. El trabajo
+    # de este guion es justamente normalizar al sello canónico, de modo que la
+    # compatibilidad se pueda retirar; su verificación tiene que exigir la
+    # igualdad exacta, no la tolerancia.
+    sin_normalizar = sorted(
+        fmid
+        for fmid, d in sesion.decisions.items()
+        if fmid in sesion.failure_modes
+        and d.input_hash
+        and d.input_hash != sesion.decision_snapshot(fmid)
+    )
+    if sin_normalizar:
+        fallos.append(
+            f"siguen sin el sello canónico {len(sin_normalizar)} decisiones: "
+            f"{', '.join(sin_normalizar)}"
+        )
     return fallos
 
 
