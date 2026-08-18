@@ -304,10 +304,20 @@ class TestLaToleranciaNoSeTragaUnCambioReal:
     no vacía, y un insumo real cambiado.
     """
 
-    def test_con_sello_heredado_y_controles_un_cambio_real_sigue_obsoleta(self, estado):
+    @pytest.mark.parametrize(
+        ("campo", "valor"),
+        [
+            ("pf_interval_hours", 12345.0),
+            ("weibull_eta_hours", 54321.0),
+            ("failure_pattern", "Mortalidad Infantil"),
+        ],
+    )
+    def test_con_sello_heredado_y_controles_un_cambio_real_sigue_obsoleta(
+        self, estado, campo, valor
+    ):
         sesion = _sesion(estado)
         fmid = next(f for f in sesion.decisions if sesion.controls.get(f))
         assert sesion.stale_decisions() == [], "de partida, el heredado se acepta"
         fm = sesion.failure_modes[fmid]
-        sesion.failure_modes[fmid] = fm.model_copy(update={"pf_interval_hours": 12345.0})
-        assert fmid in sesion.stale_decisions()
+        sesion.failure_modes[fmid] = fm.model_copy(update={campo: valor})
+        assert fmid in sesion.stale_decisions(), f"'{campo}' se lo tragó la tolerancia"

@@ -22,7 +22,12 @@ from rcm_runbook.models.catalogs import (
     FailurePattern,
     MaintenancePolicy,
 )
-from rcm_runbook.models.domain import DecisionResult, RiskScore
+from rcm_runbook.models.domain import (
+    DecisionResult,
+    RiskScore,
+    TPEFEstimate,
+    _sello_de_decision_v1,
+)
 
 from .test_models import make_session_with_mode
 
@@ -177,6 +182,7 @@ class TestLosCamposDescriptivosNoEnsucianLaDecision:
             ("cause", "Válvula de succión parcialmente cerrada"),
             ("root_cause", "Nivel bajo en el tanque de succión"),
             ("weibull_beta", 2.5),
+            ("tpef", TPEFEstimate(value_hours=12000.0, fuente="Opinión de experto")),
         ],
     )
     def test_un_campo_descriptivo_no_ensucia_la_decision(self, campo, valor):
@@ -254,3 +260,37 @@ class TestCriterio7CadaMensajeDiceLaVerdad:
         assert not [i for i in p4 if "valoración" in i and "desactualizada" in i]
         p5 = check_gate(s, Phase.P5_DECISION)
         assert [i for i in p5 if "La decisión del modo" in i and "desactualizada" in i]
+
+
+class TestLaPropiedadQueEliminaLaVentanaDeDespliegue:
+    """El conjunto de sellos que acepta la app nueva incluye el de la fórmula
+    retirada, luego ninguna decisión fresca hoy puede quedar obsoleta al
+    desplegar. De eso depende que la migración dejara de ser urgente.
+
+    Hasta acá la propiedad estaba MEDIDA sobre el fixture de UAT (32 de 32) y
+    argumentada en prosa, pero no aseverada: si alguien tocara
+    `_sello_de_decision_v1` y dejara de reproducir la fórmula retirada, sólo lo
+    cazaría un test que depende de que ese fixture siga existiendo.
+    """
+
+    @pytest.mark.parametrize("n_controles", [0, 1, 2, 5])
+    def test_el_sello_de_la_formula_retirada_siempre_se_acepta(self, n_controles):
+        s, fmid = _sesion_valorada_y_decidida()
+        for i in range(n_controles):
+            s.add_control(fmid, kind="detectivo", description=f"Control número {i} del modo")
+        fm, effect = s.failure_modes[fmid], s.effects.get(fmid)
+        controles = s.controls.get(fmid, [])
+        # Para CADA instante pasado posible de la lista de controles —que por ser
+        # append-only son exactamente sus prefijos— el sello viejo se acepta.
+        for k in range(len(controles) + 1):
+            viejo = _sello_de_decision_v1(fm, effect, controles[:k])
+            assert viejo in s._sellos_de_decision_validos(fmid), (
+                f"un sello de la fórmula retirada con {k} controles dejó de aceptarse: "
+                "eso reabre la ventana de degradación al desplegar"
+            )
+
+    def test_y_el_canonico_tambien(self):
+        """La otra mitad: aceptar lo viejo no puede haber desplazado a lo nuevo."""
+        s, fmid = _sesion_valorada_y_decidida()
+        s.add_control(fmid, kind="detectivo", description="Un control cualquiera del modo")
+        assert s.decision_snapshot(fmid) in s._sellos_de_decision_validos(fmid)
