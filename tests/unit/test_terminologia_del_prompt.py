@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import inspect
 
+import pytest
+
 from rcm_runbook.agent import tools as tools_mod
 from rcm_runbook.agent.instructions_es import INSTRUCTIONS_ES
 
@@ -148,3 +150,36 @@ class TestLaColisionDeFallo:
 
         assert "fallo técnico" not in _FALLO_GENERICO
         assert "error" in _FALLO_GENERICO
+
+
+class TestElRegistroNoSeEscapaALoQueVeElCliente:
+    """El reemplazo de registro se hizo sobre ficheros `.py` y dejó fuera el HTML
+    de la demo, que es literalmente lo primero que ve el cliente. Y un
+    `str.replace` a ciegas rompió una concordancia: «a la ordenador».
+
+    Este test mira las superficies visibles, no el código.
+    """
+
+    @pytest.mark.parametrize(
+        "ruta",
+        [
+            "src/rcm_runbook/static/demo.html",
+            "src/rcm_runbook/demo_page.py",
+            "docs/COMPARTIR_DEMO_ES.md",
+        ],
+    )
+    def test_sin_registro_latinoamericano(self, ruta):
+        from pathlib import Path
+
+        texto = Path(ruta).read_text("utf-8")
+        for palabra in ("computadora", "monitoreo", "confiabilidad"):
+            assert palabra not in texto, f"{ruta} dice «{palabra}» y lo ve el cliente"
+
+    def test_la_concordancia_de_ordenador(self):
+        """«ordenador» es masculino. Lo obvio para un hispanohablante y no para
+        un `str.replace`."""
+        from pathlib import Path
+
+        for ruta in ("src/rcm_runbook/demo_page.py", "src/rcm_runbook/static/demo.html"):
+            texto = Path(ruta).read_text("utf-8")
+            assert "la ordenador" not in texto and "una ordenador" not in texto

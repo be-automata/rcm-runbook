@@ -116,7 +116,7 @@
   var previa = [deUrl, guardado()].find(function(id){ return SAFE_ID.test(id); }) || '';
   var sessionId = previa || nuevoId();
   // La barra de direcciones queda siempre con el enlace que retoma esta sesión,
-  // así copiarla del teléfono a la computadora continúa el mismo análisis.
+  // así copiarla del teléfono al ordenador continúa el mismo análisis.
   if (params.get('session') !== sessionId) {
     params.set('session', sessionId);
     try { history.replaceState(null, '', location.pathname + '?' + params.toString()); } catch(e){}
