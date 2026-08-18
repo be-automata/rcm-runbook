@@ -10,6 +10,20 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.3.1] — 2026-08-18
+
+### Corregido
+
+- **«a la ordenador».** El cambio de registro de la 0.3.0 se aplicó con un
+  reemplazo masivo y rompió la concordancia: *ordenador* es masculino. Lo obvio
+  para un hispanohablante y no para un `str.replace`.
+- **El HTML de la demo seguía diciendo «computadora».** El reemplazo cubrió los
+  ficheros `.py` y dejó fuera `static/demo.html` y `docs/COMPARTIR_DEMO_ES.md`,
+  que son literalmente lo primero que ve el cliente. Descubierto verificando el
+  despliegue contra producción, no en la suite.
+- Un test mira ahora las **superficies visibles al cliente** —el HTML, la página
+  de la demo y el documento que se le comparte— en vez de sólo el código.
+
 ## [0.3.0] — 2026-08-18
 
 ### Cambiado

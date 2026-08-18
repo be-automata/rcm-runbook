@@ -82,7 +82,7 @@ https://rcm-demo.beautomata.com/demo?key=<OS_SECURITY_KEY>
    Para que el cliente pruebe solo, dale el enlace `/demo?key=…`, que no
    requiere cuenta.
 
-## La sesión no se pierde (teléfono → computadora)
+## La sesión no se pierde (teléfono → ordenador)
 
 El enlace simple `/demo?key=…` basta: la página guarda el id de sesión en el
 navegador y lo escribe en la barra de direcciones como `&session=…`. De ahí
