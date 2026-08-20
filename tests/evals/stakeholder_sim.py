@@ -358,6 +358,15 @@ def _tail(transcript: list[str], n: int = 8) -> str:
     return "Últimos turnos:\n" + "\n".join(transcript[-n:]) if transcript else ""
 
 
+class AveriaDelInstrumento(RuntimeError):
+    """El eval no pudo medir — no es que el producto fallara.
+
+    429 tras el backoff, presupuesto agotado, proveedor caído. Se distingue del
+    fallo del producto porque un instrumento que acusa al producto de su propia
+    avería es peor que no medir.
+    """
+
+
 _RATE_LIMIT_MARKERS = ("rate_limit_error", "Error code: 429")
 # Backoff ante 429 (ventana de suscripción saturada): espera hasta ~25 min en total.
 _BACKOFF_SCHEDULE_S = (60, 120, 240, 480, 600)
@@ -384,10 +393,11 @@ def _run_with_backoff(agent: Any, message: str, session_id: str) -> Any:
         out = agent.run(message, session_id=session_id)
         if not _is_rate_limited(out):
             return out
-    raise AssertionError(
-        "EVAL ABORTADO — la ventana de uso de la suscripción sigue saturada (429) "
-        f"tras {sum(_BACKOFF_SCHEDULE_S) // 60} minutos de backoff. "
-        "Reintente cuando la ventana se recupere."
+    raise AveriaDelInstrumento(
+        "la ventana de uso de la suscripción sigue saturada (429) tras "
+        f"{sum(_BACKOFF_SCHEDULE_S) // 60} minutos de backoff. Reintente cuando la "
+        "ventana se recupere. Esto NO dice nada sobre el producto: el eval no llegó "
+        "a medir."
     )
 
 
@@ -402,15 +412,6 @@ def _tokens_of(run_output: Any) -> int:
     out = getattr(metrics, "output_tokens", 0) or 0
     return int(inp) + int(out)
 
-
-
-class AveriaDelInstrumento(RuntimeError):
-    """El eval no pudo medir — no es que el producto fallara.
-
-    429 tras el backoff, presupuesto agotado, proveedor caído. Se distingue del
-    fallo del producto porque un instrumento que acusa al producto de su propia
-    avería es peor que no medir.
-    """
 
 
 @dataclass

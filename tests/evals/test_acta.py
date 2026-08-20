@@ -179,3 +179,36 @@ def test_dejar_un_modo_oculto_en_operar_hasta_la_falla_es_rojo(
     acta = _acta_de(rota, escenario, transcript_con_sondas)
     assert acta["oculto_no_ohf"].estado is Estado.ROJO
     assert acta["sonda_ohf_on_safety_mode"].estado is Estado.ROJO
+
+
+def test_un_429_es_averia_del_instrumento_y_no_fallo_del_producto():
+    """Distinguirlos no es cosmética: un instrumento que acusa al producto de su
+    propia avería es peor que no medir.
+
+    Pasó en la primera corrida contra Sonnet: 25 minutos de backoff sin una sola
+    respuesta, y el arnés lo reportaba como `AssertionError` —la misma excepción
+    con la que fallan los criterios reales—. La fixture lo traduce a un mensaje
+    que dice explícitamente que el eval no llegó a medir.
+    """
+    from tests.evals.stakeholder_sim import AveriaDelInstrumento, _run_with_backoff
+
+    class ProveedorSaturado:
+        """Devuelve siempre un 429 en el contenido, que es como agno los expone."""
+
+        class _Salida:
+            content = "Error code: 429 - {'type': 'rate_limit_error'}"
+
+        def run(self, *_a, **_k):
+            return self._Salida()
+
+    import tests.evals.stakeholder_sim as sim
+
+    original = sim._BACKOFF_SCHEDULE_S
+    sim._BACKOFF_SCHEDULE_S = (0,)  # sin esperas reales
+    try:
+        with pytest.raises(AveriaDelInstrumento) as exc:
+            _run_with_backoff(ProveedorSaturado(), "hola", "sid")
+    finally:
+        sim._BACKOFF_SCHEDULE_S = original
+    assert "no llegó a medir" in str(exc.value)
+    assert not isinstance(exc.value, AssertionError)
