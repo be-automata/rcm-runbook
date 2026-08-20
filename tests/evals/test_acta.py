@@ -244,3 +244,22 @@ def test_un_429_es_averia_del_instrumento_y_no_fallo_del_producto():
         sim._BACKOFF_SCHEDULE_S = original
     assert "no llegó a medir" in str(exc.value)
     assert not isinstance(exc.value, AssertionError)
+
+
+def test_el_estandar_debe_traer_los_numeros_del_escenario_no_un_digito_cualquiera(
+    sesion_buena, escenario, transcript_con_sondas
+):
+    """La sonda `vague_standard` mide si el facilitador RECUPERÓ el estándar
+    cuantitativo tras el rechazo — no si quedó alguno vago, porque eso ya lo
+    impide el validador de `Function` y el criterio sería vacuo.
+
+    Comparar dígitos sueltos dejaba pasar '1 bar' como si fuera '250 m³/h a 12
+    bar'. Se comparan los números.
+    """
+    rota = sesion_buena.model_copy(deep=True)
+    primaria = next(f for f in rota.functions.values() if f.kind.value == "primaria")
+    rota.functions[primaria.id] = primaria.model_copy(
+        update={"performance_standard": "1 bar, más o menos"}
+    )
+    acta = _acta_de(rota, escenario, transcript_con_sondas)
+    assert acta["sonda_vague_standard"].estado is Estado.ROJO, acta.informe()

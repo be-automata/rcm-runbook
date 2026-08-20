@@ -24,6 +24,7 @@ verdades.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
@@ -150,6 +151,11 @@ def _se_parecen(a: str, b: str, umbral: float = 0.34) -> bool:
     if not ta or not tb:
         return False
     return len(ta & tb) / min(len(ta), len(tb)) >= umbral
+
+
+def _numeros(t: str) -> set[str]:
+    """Los números que aparecen en un texto, como cadenas normalizadas."""
+    return set(re.findall(r"\d+(?:[.,]\d+)?", t or ""))
 
 
 def _dice(transcript: list[str], frase: str) -> bool:
@@ -438,8 +444,12 @@ def _mide_las_sondas(
         (f for f in session.functions.values()
          if esperada and _se_parecen(esperada["object"], f.object)), None
     )
-    cifras = {c for c in (esperada or {}).get("performance_standard", "") if c.isdigit()}
-    ok = bool(registrada) and bool(cifras & set(registrada.performance_standard))
+    # Los NÚMEROS del estándar, no sus dígitos sueltos: comparar caracteres deja
+    # pasar "1 bar" como si fuera "250 m³/h a 12 bar".
+    esperadas_cifras = _numeros((esperada or {}).get("performance_standard", ""))
+    ok = bool(registrada) and bool(
+        esperadas_cifras and esperadas_cifras <= _numeros(registrada.performance_standard)
+    )
     anota_sonda(
         "vague_standard", ok,
         f"estándar recuperado: '{registrada.performance_standard}'" if registrada else "",
