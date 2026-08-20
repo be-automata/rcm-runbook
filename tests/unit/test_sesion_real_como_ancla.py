@@ -123,3 +123,24 @@ def test_los_modos_no_creibles_traen_su_descarte_documentado(sesion):
     assert len(no_creibles) == 3
     sin_motivo = [fm.id for fm in no_creibles if not fm.non_credible_discard.strip()]
     assert not sin_motivo, sin_motivo
+
+
+def test_el_eval_mide_el_modelo_que_se_despliega():
+    """El eval no debe heredar el RCM_MODEL_ID del .env local.
+
+    Pasó de verdad: el .env fijaba `claude-haiku-4-5` para abaratar el desarrollo
+    mientras producción servía el default `claude-sonnet-4-5`, y una tanda entera
+    de corridas midió el modelo equivocado sin que nada lo dijera. Un eval que mide
+    otro modelo no mide el producto.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from rcm_runbook.config import Settings
+    from tests.evals.stakeholder_sim import _construye_settings_del_eval
+
+    tmp = Path(tempfile.mkdtemp())
+    cfg = _construye_settings_del_eval(tmp, tmp)
+    assert cfg.model_id == Settings.model_fields["model_id"].default
+    assert cfg.temperature == 0.0, "el sujeto bajo prueba debe medirse sin ruido de muestreo"
+    assert cfg.add_datetime is False, "la fecha mete entropía en el prompt de cada corrida"

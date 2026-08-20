@@ -500,17 +500,26 @@ def _construye_settings_del_eval(workdir: Path, exports_dir: Path) -> Any:
     """
     from rcm_runbook.config import Settings
 
-    extra: dict[str, Any] = {}
-    modelo = os.environ.get("RCM_EVAL_MODEL_ID")
-    if modelo:
-        extra["model_id"] = modelo
-    return Settings(
+    # El modelo se fija EXPLÍCITAMENTE, no se hereda.
+    #
+    # `Settings` lee el .env de la raíz del proyecto, y ahí puede haber un
+    # RCM_MODEL_ID puesto para abaratar el desarrollo local. Heredarlo hace que el
+    # eval mida un modelo distinto del que se despliega —pasó: el .env fijaba
+    # claude-haiku-4-5 mientras producción servía el default claude-sonnet-4-5, y
+    # una tanda entera de corridas midió el modelo equivocado sin que nada lo
+    # dijera—. El eval mide el producto, así que por defecto usa lo mismo que
+    # produccion: el default del código.
+    modelo = os.environ.get("RCM_EVAL_MODEL_ID") or Settings.model_fields["model_id"].default
+    cfg = Settings(
         db_path=str(workdir / "eval.db"),
         exports_dir=str(exports_dir),
+        model_id=modelo,
         temperature=0.0,
         add_datetime=False,
-        **extra,
     )
+    # Impreso siempre: qué modelo se midió no puede quedar implícito.
+    print(f"[eval] modelo bajo prueba: {cfg.model_id} (temperature={cfg.temperature})")
+    return cfg
 
 
 def _definitivos(exports_dir: Path) -> list[Path]:
