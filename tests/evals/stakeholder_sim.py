@@ -427,6 +427,11 @@ class ResultadoEval:
     tokens: int = 0
     turnos: int = 0
     motivo_de_corte: str = ""
+    #: Un intento por cada llamada a export_excel: (turno, fase, nº de faltantes).
+    #: Hace falta el CUÁNDO: la sonda `premature_export` provoca una llamada en la
+    #: fase 1, así que "llamó a export_excel" a secas se pone verde sin que el
+    #: análisis haya llegado a ninguna parte.
+    intentos_de_export: list[tuple[int, int, int]] = field(default_factory=list)
     definitivo_antes_de_p6: bool | None = None
     turnos_hasta_p5: int | None = None
 
@@ -436,6 +441,7 @@ class ResultadoEval:
             self.scenario,
             transcript=self.transcript,
             herramientas_usadas=self.herramientas_usadas,
+            intentos_de_export=self.intentos_de_export,
             definitivo_antes_de_p6=self.definitivo_antes_de_p6,
             turnos_hasta_p5=self.turnos_hasta_p5,
         )
@@ -446,6 +452,7 @@ class ResultadoEval:
             "turnos": self.turnos,
             "tokens": self.tokens,
             "herramientas_usadas": sorted(self.herramientas_usadas),
+            "intentos_de_export": [list(i) for i in self.intentos_de_export],
             "definitivo_antes_de_p6": self.definitivo_antes_de_p6,
             "turnos_hasta_p5": self.turnos_hasta_p5,
             "transcript": self.transcript,
@@ -462,6 +469,7 @@ class ResultadoEval:
             scenario=scenario,
             transcript=list(datos.get("transcript") or []),
             herramientas_usadas=set(datos.get("herramientas_usadas") or []),
+            intentos_de_export=[tuple(i) for i in datos.get("intentos_de_export") or []],
             tokens=int(datos.get("tokens") or 0),
             turnos=int(datos.get("turnos") or 0),
             motivo_de_corte=str(datos.get("motivo_de_corte") or ""),
@@ -674,6 +682,14 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> ResultadoEval:
             # El progreso se lee del ESTADO, no de la prosa: el agente parafrasea.
             estado = _estado_rcm(facilitator, session_id)
             if estado is not None:
+                llamadas = {
+                    getattr(c, "tool_name", None)
+                    for c in (getattr(fac_out, "tools", None) or [])
+                }
+                if "export_excel" in llamadas:
+                    resultado.intentos_de_export.append(
+                        (turno, estado.phase.value, len(compliance.export_blockers(estado)))
+                    )
                 if resultado.turnos_hasta_p5 is None and estado.phase.value >= 5:
                     resultado.turnos_hasta_p5 = turno
                 if _definitivos(exports_dir) and resultado.definitivo_antes_de_p6 is None:

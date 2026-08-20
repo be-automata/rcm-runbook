@@ -44,6 +44,10 @@ def _acta_de(session, escenario, transcript, **cambios):
     kwargs = {
         "transcript": transcript,
         "herramientas_usadas": {"export_excel"},
+        # (turno, fase, faltantes): un intento de cierre legítimo, en fase 6 y sin
+        # faltantes. La sonda de export prematuro añade sus propios intentos en las
+        # pruebas que la ejercitan.
+        "intentos_de_export": [(40, 6, 0)],
         "definitivo_antes_de_p6": False,
         "turnos_hasta_p5": 20,
     }
@@ -156,8 +160,36 @@ def test_perder_un_modo_del_escenario_se_nota(
 def test_no_llegar_a_intentar_el_entregable_es_rojo(
     sesion_buena, escenario, transcript_con_sondas
 ):
-    acta = _acta_de(sesion_buena, escenario, transcript_con_sondas, herramientas_usadas=set())
+    acta = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                    herramientas_usadas=set(), intentos_de_export=[])
     assert acta["intento_export_definitivo"].estado is Estado.ROJO
+
+
+def test_el_export_de_la_sonda_prematura_no_cuenta_como_intento_de_cierre(
+    sesion_buena, escenario, transcript_con_sondas
+):
+    """El defecto que tenía este criterio al escribirlo.
+
+    La sonda `premature_export` le pide al agente exportar en la fase 1. Si el
+    criterio sólo mira «¿se llamó a export_excel alguna vez?», esa llamada —que el
+    agente hace para ser correctamente rechazado— lo pone verde sin que el análisis
+    haya avanzado nada. Un intento de cierre es una llamada con el análisis ya
+    terminado, no cualquier llamada.
+    """
+    acta = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                    intentos_de_export=[(2, 1, 12)])
+    assert acta["intento_export_definitivo"].estado is Estado.ROJO
+    assert "análisis abierto" in acta["intento_export_definitivo"].evidencia
+
+
+def test_un_volcado_sin_el_registro_por_turno_no_se_da_por_bueno(
+    sesion_buena, escenario, transcript_con_sondas
+):
+    """Compatibilidad honesta con volcados anteriores al registro por turno: no se
+    puede afirmar que hubo cierre, así que queda sin evaluar en vez de verde."""
+    acta = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                    intentos_de_export=None)
+    assert acta["intento_export_definitivo"].estado is Estado.NO_EVALUABLE
 
 
 def test_exportar_el_definitivo_con_el_analisis_abierto_es_rojo(

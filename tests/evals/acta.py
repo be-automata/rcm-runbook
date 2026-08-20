@@ -174,6 +174,7 @@ def levantar_acta(
     *,
     transcript: list[str] | None = None,
     herramientas_usadas: set[str] | None = None,
+    intentos_de_export: list[tuple[int, int, int]] | None = None,
     definitivo_antes_de_p6: bool | None = None,
     turnos_hasta_p5: int | None = None,
 ) -> Acta:
@@ -197,14 +198,49 @@ def levantar_acta(
     _mide_las_sondas(acta, session, scenario, sondas, transcript, definitivo_antes_de_p6)
     _mide_lo_que_no_vota(acta, session, scenario, turnos_hasta_p5)
 
-    acta.anota(
-        "intento_export_definitivo",
-        Estado.VERDE if "export_excel" in herramientas_usadas else Estado.ROJO,
-        "el facilitador llamó a export_excel"
-        if "export_excel" in herramientas_usadas
-        else "nunca llegó a intentar el entregable definitivo",
-    )
+    _mide_el_intento_de_cierre(acta, intentos_de_export, herramientas_usadas)
     return acta
+
+
+def _mide_el_intento_de_cierre(
+    acta: Acta,
+    intentos: list[tuple[int, int, int]] | None,
+    herramientas_usadas: set[str],
+) -> None:
+    """¿Llegó la sesión a intentar cerrar el entregable de verdad?
+
+    NO basta con «llamó a export_excel»: la sonda `premature_export` provoca esa
+    llamada en la fase 1, así que el criterio se pondría verde sin que el análisis
+    hubiera avanzado nada — mediría lo contrario de lo que pretende.
+
+    Un intento de cierre es una llamada hecha con el análisis ya terminado: en
+    fase 6 o posterior, o sin faltantes. Cada intento se anota como
+    `(turno, fase, nº de faltantes)`.
+    """
+    if intentos is None:
+        # Volcado antiguo, sin el registro por turno: se degrada a lo que se puede
+        # decir con honestidad, que es sólo si nunca se llamó.
+        if "export_excel" not in herramientas_usadas:
+            acta.anota("intento_export_definitivo", Estado.ROJO,
+                       "nunca llegó a llamar a export_excel")
+        else:
+            acta.anota("intento_export_definitivo", Estado.NO_EVALUABLE,
+                       "la corrida no registró en qué fase se intentó exportar")
+        return
+    de_cierre = [i for i in intentos if i[1] >= 6 or i[2] == 0]
+    if de_cierre:
+        turno, fase, faltantes = de_cierre[0]
+        acta.anota("intento_export_definitivo", Estado.VERDE,
+                   f"intento de cierre en el turno {turno} (fase {fase}, {faltantes} faltantes)")
+    elif intentos:
+        acta.anota(
+            "intento_export_definitivo", Estado.ROJO,
+            f"{len(intentos)} intento(s) de exportar, todos con el análisis abierto: "
+            + "; ".join(f"turno {t} en fase {f} con {b} faltantes" for t, f, b in intentos[:4]),
+        )
+    else:
+        acta.anota("intento_export_definitivo", Estado.ROJO,
+                   "nunca llegó a intentar el entregable definitivo")
 
 
 def _modos_ocultos_de_proteccion(session: RCMSession) -> list[str]:
