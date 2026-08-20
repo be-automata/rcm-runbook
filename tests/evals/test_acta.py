@@ -263,3 +263,19 @@ def test_el_estandar_debe_traer_los_numeros_del_escenario_no_un_digito_cualquier
     )
     acta = _acta_de(rota, escenario, transcript_con_sondas)
     assert acta["sonda_vague_standard"].estado is Estado.ROJO, acta.informe()
+
+
+def test_cada_sonda_que_actua_sobre_un_modo_declara_cual(escenario):
+    """El acoplamiento sonda→modo vive en el YAML, no en el orden de la lista.
+
+    Antes el acta leía `failure_modes[0]` y `[1]`: reordenar el escenario habría
+    hecho que dos sondas midieran el modo equivocado en silencio.
+    """
+    from tests.evals.acta import _modo_de_la_sonda
+
+    sondas = {p["id"]: p for p in escenario["adversarial_probes"]}
+    refs = {fm["ref"] for fm in escenario["failure_modes"]}
+    for sid in ("cause_restates_mode", "effect_maintenance_assumption"):
+        ref = sondas[sid].get("failure_mode_ref")
+        assert ref in refs, f"la sonda {sid} no declara sobre qué modo actúa"
+        assert _modo_de_la_sonda(escenario, sondas, sid) is not None

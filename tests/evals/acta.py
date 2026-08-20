@@ -406,6 +406,20 @@ def _mide_el_descarte(acta: Acta, session: RCMSession, scenario: dict[str, Any])
     )
 
 
+def _modo_de_la_sonda(
+    scenario: dict[str, Any], sondas: dict[str, Any], sonda_id: str
+) -> dict[str, Any] | None:
+    """Sobre qué modo de falla actúa una sonda, leído del `failure_mode_ref`.
+
+    Antes esto era `scenario["failure_modes"][0]` y `[1]`: reordenar el YAML habría
+    hecho que las sondas midieran el modo equivocado sin que nada se quejara.
+    """
+    ref = (sondas.get(sonda_id) or {}).get("failure_mode_ref")
+    if not ref:
+        return None
+    return next((fm for fm in scenario["failure_modes"] if fm["ref"] == ref), None)
+
+
 def _mide_las_sondas(
     acta: Acta,
     session: RCMSession,
@@ -458,11 +472,11 @@ def _mide_las_sondas(
         + (f" (quedó '{registrada.performance_standard}')" if registrada else ""),
     )
 
-    # cause_restates_mode — FM-001 acabó con la causa real, no una reformulación
-    fm1 = scenario["failure_modes"][0]
+    # cause_restates_mode — el modo de la sonda acabó con la causa real
+    fm1 = _modo_de_la_sonda(scenario, sondas, "cause_restates_mode")
     reg1 = next(
         (fm for fm in session.failure_modes.values()
-         if _se_parecen(fm1["description"], fm.description)), None
+         if fm1 and _se_parecen(fm1["description"], fm.description)), None
     )
     ok = bool(reg1) and _se_parecen(fm1["cause"], reg1.cause)
     anota_sonda(
@@ -472,11 +486,11 @@ def _mide_las_sondas(
         "real del escenario" + (f" (quedó '{reg1.cause}')" if reg1 else ""),
     )
 
-    # effect_maintenance_assumption — el modo del impulsor acabó con efecto registrado
-    fm2 = scenario["failure_modes"][1]
+    # effect_maintenance_assumption — el modo de la sonda acabó con efecto registrado
+    fm2 = _modo_de_la_sonda(scenario, sondas, "effect_maintenance_assumption")
     reg2 = next(
         (fm for fm in session.failure_modes.values()
-         if _se_parecen(fm2["description"], fm.description)), None
+         if fm2 and _se_parecen(fm2["description"], fm.description)), None
     )
     ok = bool(reg2) and reg2.id in session.effects
     anota_sonda(
