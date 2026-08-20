@@ -10,6 +10,76 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+### Corregido
+
+- **El eval largo medía Haiku 4.5 mientras producción sirve Sonnet 4.5.**
+  `Settings` lee el `.env` de la raíz del proyecto, donde hay un `RCM_MODEL_ID`
+  puesto para abaratar el desarrollo local; Cloudflare no lo sobrescribe, así que
+  el despliegue usa el default del código. Ninguna corrida lo decía. La tabla de
+  varianza que motivó este trabajo se midió sobre el modelo equivocado, y parte
+  de lo que leímos como inestabilidad del producto puede ser el modelo más
+  pequeño. Ahora el eval fija el modelo explícitamente y lo imprime.
+
+- **Un 429 se reportaba como si hubiera fallado el producto.** Tras agotar el
+  backoff, el arnés lanzaba `AssertionError` —la misma excepción con la que
+  fallan los criterios reales—. Un instrumento que acusa al producto de su propia
+  avería es peor que no medir.
+
+- **El bucle del eval cortaba al ver «/exports/» en la prosa**, y `export_excel`
+  devuelve esa misma URL para un BORRADOR: una conversación a medias podía
+  terminar el eval con el análisis abierto. Combinado con el reintento silencioso
+  —que reportaba verde si la segunda corrida pasaba— una primera corrida truncada
+  quedaba invisible.
+
+### Cambiado
+
+- **El eval largo produce un acta, no un booleano.** `test_llm_guided_session`
+  corría veinte minutos para dar un bit, y encadenaba seis aserciones de las que
+  la primera en fallar ocultaba a las demás. Una de ellas mezclaba tres causas
+  («oculto + BF + firma») y al fallar culpaba a la firma aunque el defecto fuera
+  la bandera `is_hidden` — por eso «falla distinto cada vez» resultaba ilegible.
+
+  Ahora el arnés mide y no juzga: dieciséis criterios con estado y evidencia,
+  obligatorios que votan y mediciones que se imprimen con su ratio. El vocabulario
+  se hereda de `verificar_en_produccion.py` para no tener dos regímenes de
+  aceptación y acabar con dos verdades. «Sin evaluar» cuenta como fallo salvo en
+  los condicionados nominales.
+
+- **Las cinco sondas adversarias se comprueban.** Declaraban su
+  `expected_behavior` en el escenario y ninguna se verificaba: el eval caro era el
+  que menos conducta medía. Se miden por estado y por llamadas a herramienta,
+  nunca por prosa.
+
+- **`validate_ja1011` pasa de compuerta a medición** en el eval. Está documentada
+  como non-blocking en producción, y devuelve lista vacía tanto en la corrida
+  guionizada perfecta como en la sesión real con 59 bloqueadores: sobre la
+  evidencia que existe, no discrimina.
+
+### Añadido
+
+- **`bloqueadores_por_clase`**: los bloqueadores de exportación se parten en
+  incompletitud («la sesión no terminó») e incoherencia («lo que se hizo está
+  mal»), porque admiten juicios opuestos. En el análisis real son 57 y 2.
+
+- **Replay de corridas.** Cada corrida se vuelca entera y
+  `pytest --eval-session=<volcado>` levanta el acta de nuevo en 0.02 s: afinar
+  criterios y mensajes ya no cuesta API.
+
+- **La sesión real de UAT como ancla del motor** (`test_sesion_real_como_ancla`),
+  determinista y en CI. Al relajar el eval largo, el riesgo no es que deje de
+  cazar al modelo sino que alguien relaje las reglas del motor sin que nada se
+  queje.
+
+- **La confirmación humana debe nombrar a quien avala.** La hoja AUDITORIA afirma
+  que una persona avaló una decisión de seguridad y tiene que poder respaldarlo.
+  El guardia es laxo a propósito: ataja el relleno, no valida identidades.
+
+- **`temperature` y `add_datetime` configurables.** El eval fija `temperature=0`
+  en el facilitador (es el sujeto bajo prueba) y apaga la fecha, que mete
+  entropía en el prompt de cada corrida e invalida el caché. Producción no cambia.
+  El simulador se queda con muestreo normal a propósito: con `temperature=0` fija
+  el orden en que suelta los modos y el eval pasaría por memorizar un guion.
+
 ## [0.3.2] — 2026-08-18
 
 ### Corregido
