@@ -54,6 +54,16 @@ class Settings(BaseSettings):
     debug_mode: bool = False
     # Long-session history policy (facilitated interviews run hundreds of turns)
     num_history_runs: int = 10
+    # Muestreo del modelo. `None` = el default del proveedor, que es lo correcto
+    # en producción: una entrevista se conduce mejor con algo de variedad. Los
+    # evals lo fijan en 0 porque ahí la variedad del facilitador no es señal, es
+    # ruido de medición. (No hay `seed`: la API de Anthropic no lo ofrece y la
+    # clase Claude de agno no expone el campo — pasarlo sería determinismo falso.)
+    temperature: float | None = None
+    # La fecha ayuda en producción a glosar frecuencias. En un eval mete entropía
+    # en el prompt de sistema de cada corrida y, de paso, invalida el caché de
+    # prompt de Anthropic — que en 80 turnos con historial creciente es dinero.
+    add_datetime: bool = True
     # Bind localhost by default — no auth layer in the MVP; expose deliberately
     # (RCM_HOST=0.0.0.0) only behind a reverse proxy that authenticates.
     host: str = "127.0.0.1"

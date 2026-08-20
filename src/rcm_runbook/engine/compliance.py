@@ -7,7 +7,7 @@ stakeholders when `advance_phase` or `export_excel` refuses.
 from __future__ import annotations
 
 from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, MaintenancePolicy
-from rcm_runbook.models.domain import FunctionKind
+from rcm_runbook.models.domain import FunctionKind, _sin_acentos
 from rcm_runbook.models.session import Phase, RCMSession
 
 REDESIGN_FAMILY = {MaintenancePolicy.RD, MaintenancePolicy.EXED, MaintenancePolicy.CC}
@@ -182,6 +182,31 @@ def _gate_p6(s: RCMSession) -> list[str]:
     return issues
 
 
+#: Marcadores de posición vistos en el libro mayor real. Una firma que no nombra a
+#: nadie no es una confirmación humana: es un campo relleno. La hoja AUDITORIA del
+#: entregable afirma que alguien avaló la decisión, y debe poder respaldarlo.
+_FIRMAS_GENERICAS = {
+    "integrante confirmante", "confirmante", "operaciones", "mantenimiento",
+    "el equipo", "equipo", "responsable", "supervisor", "n/a", "na", "pendiente",
+    "usuario", "humano", "aprobador", "approver",
+}
+
+
+def firma_es_identificable(firma: str) -> bool:
+    """¿La firma nombra a una persona concreta?
+
+    Criterio: al menos dos palabras (nombre y apellido) y que no sea uno de los
+    marcadores genéricos conocidos. Es deliberadamente laxo — busca atajar el
+    relleno, no validar identidades.
+    """
+    limpia = _sin_acentos(firma).lower().strip()
+    if not limpia or limpia in _FIRMAS_GENERICAS:
+        return False
+    palabras = [p for p in limpia.replace(",", " ").split() if len(p) > 1]
+    return len(palabras) >= 2
+
+
+
 def export_blockers(session: RCMSession) -> list[str]:
     """All gates must be green (through P6) before the deliverable can be exported."""
     issues: list[str] = []
@@ -198,6 +223,47 @@ def export_blockers(session: RCMSession) -> list[str]:
     issues.extend(tareas_contradictorias(session))
     issues.extend(tareas_mas_lentas_que_el_ffi(session))
     return issues
+
+
+def bloqueadores_de_incoherencia(session: RCMSession) -> list[str]:
+    """El subconjunto de `export_blockers` que denuncia contradicciones, no faltantes.
+
+    Los bloqueadores son dos poblaciones distintas y conviene no confundirlas:
+
+    - **Incompletitud** — falta contenido. "El modo FM-019 no tiene acciones
+      recomendadas." Dice que la sesión no terminó.
+    - **Incoherencia** — el contenido que SÍ existe se contradice. "La búsqueda de
+      fallas de FM-014 está calculada cada 526 h, pero su tarea se ejecuta
+      'Mensual' (730 h)." Dice que lo que se hizo está mal.
+
+    La distinción importa porque admiten juicios opuestos: una sesión a medias es
+    una sesión a medias, pero un plan que se contradice a sí mismo es un defecto
+    aunque esté completo. Un dispositivo de protección que se prueba más espaciado
+    que su propio intervalo calculado no es "otro camino igualmente válido".
+
+    Se calcula llamando a las mismas funciones que alimentan `export_blockers`, no
+    buscando subcadenas en su prosa: si mañana cambia la redacción de un mensaje,
+    esta clasificación sigue siendo correcta.
+    """
+    incoherencias = tareas_contradictorias(session)
+    incoherencias += tareas_mas_lentas_que_el_ffi(session)
+    for fmid in session.failure_modes:
+        # _residual_issues vive dentro de la compuerta P5, así que aquí se
+        # reconstruye con el mismo prefijo que le pone export_blockers.
+        for issue in _residual_issues(session, fmid):
+            incoherencias.append(f"[Fase {Phase.P5_DECISION.value}] {issue}")
+    return incoherencias
+
+
+def bloqueadores_por_clase(session: RCMSession) -> dict[str, list[str]]:
+    """`export_blockers` partido en {'incoherencia': [...], 'incompletitud': [...]}."""
+    todos = export_blockers(session)
+    incoherencia = bloqueadores_de_incoherencia(session)
+    vistos = set(incoherencia)
+    return {
+        "incoherencia": incoherencia,
+        "incompletitud": [b for b in todos if b not in vistos],
+    }
 
 
 def sigue_necesitando_busqueda_de_fallas(session: RCMSession, fmid: str) -> bool:

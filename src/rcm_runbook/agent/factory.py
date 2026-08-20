@@ -63,6 +63,11 @@ def sondear_modelo(cfg: Settings) -> tuple[bool, str]:
 
 
 def build_model(cfg: Settings) -> Any:
+    # `temperature=None` significa "el default del proveedor", que no es lo mismo
+    # que 0: se omite el parámetro en vez de mandarlo. Sólo los evals lo fijan.
+    muestreo: dict[str, Any] = (
+        {} if cfg.temperature is None else {"temperature": cfg.temperature}
+    )
     if cfg.provider == "anthropic":
         from agno.models.anthropic import Claude
 
@@ -85,16 +90,17 @@ def build_model(cfg: Settings) -> Any:
                 default_headers=OAUTH_BETA_HEADER,
                 client=AnthropicClient(**client_kwargs),
                 async_client=AsyncAnthropic(**client_kwargs),
+                **muestreo,
             )
-        return Claude(id=cfg.model_id)
+        return Claude(id=cfg.model_id, **muestreo)
     if cfg.provider == "openai":
         from agno.models.openai import OpenAIChat
 
-        return OpenAIChat(id=cfg.model_id)
+        return OpenAIChat(id=cfg.model_id, **muestreo)
     if cfg.provider == "google":
         from agno.models.google import Gemini
 
-        return Gemini(id=cfg.model_id)
+        return Gemini(id=cfg.model_id, **muestreo)
     raise ValueError(f"Proveedor no soportado: {cfg.provider}")
 
 
@@ -153,7 +159,7 @@ def build_agent(cfg: Settings, db: Any | None = None) -> Agent:
         add_dependencies_to_context=True,
         add_history_to_context=True,
         num_history_runs=cfg.num_history_runs,
-        add_datetime_to_context=True,
+        add_datetime_to_context=cfg.add_datetime,
         markdown=True,
         debug_mode=cfg.debug_mode,
         telemetry=False,

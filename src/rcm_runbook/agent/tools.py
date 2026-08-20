@@ -628,6 +628,19 @@ def run_decision_logic(
         redesign_identified=redesign_identified,
         consequences_tolerable=consequences_tolerable,
     )
+    if approver and not compliance.firma_es_identificable(approver):
+        return (
+            f"❌ La confirmación humana debe nombrar a quien avala: "
+            f"'{eco_del_modelo(approver)}' no identifica a nadie. "
+            "Indique nombre y cargo (p. ej. 'María Torres — Supervisora de "
+            "operaciones'). La hoja AUDITORIA del entregable afirma que una "
+            "persona avaló esta decisión de seguridad, y tiene que poder "
+            "respaldarlo ante quien audite el análisis."
+            # Guardia barato sobre un campo de seguridad: el uso real ya pasa
+            # nombres reales, así que no rompe nada existente. Impide que un
+            # relleno genérico se cuele como aval el día que el modelo tenga
+            # prisa por cerrar la fase.
+        )
     try:
         if approver:
             session.request_hitl(failure_mode_id, "Consecuencia de seguridad/ambiente")
