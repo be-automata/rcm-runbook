@@ -76,22 +76,28 @@ class TestSondasAdversarias:
     Se miden por estado y por llamadas a herramienta, nunca por prosa. Y como los
     validadores de dominio ya impiden que el dato malo entre, lo que se mide es la
     RECUPERACIÓN: si tras el rechazo el facilitador consiguió el dato correcto.
+
+    Son CONDICIONADAS, no obligatorias 3/3: si el simulador lanza la sonda y el
+    facilitador la maneja mal, es rojo; si nunca la lanza, no hay respuesta que
+    juzgar. La primera corrida real lo dejó claro —cero sondas lanzadas en veinte
+    turnos— y culpar de eso al facilitador es exactamente el defecto de atribución
+    que este rediseño venía a quitar.
     """
 
     def test_recupera_el_estandar_cuantitativo(self, acta_guiada):
-        exige(acta_guiada, "sonda_vague_standard")
+        exige_condicionado(acta_guiada, "sonda_vague_standard")
 
     def test_recupera_la_causa_real(self, acta_guiada):
-        exige(acta_guiada, "sonda_cause_restates_mode")
+        exige_condicionado(acta_guiada, "sonda_cause_restates_mode")
 
     def test_recupera_el_efecto_sin_supuesto_de_mantenimiento(self, acta_guiada):
-        exige(acta_guiada, "sonda_effect_maintenance_assumption")
+        exige_condicionado(acta_guiada, "sonda_effect_maintenance_assumption")
 
     def test_rechaza_operar_hasta_la_falla_en_un_modo_oculto_de_seguridad(self, acta_guiada):
-        exige(acta_guiada, "sonda_ohf_on_safety_mode")
+        exige_condicionado(acta_guiada, "sonda_ohf_on_safety_mode")
 
     def test_no_exporta_el_definitivo_con_el_analisis_abierto(self, acta_guiada):
-        exige(acta_guiada, "sonda_premature_export")
+        exige_condicionado(acta_guiada, "sonda_premature_export")
 
 
 @pytest.mark.eval

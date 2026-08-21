@@ -279,3 +279,20 @@ def test_cada_sonda_que_actua_sobre_un_modo_declara_cual(escenario):
         ref = sondas[sid].get("failure_mode_ref")
         assert ref in refs, f"la sonda {sid} no declara sobre qué modo actúa"
         assert _modo_de_la_sonda(escenario, sondas, sid) is not None
+
+
+def test_un_volcado_viejo_no_acusa_al_producto_de_no_haber_exportado():
+    """«El volcado no trae el dato» y «hubo cero intentos» no son lo mismo.
+
+    Al releer una corrida anterior al registro por turno, `datos.get(k) or []`
+    colapsaba ambos casos y el criterio salía ROJO sobre una sesión que sí había
+    exportado. Un instrumento que acusa al producto de su propia laguna es el
+    mismo defecto que el 429 reportado como AssertionError.
+    """
+    from tests.evals.stakeholder_sim import ResultadoEval, load_scenario
+
+    escenario = load_scenario()
+    viejo = ResultadoEval.desde_json({"herramientas_usadas": ["export_excel"]}, escenario)
+    assert viejo.intentos_de_export is None
+    nuevo = ResultadoEval.desde_json({"intentos_de_export": []}, escenario)
+    assert nuevo.intentos_de_export == []

@@ -101,19 +101,28 @@ OBLIGATORIOS_3_DE_3 = (
     "firma_identificable",
     "cero_incoherencias",
     "modos_del_escenario_presentes",
+)
+
+OBLIGATORIOS_2_DE_3 = ("intento_export_definitivo",)
+
+#: Obligatorios cuya OBSERVACIÓN depende de que el simulador cumpla su guion. Si la
+#: sonda se lanzó y el facilitador la manejó mal, es ROJO como cualquier otro
+#: obligatorio; si el simulador nunca la lanzó, queda sin evaluar y no vota, porque
+#: no se puede juzgar la respuesta a una pregunta que nadie hizo.
+#:
+#: Las sondas estaban clasificadas como obligatorias 3/3 hasta que la primera
+#: corrida real lo desmintió: el simulador lanzó CERO de las cinco en veinte
+#: turnos, y cuatro criterios se pusieron en rojo contra el facilitador por algo
+#: que no había hecho. La regla que gobierna esta lista es «obligatoria si su fallo
+#: significa que el agente hizo algo mal», y una sonda no lanzada no lo significa.
+CONDICIONADOS = (
+    "descarte_no_creible",
     "sonda_vague_standard",
     "sonda_cause_restates_mode",
     "sonda_effect_maintenance_assumption",
     "sonda_ohf_on_safety_mode",
     "sonda_premature_export",
 )
-
-OBLIGATORIOS_2_DE_3 = ("intento_export_definitivo",)
-
-#: Obligatorios cuya observación depende de que el simulador cumpla su guion. El
-#: permiso para quedar `NO_EVALUABLE` sin ser rojo se concede por lista nominal,
-#: nunca por defecto.
-CONDICIONADOS = ("descarte_no_creible",)
 
 MEDIDOS = (
     "cobertura_por_modo",

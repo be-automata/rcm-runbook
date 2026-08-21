@@ -431,7 +431,7 @@ class ResultadoEval:
     #: Hace falta el CUÁNDO: la sonda `premature_export` provoca una llamada en la
     #: fase 1, así que "llamó a export_excel" a secas se pone verde sin que el
     #: análisis haya llegado a ninguna parte.
-    intentos_de_export: list[tuple[int, int, int]] = field(default_factory=list)
+    intentos_de_export: list[tuple[int, int, int]] | None = field(default_factory=list)
     definitivo_antes_de_p6: bool | None = None
     turnos_hasta_p5: int | None = None
 
@@ -469,7 +469,15 @@ class ResultadoEval:
             scenario=scenario,
             transcript=list(datos.get("transcript") or []),
             herramientas_usadas=set(datos.get("herramientas_usadas") or []),
-            intentos_de_export=[tuple(i) for i in datos.get("intentos_de_export") or []],
+            # Sin `or []`: un volcado que NO trae la clave (anterior al registro por
+            # turno) no es lo mismo que uno con cero intentos. El primero es «no se
+            # puede saber»; el segundo, «nunca lo intentó». Colapsarlos hacía que un
+            # volcado viejo acusara al producto de un fallo que no cometió.
+            intentos_de_export=(
+                [tuple(i) for i in datos["intentos_de_export"]]
+                if datos.get("intentos_de_export") is not None
+                else None
+            ),
             tokens=int(datos.get("tokens") or 0),
             turnos=int(datos.get("turnos") or 0),
             motivo_de_corte=str(datos.get("motivo_de_corte") or ""),
