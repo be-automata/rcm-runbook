@@ -544,9 +544,34 @@ def _construye_settings_del_eval(workdir: Path, exports_dir: Path) -> Any:
         temperature=0.0,
         add_datetime=False,
     )
-    # Impreso siempre: qué modelo se midió no puede quedar implícito.
-    print(f"[eval] modelo bajo prueba: {cfg.model_id} (temperature={cfg.temperature})")
+    cfg = _factura_contra_creditos_si_puede(cfg)
+    # Impreso siempre: ni el modelo ni la vía de facturación pueden quedar implícitos.
+    via = "suscripción" if cfg.claude_code_oauth_token else "créditos de API"
+    print(f"[eval] modelo bajo prueba: {cfg.model_id} · temperature={cfg.temperature} · vía {via}")
     return cfg
+
+
+def _factura_contra_creditos_si_puede(cfg: Any) -> Any:
+    """Prefiere la clave de API a la suscripción, si hay clave.
+
+    Una conversación de 80 turnos satura la ventana de la suscripción, que además
+    se comparte con el trabajo interactivo: la primera corrida contra Sonnet se
+    pasó 25 minutos de backoff sin conseguir una sola respuesta, mientras la misma
+    petición por créditos respondía al instante. Medir el producto no debería
+    depender de una ventana que el propio trabajo del día agota.
+
+    Con `RCM_EVAL_USAR_SUSCRIPCION=1` se fuerza el camino de la suscripción.
+    """
+    import os as _os
+
+    if _os.environ.get("RCM_EVAL_USAR_SUSCRIPCION") == "1":
+        return cfg
+    if not cfg.claude_code_oauth_token:
+        return cfg
+    # La clave puede venir del entorno o del .env que ya leyó Settings.
+    if not _os.environ.get("ANTHROPIC_API_KEY"):
+        return cfg
+    return cfg.model_copy(update={"claude_code_oauth_token": ""})
 
 
 def _definitivos(exports_dir: Path) -> list[Path]:

@@ -144,3 +144,30 @@ def test_el_eval_mide_el_modelo_que_se_despliega():
     assert cfg.model_id == Settings.model_fields["model_id"].default
     assert cfg.temperature == 0.0, "el sujeto bajo prueba debe medirse sin ruido de muestreo"
     assert cfg.add_datetime is False, "la fecha mete entropía en el prompt de cada corrida"
+
+
+def test_el_eval_no_quema_la_ventana_de_la_suscripcion(monkeypatch):
+    """Una conversación de 80 turnos agota la ventana de la suscripción, que se
+    comparte con el trabajo interactivo. La primera corrida contra Sonnet se pasó
+    25 minutos de backoff sin una sola respuesta mientras la misma petición por
+    créditos respondía al instante: medir el producto no puede depender de una
+    ventana que el trabajo del día agota."""
+    import tempfile
+    from pathlib import Path
+
+    from tests.evals.stakeholder_sim import _construye_settings_del_eval
+
+    tmp = Path(tempfile.mkdtemp())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-test")
+    monkeypatch.delenv("RCM_EVAL_USAR_SUSCRIPCION", raising=False)
+    assert _construye_settings_del_eval(tmp, tmp).claude_code_oauth_token == ""
+
+    # …salvo que se pida explícitamente lo contrario.
+    monkeypatch.setenv("RCM_EVAL_USAR_SUSCRIPCION", "1")
+    assert _construye_settings_del_eval(tmp, tmp).claude_code_oauth_token == "oauth-test"
+
+    # Y sin clave de API no hay nada que preferir: se usa la suscripción.
+    monkeypatch.delenv("RCM_EVAL_USAR_SUSCRIPCION")
+    monkeypatch.delenv("ANTHROPIC_API_KEY")
+    assert _construye_settings_del_eval(tmp, tmp).claude_code_oauth_token == "oauth-test"
