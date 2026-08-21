@@ -6,6 +6,8 @@ stakeholders when `advance_phase` or `export_excel` refuses.
 
 from __future__ import annotations
 
+import re
+
 from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, MaintenancePolicy
 from rcm_runbook.models.domain import FunctionKind, sin_acentos
 from rcm_runbook.models.session import Phase, RCMSession
@@ -182,29 +184,50 @@ def _gate_p6(s: RCMSession) -> list[str]:
     return issues
 
 
-#: Marcadores de posición vistos en el libro mayor real. Una firma que no nombra a
-#: nadie no es una confirmación humana: es un campo relleno. La hoja AUDITORIA del
-#: entregable afirma que alguien avaló la decisión, y debe poder respaldarlo.
-_FIRMAS_GENERICAS = {
-    "integrante confirmante", "confirmante", "operaciones", "mantenimiento",
-    "el equipo", "equipo", "responsable", "supervisor", "n/a", "na", "pendiente",
-    "usuario", "humano", "aprobador", "approver",
+#: Vocabulario de cargo y relleno: palabras que describen un PAPEL, no a una
+#: persona. Una firma compuesta sólo por estas no identifica a nadie —"Equipo de
+#: Operaciones", "Supervisor de turno"— aunque tenga varias palabras.
+_PALABRAS_SIN_PERSONA = {
+    "integrante", "confirmante", "operaciones", "mantenimiento", "equipo",
+    "responsable", "supervisor", "supervisora", "jefe", "jefa", "director",
+    "directora", "encargado", "encargada", "turno", "planta", "area", "usuario",
+    "humano", "aprobador", "approver", "pendiente", "confirmado", "sin", "asignar",
+    "na", "todos", "varios", "personal", "gerente", "gerencia", "ingeniero",
+    "ingeniera", "tecnico", "tecnica", "operador", "operadora",
 }
+
+#: Nexos que no aportan identidad ni cargo; se descartan antes de juzgar.
+_NEXOS = {"de", "del", "la", "el", "los", "las", "y", "en", "por", "a", "un", "una"}
 
 
 def firma_es_identificable(firma: str) -> bool:
-    """¿La firma nombra a una persona concreta?
+    """¿La firma nombra a alguien, o sólo describe un puesto?
 
-    Criterio: al menos dos palabras (nombre y apellido) y que no sea uno de los
-    marcadores genéricos conocidos. Es deliberadamente laxo — busca atajar el
-    relleno, no validar identidades.
+    Se rechaza cuando **todas** sus palabras son de cargo o relleno. Una firma
+    legítima trae un nombre, y un nombre no está en ese vocabulario: por eso
+    "Víctor López, Jefe de Mantenimiento" pasa y "Jefe de Mantenimiento" no.
+
+    Antes sólo se rechazaba la coincidencia exacta con una lista de marcadores, así
+    que cualquier variante compuesta —"Equipo de Operaciones"— se colaba por tener
+    dos palabras.
+
+    **Lo que sigue sin cazar, dicho claro:** una frase con un token específico que
+    tampoco es un nombre. "Supervisor HSE - Sistema de bombeo P-101" —que existe en
+    el libro mayor real— pasa, porque "HSE" y "P-101" no son palabras de cargo.
+    Cerrar eso exigiría reconocer nombres de persona, y un rechazo falso aquí es
+    peor que un aval genérico: bloquearía a un equipo que intenta cerrar
+    legítimamente una decisión de seguridad. El guardia ataja el relleno; quien
+    audita mira la hoja.
     """
-    limpia = sin_acentos(firma).lower().strip()
-    if not limpia or limpia in _FIRMAS_GENERICAS:
+    limpia = sin_acentos(firma).lower()
+    # Se descartan nexos y letras sueltas: ninguna de las dos identifica a nadie, y
+    # sin quitarlas "N/A" sobrevivía como la palabra "n".
+    palabras = [
+        p for p in re.split(r"[^\w]+", limpia) if len(p) > 1 and p not in _NEXOS
+    ]
+    if not palabras:
         return False
-    palabras = [p for p in limpia.replace(",", " ").split() if len(p) > 1]
-    return len(palabras) >= 2
-
+    return not all(p in _PALABRAS_SIN_PERSONA for p in palabras)
 
 
 def export_blockers(session: RCMSession) -> list[str]:

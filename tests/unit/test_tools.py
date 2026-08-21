@@ -519,7 +519,15 @@ class TestLaConfirmacionHumanaNombraAAlguien:
              plant="Fuga de crudo con riesgo de incendio", is_hidden=True, safety=True)
 
     @pytest.mark.parametrize(
-        "relleno", ["Integrante confirmante", "pendiente", "N/A", "el equipo", "operaciones"]
+        "relleno",
+        [
+            "Integrante confirmante", "pendiente", "N/A", "el equipo", "operaciones",
+            # Compuestas: tienen varias palabras y aun así no nombran a nadie. La
+            # primera versión sólo rechazaba la coincidencia exacta con la lista,
+            # así que todas estas se colaban (lo señaló una revisión externa).
+            "Equipo de Operaciones", "Supervisor de turno", "Jefe de Mantenimiento",
+            "El responsable de planta", "Sin asignar", "El personal de turno",
+        ],
     )
     def test_un_firmante_de_relleno_se_rechaza(self, ctx, relleno):
         self._hasta_la_decision(ctx)
@@ -527,11 +535,18 @@ class TestLaConfirmacionHumanaNombraAAlguien:
                    failure_finding_feasible=True, approver=relleno)
         assert out.startswith("❌") and "no identifica a nadie" in out, out
 
-    def test_un_nombre_con_cargo_se_acepta(self, ctx):
+    @pytest.mark.parametrize(
+        "firma",
+        [
+            "María Torres — Supervisora de operaciones",
+            "Víctor López, Jefe de Mantenimiento",   # el cargo no invalida el nombre
+            "J. Pérez",                              # inicial y apellido
+        ],
+    )
+    def test_una_firma_que_nombra_a_alguien_se_acepta(self, ctx, firma):
         self._hasta_la_decision(ctx)
         out = call(t.run_decision_logic, ctx, failure_mode_id="FM-001",
-                   failure_finding_feasible=True,
-                   approver="María Torres — Supervisora de operaciones")
+                   failure_finding_feasible=True, approver=firma)
         assert "BF" in out and not out.startswith("❌"), out
 
     def test_sin_firmante_sigue_pidiendo_la_confirmacion_como_antes(self, ctx):
