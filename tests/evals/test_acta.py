@@ -296,3 +296,23 @@ def test_un_volcado_viejo_no_acusa_al_producto_de_no_haber_exportado():
     assert viejo.intentos_de_export is None
     nuevo = ResultadoEval.desde_json({"intentos_de_export": []}, escenario)
     assert nuevo.intentos_de_export == []
+
+
+def test_el_volcado_dice_que_modelo_lo_produjo_y_donde_vive(escenario):
+    """Dos lecciones que costaron caro, cerradas con un test.
+
+    Un acta que no dice qué modelo midió no se puede interpretar: una tanda entera
+    se midió contra Haiku creyendo que era Sonnet. Y el primer volcado se escribió
+    en un temporal del sistema y se perdió con la limpieza — veinte minutos y un
+    millón de tokens de evidencia, borrados por el sitio donde los dejé.
+    """
+    from tests.evals.conftest import DIRECTORIO_DE_ARTEFACTOS
+    from tests.evals.stakeholder_sim import ResultadoEval
+
+    r = ResultadoEval(session=None, scenario=escenario, modelo="claude-sonnet-4-5")
+    assert r.como_json()["modelo"] == "claude-sonnet-4-5"
+    assert ResultadoEval.desde_json(r.como_json(), escenario).modelo == "claude-sonnet-4-5"
+
+    partes = DIRECTORIO_DE_ARTEFACTOS.parts
+    assert "tmp" not in partes and "temp" not in partes, DIRECTORIO_DE_ARTEFACTOS
+    assert partes[-2:] == ("data", "evals"), DIRECTORIO_DE_ARTEFACTOS

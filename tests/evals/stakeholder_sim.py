@@ -427,6 +427,10 @@ class ResultadoEval:
     tokens: int = 0
     turnos: int = 0
     motivo_de_corte: str = ""
+    #: Qué modelo produjo esta corrida. Va en el volcado porque un acta que no dice
+    #: qué midió no se puede interpretar: una tanda entera se midió contra Haiku
+    #: creyendo que era Sonnet.
+    modelo: str = ""
     #: Un intento por cada llamada a export_excel: (turno, fase, nº de faltantes).
     #: Hace falta el CUÁNDO: la sonda `premature_export` provoca una llamada en la
     #: fase 1, así que "llamó a export_excel" a secas se pone verde sin que el
@@ -448,6 +452,7 @@ class ResultadoEval:
 
     def como_json(self) -> dict[str, Any]:
         return {
+            "modelo": self.modelo,
             "motivo_de_corte": self.motivo_de_corte,
             "turnos": self.turnos,
             "tokens": self.tokens,
@@ -480,6 +485,7 @@ class ResultadoEval:
             ),
             tokens=int(datos.get("tokens") or 0),
             turnos=int(datos.get("turnos") or 0),
+            modelo=str(datos.get("modelo") or ""),
             motivo_de_corte=str(datos.get("motivo_de_corte") or ""),
             definitivo_antes_de_p6=datos.get("definitivo_antes_de_p6"),
             turnos_hasta_p5=datos.get("turnos_hasta_p5"),
@@ -640,7 +646,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> ResultadoEval:
     exports_dir.mkdir()
     cfg = _construye_settings_del_eval(workdir, exports_dir)
 
-    resultado = ResultadoEval(session=None, scenario=scenario)
+    resultado = ResultadoEval(session=None, scenario=scenario, modelo=cfg.model_id)
     facilitator = build_agent(cfg)
     # El simulador se queda con el muestreo del proveedor a propósito. Con
     # temperature=0 entra en bucles —repite la misma frase hasta el corte— y, peor,

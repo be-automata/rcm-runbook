@@ -40,7 +40,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     grupo.addoption(
         "--eval-artifacts-dir",
         default=None,
-        help="Dónde volcar estado, transcript y acta de la corrida (default: tmp).",
+        help="Dónde volcar estado, transcript y acta (default: data/evals/).",
     )
 
 
@@ -67,15 +67,25 @@ def sesion_guiada(request: pytest.FixtureRequest) -> ResultadoEval:
     return resultado
 
 
+#: Bajo el proyecto y no en /tmp. El primer volcado se escribió en un temporal y
+#: se perdió con la limpieza del sistema: veinte minutos y un millón de tokens de
+#: evidencia, borrados por el sitio donde los dejé. Una corrida sin volcado es
+#: información perdida, y un volcado en /tmp es un volcado con fecha de caducidad.
+DIRECTORIO_DE_ARTEFACTOS = Path(__file__).parents[2] / "data" / "evals"
+
+
 def _persistir(resultado: ResultadoEval, destino: str | None) -> None:
     """Siempre, pase o falle: una corrida sin volcado es información perdida."""
-    import tempfile
-
-    raiz = Path(destino) if destino else Path(tempfile.mkdtemp(prefix="rcm-eval-acta-"))
+    raiz = Path(destino) if destino else DIRECTORIO_DE_ARTEFACTOS
     raiz.mkdir(parents=True, exist_ok=True)
-    # Sin marca de tiempo del reloj: el nombre lo dan los turnos y el motivo, que
-    # es lo que sirve para elegir qué volcado releer.
-    nombre = f"corrida-{resultado.turnos}t"
+    # El nombre lo dan los turnos y el modelo, que es lo que sirve para elegir qué
+    # volcado releer. Si dos corridas coinciden, se numera en vez de pisar: perder
+    # una corrida por colisión de nombres sería el mismo error otra vez.
+    base = f"corrida-{resultado.modelo or 'modelo-desconocido'}-{resultado.turnos}t"
+    nombre, n = base, 1
+    while (raiz / f"{nombre}.json").exists():
+        n += 1
+        nombre = f"{base}-{n}"
     (raiz / f"{nombre}.json").write_text(
         json.dumps(resultado.como_json(), ensure_ascii=False, indent=2), encoding="utf-8"
     )
