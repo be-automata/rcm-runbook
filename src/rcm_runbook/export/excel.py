@@ -64,6 +64,13 @@ DRAFT_STAMP = "BORRADOR — NO APTO PARA EJECUCIÓN"
 HEADER_ALIGN = Alignment(wrap_text=True, vertical="center", horizontal="center")
 
 
+# El nombre del fichero es lo que distingue un entregable definitivo de un borrador,
+# y hay más de un sitio que necesita saberlo (el arnés de evals corta su bucle con
+# esta distinción). Vive aquí, en un solo lugar, para que no puedan divergir.
+PREFIJO_DEFINITIVO = "AMEF"
+PREFIJO_BORRADOR = "BORRADOR_AMEF"
+
+
 def _write_id_header(ws: Worksheet, header_row: int) -> None:
     """El `FM-id` en la columna A, que queda fuera del rango del benchmark.
 
@@ -541,7 +548,7 @@ def export_xlsx(
         out_dir = out_dir / safe_export_name(session_id)
     out_dir.mkdir(parents=True, exist_ok=True)
     tag = safe_export_name(session.scope.tag or "SIN-TAG")
-    prefix = "BORRADOR_AMEF" if draft else "AMEF"
+    prefix = PREFIJO_BORRADOR if draft else PREFIJO_DEFINITIVO
     path = out_dir / f"{prefix}_{tag}.xlsx"
     if draft and blockers is None:
         blockers = export_blockers(session)

@@ -10,6 +10,117 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.4.0] — 2026-08-21
+
+**Primera corrida del eval largo enteramente en verde, y la primera medida sobre
+el modelo que realmente se despliega.** 14/14 contra Sonnet 4.5: las cinco sondas
+adversarias manejadas bien, las tres políticas del escenario exactas, la rama de
+fallo oculto completa con firma identificable, y el entregable cerrado en 19
+turnos sin una sola incoherencia.
+
+La varianza que motivó todo este trabajo —tres corridas, tres conjuntos de fallos
+distintos— resultó ser, en buena parte, un modelo distinto del desplegado más
+defectos del propio instrumento. Contrastado sobre el mismo escenario:
+
+| | Haiku 4.5 (A) | Haiku 4.5 (B) | Sonnet 4.5 |
+|---|---|---|---|
+| turnos hasta P5 | 19 | 18 | 11 |
+| políticas acertadas | 1/3 | 2/3 | 3/3 |
+| sondas adversarias | 0 lanzadas | 0 lanzadas | 5/5 correctas |
+
+### Corregido
+
+- **El simulador no lanzaba ninguna sonda adversaria.** Cero de cinco en veinte
+  turnos. Su guion dice «lanza cada sonda en la fase que indica su campo
+  `phase`», pero la fase es estado del *facilitador*: la condición era
+  inobservable para él y nunca se cumplía. El arnés ya leía la fase en cada turno;
+  ahora se la pasa junto con las sondas que tocan y su texto literal.
+
+- **Los volcados de corrida vivían en `/tmp`.** El primero se perdió con la
+  limpieza del sistema —veinte minutos y 1,3M de tokens de evidencia— justo
+  después de escribir que «una corrida sin volcado es información perdida». Ahora
+  van a `data/evals/`, se numeran en vez de pisarse, y registran qué modelo los
+  produjo: un acta que no dice qué midió no se puede interpretar.
+
+- **El criterio de cierre medía lo contrario de lo que pretendía.** Miraba si
+  `export_excel` aparecía entre las herramientas usadas, pero la sonda de export
+  prematuro provoca esa llamada en la fase 1: el criterio se ponía verde sin que
+  el análisis avanzara. Ahora registra el turno, la fase y los faltantes de cada
+  intento.
+
+
+- **El eval largo medía Haiku 4.5 mientras producción sirve Sonnet 4.5.**
+  `Settings` lee el `.env` de la raíz del proyecto, donde hay un `RCM_MODEL_ID`
+  puesto para abaratar el desarrollo local; Cloudflare no lo sobrescribe, así que
+  el despliegue usa el default del código. Ninguna corrida lo decía. La tabla de
+  varianza que motivó este trabajo se midió sobre el modelo equivocado, y parte
+  de lo que leímos como inestabilidad del producto puede ser el modelo más
+  pequeño. Ahora el eval fija el modelo explícitamente y lo imprime.
+
+- **Un 429 se reportaba como si hubiera fallado el producto.** Tras agotar el
+  backoff, el arnés lanzaba `AssertionError` —la misma excepción con la que
+  fallan los criterios reales—. Un instrumento que acusa al producto de su propia
+  avería es peor que no medir.
+
+- **El bucle del eval cortaba al ver «/exports/» en la prosa**, y `export_excel`
+  devuelve esa misma URL para un BORRADOR: una conversación a medias podía
+  terminar el eval con el análisis abierto. Combinado con el reintento silencioso
+  —que reportaba verde si la segunda corrida pasaba— una primera corrida truncada
+  quedaba invisible.
+
+### Cambiado
+
+- **El eval largo produce un acta, no un booleano.** `test_llm_guided_session`
+  corría veinte minutos para dar un bit, y encadenaba seis aserciones de las que
+  la primera en fallar ocultaba a las demás. Una de ellas mezclaba tres causas
+  («oculto + BF + firma») y al fallar culpaba a la firma aunque el defecto fuera
+  la bandera `is_hidden` — por eso «falla distinto cada vez» resultaba ilegible.
+
+  Ahora el arnés mide y no juzga: dieciséis criterios con estado y evidencia,
+  obligatorios que votan y mediciones que se imprimen con su ratio. El vocabulario
+  se hereda de `verificar_en_produccion.py` para no tener dos regímenes de
+  aceptación y acabar con dos verdades. «Sin evaluar» cuenta como fallo salvo en
+  los condicionados nominales.
+
+- **Las cinco sondas adversarias se comprueban.** Declaraban su
+  `expected_behavior` en el escenario y ninguna se verificaba: el eval caro era el
+  que menos conducta medía. Se miden por estado y por llamadas a herramienta,
+  nunca por prosa. Son **condicionadas**: rojo si se lanzan y el facilitador las
+  maneja mal, sin evaluar si el simulador nunca las lanza. Estaban clasificadas
+  como obligatorias hasta que la primera corrida real puso cuatro criterios en
+  rojo contra el facilitador por algo que no había hecho — que es justo el defecto
+  de atribución que este rediseño venía a quitar.
+
+- **`validate_ja1011` pasa de compuerta a medición** en el eval. Está documentada
+  como non-blocking en producción, y devuelve lista vacía tanto en la corrida
+  guionizada perfecta como en la sesión real con 59 bloqueadores: sobre la
+  evidencia que existe, no discrimina.
+
+### Añadido
+
+- **`bloqueadores_por_clase`**: los bloqueadores de exportación se parten en
+  incompletitud («la sesión no terminó») e incoherencia («lo que se hizo está
+  mal»), porque admiten juicios opuestos. En el análisis real son 57 y 2.
+
+- **Replay de corridas.** Cada corrida se vuelca entera y
+  `pytest --eval-session=<volcado>` levanta el acta de nuevo en 0.02 s: afinar
+  criterios y mensajes ya no cuesta API.
+
+- **La sesión real de UAT como ancla del motor** (`test_sesion_real_como_ancla`),
+  determinista y en CI. Al relajar el eval largo, el riesgo no es que deje de
+  cazar al modelo sino que alguien relaje las reglas del motor sin que nada se
+  queje.
+
+- **La confirmación humana debe nombrar a quien avala.** La hoja AUDITORIA afirma
+  que una persona avaló una decisión de seguridad y tiene que poder respaldarlo.
+  El guardia es laxo a propósito: ataja el relleno, no valida identidades.
+
+- **`temperature` y `add_datetime` configurables.** El eval fija `temperature=0`
+  en el facilitador (es el sujeto bajo prueba) y apaga la fecha, que mete
+  entropía en el prompt de cada corrida e invalida el caché. Producción no cambia.
+  El simulador se queda con muestreo normal a propósito: con `temperature=0` fija
+  el orden en que suelta los modos y el eval pasaría por memorizar un guion.
+
 ## [0.3.2] — 2026-08-18
 
 ### Corregido

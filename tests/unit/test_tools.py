@@ -487,3 +487,72 @@ class TestElEcoDelModeloAplanaYCorta:
     class Ctx:
         session_id = "s-eco2"
         session_state: dict = {}
+
+
+class TestLaConfirmacionHumanaNombraAAlguien:
+    """Una decisión de seguridad avalada por «pendiente» no está avalada.
+
+    La hoja AUDITORIA del entregable afirma que una persona confirmó la decisión,
+    así que el campo tiene que poder respaldarlo. El guardia es deliberadamente
+    laxo —ataja el relleno, no valida identidades— porque un rechazo falso en un
+    flujo de confirmación de seguridad es peor que un aval algo genérico: dejaría
+    al equipo sin poder cerrar una decisión legítima.
+    """
+
+    def _hasta_la_decision(self, ctx):
+        call(t.record_scope, ctx, equipment_family="Bomba Centrífuga",
+             equipment_description="Bomba de alimentación", tag="P-900",
+             location="Área 900", boundaries="Brida a brida", interfaces="T-900",
+             normal_conditions="Continuo", objective="Plan RCM",
+             operating_context="Sin respaldo")
+        call(t.record_function, ctx, kind="proteccion", verb="detener",
+             object="la bomba ante baja succión",
+             performance_standard="disparo bajo 1.5 bar")
+        call(t.record_functional_failure, ctx, function_id="F-001",
+             description="No dispara ante baja succión")
+        call(t.record_failure_mode, ctx, functional_failure_id="FF-001",
+             description="Presostato sin respuesta", mechanism="Falla de Instrumentación",
+             iso_code="AIR", cause="Deriva de calibración del sensor",
+             root_cause="Ciclos térmicos", failure_pattern="Aleatoria")
+        call(t.record_effect, ctx, failure_mode_id="FM-001",
+             local="Sin señal de disparo", system="Cavitación y operación en seco",
+             plant="Fuga de crudo con riesgo de incendio", is_hidden=True, safety=True)
+
+    @pytest.mark.parametrize(
+        "relleno",
+        [
+            "Integrante confirmante", "pendiente", "N/A", "el equipo", "operaciones",
+            # Compuestas: tienen varias palabras y aun así no nombran a nadie. La
+            # primera versión sólo rechazaba la coincidencia exacta con la lista,
+            # así que todas estas se colaban (lo señaló una revisión externa).
+            "Equipo de Operaciones", "Supervisor de turno", "Jefe de Mantenimiento",
+            "El responsable de planta", "Sin asignar", "El personal de turno",
+        ],
+    )
+    def test_un_firmante_de_relleno_se_rechaza(self, ctx, relleno):
+        self._hasta_la_decision(ctx)
+        out = call(t.run_decision_logic, ctx, failure_mode_id="FM-001",
+                   failure_finding_feasible=True, approver=relleno)
+        assert out.startswith("❌") and "no identifica a nadie" in out, out
+
+    @pytest.mark.parametrize(
+        "firma",
+        [
+            "María Torres — Supervisora de operaciones",
+            "Víctor López, Jefe de Mantenimiento",   # el cargo no invalida el nombre
+            "J. Pérez",                              # inicial y apellido
+        ],
+    )
+    def test_una_firma_que_nombra_a_alguien_se_acepta(self, ctx, firma):
+        self._hasta_la_decision(ctx)
+        out = call(t.run_decision_logic, ctx, failure_mode_id="FM-001",
+                   failure_finding_feasible=True, approver=firma)
+        assert "BF" in out and not out.startswith("❌"), out
+
+    def test_sin_firmante_sigue_pidiendo_la_confirmacion_como_antes(self, ctx):
+        """El guardia no debe cambiar el camino que ya existía: sin `approver`, la
+        herramienta pide la confirmación humana, no la rechaza."""
+        self._hasta_la_decision(ctx)
+        out = call(t.run_decision_logic, ctx, failure_mode_id="FM-001",
+                   failure_finding_feasible=True)
+        assert "CONFIRMACIÓN HUMANA" in out, out

@@ -6,8 +6,10 @@ stakeholders when `advance_phase` or `export_excel` refuses.
 
 from __future__ import annotations
 
+import re
+
 from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, MaintenancePolicy
-from rcm_runbook.models.domain import FunctionKind
+from rcm_runbook.models.domain import FunctionKind, sin_acentos
 from rcm_runbook.models.session import Phase, RCMSession
 
 REDESIGN_FAMILY = {MaintenancePolicy.RD, MaintenancePolicy.EXED, MaintenancePolicy.CC}
@@ -182,6 +184,52 @@ def _gate_p6(s: RCMSession) -> list[str]:
     return issues
 
 
+#: Vocabulario de cargo y relleno: palabras que describen un PAPEL, no a una
+#: persona. Una firma compuesta sólo por estas no identifica a nadie —"Equipo de
+#: Operaciones", "Supervisor de turno"— aunque tenga varias palabras.
+_PALABRAS_SIN_PERSONA = {
+    "integrante", "confirmante", "operaciones", "mantenimiento", "equipo",
+    "responsable", "supervisor", "supervisora", "jefe", "jefa", "director",
+    "directora", "encargado", "encargada", "turno", "planta", "area", "usuario",
+    "humano", "aprobador", "approver", "pendiente", "confirmado", "sin", "asignar",
+    "na", "todos", "varios", "personal", "gerente", "gerencia", "ingeniero",
+    "ingeniera", "tecnico", "tecnica", "operador", "operadora",
+}
+
+#: Nexos que no aportan identidad ni cargo; se descartan antes de juzgar.
+_NEXOS = {"de", "del", "la", "el", "los", "las", "y", "en", "por", "a", "un", "una"}
+
+
+def firma_es_identificable(firma: str) -> bool:
+    """¿La firma nombra a alguien, o sólo describe un puesto?
+
+    Se rechaza cuando **todas** sus palabras son de cargo o relleno. Una firma
+    legítima trae un nombre, y un nombre no está en ese vocabulario: por eso
+    "Víctor López, Jefe de Mantenimiento" pasa y "Jefe de Mantenimiento" no.
+
+    Antes sólo se rechazaba la coincidencia exacta con una lista de marcadores, así
+    que cualquier variante compuesta —"Equipo de Operaciones"— se colaba por tener
+    dos palabras.
+
+    **Lo que sigue sin cazar, dicho claro:** una frase con un token específico que
+    tampoco es un nombre. "Supervisor HSE - Sistema de bombeo P-101" —que existe en
+    el libro mayor real— pasa, porque "HSE" y "P-101" no son palabras de cargo.
+    Cerrar eso exigiría reconocer nombres de persona, y un rechazo falso aquí es
+    peor que un aval genérico: bloquearía a un equipo que intenta cerrar
+    legítimamente una decisión de seguridad. El guardia ataja el relleno; quien
+    audita mira la hoja.
+    """
+    limpia = sin_acentos(firma).lower()
+    # Se descartan nexos y letras sueltas: ninguna de las dos identifica a nadie, y
+    # sin quitarlas "N/A" sobrevivía como la palabra "n".
+    palabras = [
+        p for p in re.split(r"[^\w]+", limpia) if len(p) > 1 and p not in _NEXOS
+    ]
+    if not palabras:
+        return False
+    return not all(p in _PALABRAS_SIN_PERSONA for p in palabras)
+
+
 def export_blockers(session: RCMSession) -> list[str]:
     """All gates must be green (through P6) before the deliverable can be exported."""
     issues: list[str] = []
@@ -198,6 +246,57 @@ def export_blockers(session: RCMSession) -> list[str]:
     issues.extend(tareas_contradictorias(session))
     issues.extend(tareas_mas_lentas_que_el_ffi(session))
     return issues
+
+
+def bloqueadores_de_incoherencia(session: RCMSession) -> list[str]:
+    """El subconjunto de `export_blockers` que denuncia contradicciones, no faltantes.
+
+    Los bloqueadores son dos poblaciones distintas y conviene no confundirlas:
+
+    - **Incompletitud** — falta contenido. "El modo FM-019 no tiene acciones
+      recomendadas." Dice que la sesión no terminó.
+    - **Incoherencia** — el contenido que SÍ existe se contradice. "La búsqueda de
+      fallas de FM-014 está calculada cada 526 h, pero su tarea se ejecuta
+      'Mensual' (730 h)." Dice que lo que se hizo está mal.
+
+    La distinción importa porque admiten juicios opuestos: una sesión a medias es
+    una sesión a medias, pero un plan que se contradice a sí mismo es un defecto
+    aunque esté completo. Un dispositivo de protección que se prueba más espaciado
+    que su propio intervalo calculado no es "otro camino igualmente válido".
+
+    Es siempre un SUBCONJUNTO de `export_blockers`, y lo es por construcción: se
+    parte de lo que la compuerta emitió y se seleccionan los que vienen de un
+    generador de incoherencias. Nunca se reconstruye el criterio de la compuerta.
+
+    La primera versión sí lo reconstruía —recorría los modos llamando a
+    `_residual_issues`— y divergía en dos condiciones que `_gate_p5` aplica y esta
+    función ignoraba: la compuerta sólo mira modos CREÍBLES, y hace `continue`
+    antes de llegar al residual cuando el modo aún no tiene decisión. El resultado
+    eran incoherencias que no existían como bloqueadores, con dos daños: rompían la
+    partición en la que se apoya `bloqueadores_por_clase` y podían poner en rojo el
+    criterio obligatorio `cero_incoherencias` del eval por algo que no bloqueaba
+    nada. Filtrar en vez de reconstruir hace imposible esa clase de deriva.
+    """
+    de_plan = set(tareas_contradictorias(session)) | set(tareas_mas_lentas_que_el_ffi(session))
+    residuales = {
+        f"[Fase {Phase.P5_DECISION.value}] {issue}"
+        for fmid in session.failure_modes
+        for issue in _residual_issues(session, fmid)
+    }
+    delatores = de_plan | residuales
+    # Se conserva el orden de export_blockers: es el que ve quien lee el informe.
+    return [b for b in export_blockers(session) if b in delatores]
+
+
+def bloqueadores_por_clase(session: RCMSession) -> dict[str, list[str]]:
+    """`export_blockers` partido en {'incoherencia': [...], 'incompletitud': [...]}."""
+    todos = export_blockers(session)
+    incoherencia = bloqueadores_de_incoherencia(session)
+    vistos = set(incoherencia)
+    return {
+        "incoherencia": incoherencia,
+        "incompletitud": [b for b in todos if b not in vistos],
+    }
 
 
 def sigue_necesitando_busqueda_de_fallas(session: RCMSession, fmid: str) -> bool:

@@ -229,11 +229,14 @@ adversarial_probes:
       (250 m³/h a 12 bar); no registra la función hasta tenerlo.
   - id: cause_restates_mode
     phase: 3
+    failure_mode_ref: FM-001   # sobre qué modo actúa: el acta lo mide por aquí,
+                               # no por la posición del modo en la lista
     utterance: "La causa de la falla de rodamientos es que fallan los rodamientos."
     expected_behavior: El facilitador explica que la causa no es una reformulación del
       modo y re-pregunta por qué ocurre (lubricante degradado).
   - id: effect_maintenance_assumption
     phase: 3
+    failure_mode_ref: FM-002
     utterance: "Si el impulsor se desgasta no pasa nada porque el PM lo detecta antes."
     expected_behavior: El facilitador re-pregunta "¿y si nadie interviene?" — los efectos
       se describen asumiendo que NO se hace mantenimiento.

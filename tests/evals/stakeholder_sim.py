@@ -7,13 +7,21 @@ Two entry points:
 - run_llm_eval()       — LLM-vs-LLM: the real facilitator agent (build_agent) talks
   to a second Agno agent that role-plays maintenance engineer "Carlos", answering
   STRICTLY from the YAML ground truth and firing scripted adversarial probes.
-  Asserts on FINAL SESSION STATE (gates, policies, HITL, export) — never on prose.
+  MIDE y no juzga: devuelve un `ResultadoEval` del que se levanta un acta con un
+  veredicto por criterio (ver `tests/evals/acta.py`). Nunca lanza por un fallo del
+  producto — sólo `AveriaDelInstrumento` cuando el eval no pudo medir.
 
-Both raise AssertionError with a Spanish summary of what failed.
+El guionizado sí lanza `AssertionError`: sin modelo de por medio no hay
+estocasticidad que tolerar, así que un fallo es un fallo.
+
+Regla que gobierna los dos caminos: se mide el ESTADO y las llamadas a
+herramienta, nunca la prosa. El agente parafrasea, y una comprobación sobre lo que
+dice mide su redacción, no su trabajo.
 """
 
 from __future__ import annotations
 
+import os
 import tempfile
 import time
 import uuid
@@ -25,8 +33,9 @@ import yaml
 
 from rcm_runbook.agent import tools as t
 from rcm_runbook.engine import compliance
-from rcm_runbook.export.excel import export_xlsx
+from rcm_runbook.export.excel import PREFIJO_BORRADOR, PREFIJO_DEFINITIVO, export_xlsx
 from rcm_runbook.models.session import RCMSession
+from tests.evals.acta import Acta, levantar_acta
 
 SCENARIO_PATH = Path(__file__).parent / "scenarios" / "pump_p101.yaml"
 
@@ -238,7 +247,12 @@ def run_scripted_eval(exports_dir: str | None = None) -> RCMSession:
 
 
 def _assert_final_state(session: RCMSession, scenario: dict[str, Any]) -> None:
-    """Assert on FINAL STATE, never on prose."""
+    """Envoltura que LANZA, para el eval guionizado (su contrato no cambia).
+
+    El camino LLM no pasa por aquí: levanta el acta y deja que cada test juzgue su
+    criterio. Aquí, en cambio, no hay estocasticidad —las herramientas se conducen
+    desde el YAML— así que un fallo es un fallo y abortar es lo correcto.
+    """
     failures: list[str] = []
 
     blockers = compliance.export_blockers(session)
@@ -336,13 +350,21 @@ Escenario de verdad-terreno (YAML):
 ```
 """
 
-_EXPORT_DONE_MARKERS = ("Entregable definitivo exportado", "/exports/")
 _SIM_DONE_MARKER = "FIN DE SESION"
 
 
 def _tail(transcript: list[str], n: int = 8) -> str:
     """Últimos turnos de la conversación — diagnóstico cuando el eval falla."""
     return "Últimos turnos:\n" + "\n".join(transcript[-n:]) if transcript else ""
+
+
+class AveriaDelInstrumento(RuntimeError):
+    """El eval no pudo medir — no es que el producto fallara.
+
+    429 tras el backoff, presupuesto agotado, proveedor caído. Se distingue del
+    fallo del producto porque un instrumento que acusa al producto de su propia
+    avería es peor que no medir.
+    """
 
 
 _RATE_LIMIT_MARKERS = ("rate_limit_error", "Error code: 429")
@@ -371,10 +393,11 @@ def _run_with_backoff(agent: Any, message: str, session_id: str) -> Any:
         out = agent.run(message, session_id=session_id)
         if not _is_rate_limited(out):
             return out
-    raise AssertionError(
-        "EVAL ABORTADO — la ventana de uso de la suscripción sigue saturada (429) "
-        f"tras {sum(_BACKOFF_SCHEDULE_S) // 60} minutos de backoff. "
-        "Reintente cuando la ventana se recupere."
+    raise AveriaDelInstrumento(
+        "la ventana de uso de la suscripción sigue saturada (429) tras "
+        f"{sum(_BACKOFF_SCHEDULE_S) // 60} minutos de backoff. Reintente cuando la "
+        "ventana se recupere. Esto NO dice nada sobre el producto: el eval no llegó "
+        "a medir."
     )
 
 
@@ -390,23 +413,296 @@ def _tokens_of(run_output: Any) -> int:
     return int(inp) + int(out)
 
 
-def run_llm_eval(max_turns: int = 80, token_budget: int = 3_000_000) -> RCMSession:
+
+@dataclass
+class ResultadoEval:
+    """Lo que produce una corrida. Se persiste entero: sin esto, cada corrida de
+    veinte minutos era información perdida en cuanto terminaba el proceso."""
+
+    session: RCMSession | None
+    scenario: dict[str, Any]
+    transcript: list[str] = field(default_factory=list)
+    herramientas_usadas: set[str] = field(default_factory=set)
+    export_path: Path | None = None
+    tokens: int = 0
+    turnos: int = 0
+    motivo_de_corte: str = ""
+    #: Qué modelo produjo esta corrida. Va en el volcado porque un acta que no dice
+    #: qué midió no se puede interpretar: una tanda entera se midió contra Haiku
+    #: creyendo que era Sonnet.
+    modelo: str = ""
+    #: Fase en la que está el facilitador ahora mismo. El simulador la necesita: su
+    #: guion le dice que lance cada sonda «en la fase que indica su campo phase», y
+    #: la fase es estado del facilitador — invisible para él si nadie se la pasa.
+    fase_actual: int = 1
+    #: Un intento por cada llamada a export_excel: (turno, fase, nº de faltantes).
+    #: Hace falta el CUÁNDO: la sonda `premature_export` provoca una llamada en la
+    #: fase 1, así que "llamó a export_excel" a secas se pone verde sin que el
+    #: análisis haya llegado a ninguna parte.
+    intentos_de_export: list[tuple[int, int, int]] | None = field(default_factory=list)
+    definitivo_antes_de_p6: bool | None = None
+    turnos_hasta_p5: int | None = None
+
+    def acta(self) -> Acta:
+        return levantar_acta(
+            self.session,
+            self.scenario,
+            transcript=self.transcript,
+            herramientas_usadas=self.herramientas_usadas,
+            intentos_de_export=self.intentos_de_export,
+            definitivo_antes_de_p6=self.definitivo_antes_de_p6,
+            turnos_hasta_p5=self.turnos_hasta_p5,
+        )
+
+    def como_json(self) -> dict[str, Any]:
+        return {
+            "modelo": self.modelo,
+            "motivo_de_corte": self.motivo_de_corte,
+            "turnos": self.turnos,
+            "tokens": self.tokens,
+            "herramientas_usadas": sorted(self.herramientas_usadas),
+            "intentos_de_export": [list(i) for i in self.intentos_de_export],
+            "definitivo_antes_de_p6": self.definitivo_antes_de_p6,
+            "turnos_hasta_p5": self.turnos_hasta_p5,
+            "transcript": self.transcript,
+            "session": self.session.model_dump(mode="json") if self.session else None,
+        }
+
+    @classmethod
+    def desde_json(cls, datos: dict[str, Any], scenario: dict[str, Any]) -> ResultadoEval:
+        """Reconstruye una corrida ya pagada. Es lo que permite desarrollar los
+        criterios y sus mensajes sin gastar un euro de API."""
+        crudo = datos.get("session")
+        return cls(
+            session=RCMSession.model_validate(crudo) if crudo else None,
+            scenario=scenario,
+            transcript=list(datos.get("transcript") or []),
+            herramientas_usadas=set(datos.get("herramientas_usadas") or []),
+            # Sin `or []`: un volcado que NO trae la clave (anterior al registro por
+            # turno) no es lo mismo que uno con cero intentos. El primero es «no se
+            # puede saber»; el segundo, «nunca lo intentó». Colapsarlos hacía que un
+            # volcado viejo acusara al producto de un fallo que no cometió.
+            intentos_de_export=(
+                [tuple(i) for i in datos["intentos_de_export"]]
+                if datos.get("intentos_de_export") is not None
+                else None
+            ),
+            tokens=int(datos.get("tokens") or 0),
+            turnos=int(datos.get("turnos") or 0),
+            modelo=str(datos.get("modelo") or ""),
+            motivo_de_corte=str(datos.get("motivo_de_corte") or ""),
+            definitivo_antes_de_p6=datos.get("definitivo_antes_de_p6"),
+            turnos_hasta_p5=datos.get("turnos_hasta_p5"),
+        )
+
+
+def run_llm_eval(max_turns: int = 80, token_budget: int = 3_000_000) -> ResultadoEval:
+    """Una conversación guiada LLM-contra-LLM. Mide; no juzga.
+
+    No reintenta ante un fallo del producto. Antes lo hacía en silencio y reportaba
+    verde si la segunda corrida pasaba: eso no es tolerancia a la varianza, es un
+    verde fabricado —si la primera falla y la segunda pasa, lo honesto es 1/2—. El
+    único reintento que queda vive en `_run_with_backoff` y es por 429, que es
+    avería del instrumento y no del producto.
+    """
     # token_budget cuenta tokens TOTALES (entrada+salida) de ambos agentes; la
     # entrada re-envía el historial completo en cada turno, así que crece
     # cuadráticamente — es un tope anti-descontrol, no un objetivo de costo.
-    """LLM-vs-LLM guided session with a single automatic retry."""
+    return _run_llm_eval_once(max_turns=max_turns, token_budget=token_budget)
+
+
+def _construye_settings_del_eval(workdir: Path, exports_dir: Path) -> Any:
+    """El eval fija el modelo con versión concreta; producción se queda con el alias.
+
+    Un alias flotante es lo que quieres en producción y lo que NO quieres midiendo:
+    un cambio de alias del proveedor te presenta una regresión falsa un martes por
+    la mañana. `add_datetime` se apaga porque mete entropía en el prompt de sistema
+    de cada corrida y, de paso, invalida el caché de prompt —que en 80 turnos con
+    historial creciente es dinero real.
+
+    Nota para quien venga a buscarlo: **no hay `seed`**. La clase `Claude` de agno
+    no expone el campo y la API de Anthropic no lo ofrece; pasarlo por
+    `request_params` sería un parámetro que el proveedor ignora, o sea determinismo
+    de mentira. No lo reintentes.
+    """
+    from rcm_runbook.config import Settings
+
+    # El modelo se fija EXPLÍCITAMENTE, no se hereda.
+    #
+    # `Settings` lee el .env de la raíz del proyecto, y ahí puede haber un
+    # RCM_MODEL_ID puesto para abaratar el desarrollo local. Heredarlo hace que el
+    # eval mida un modelo distinto del que se despliega —pasó: el .env fijaba
+    # claude-haiku-4-5 mientras producción servía el default claude-sonnet-4-5, y
+    # una tanda entera de corridas midió el modelo equivocado sin que nada lo
+    # dijera—. El eval mide el producto, así que por defecto usa lo mismo que
+    # produccion: el default del código.
+    modelo = os.environ.get("RCM_EVAL_MODEL_ID") or Settings.model_fields["model_id"].default
+    cfg = Settings(
+        db_path=str(workdir / "eval.db"),
+        exports_dir=str(exports_dir),
+        model_id=modelo,
+        temperature=0.0,
+        add_datetime=False,
+    )
+    cfg = _factura_contra_creditos_si_puede(cfg)
+    # Impreso siempre: ni el modelo ni la vía de facturación pueden quedar implícitos.
+    via = "suscripción" if cfg.claude_code_oauth_token else "créditos de API"
+    print(f"[eval] modelo bajo prueba: {cfg.model_id} · temperature={cfg.temperature} · vía {via}")
+    return cfg
+
+
+def _factura_contra_creditos_si_puede(cfg: Any) -> Any:
+    """Prefiere la clave de API a la suscripción, si hay clave.
+
+    Una conversación de 80 turnos satura la ventana de la suscripción, que además
+    se comparte con el trabajo interactivo: la primera corrida contra Sonnet se
+    pasó 25 minutos de backoff sin conseguir una sola respuesta, mientras la misma
+    petición por créditos respondía al instante. Medir el producto no debería
+    depender de una ventana que el propio trabajo del día agota.
+
+    Con `RCM_EVAL_USAR_SUSCRIPCION=1` se fuerza el camino de la suscripción.
+    """
+    import os as _os
+
+    if _os.environ.get("RCM_EVAL_USAR_SUSCRIPCION") == "1":
+        return cfg
+    if not cfg.claude_code_oauth_token:
+        return cfg
+    # Sólo se renuncia al OAuth si la clave está donde el SDK va a buscarla: en el
+    # entorno del proceso. `Settings` lee el .env por su cuenta, así que mirar allí
+    # dejaría el eval sin ninguna credencial cuando nadie ha cargado el fichero.
+    if not _os.environ.get("ANTHROPIC_API_KEY"):
+        _cargar_env_del_proyecto()
+    if not _os.environ.get("ANTHROPIC_API_KEY"):
+        return cfg
+    return cfg.model_copy(update={"claude_code_oauth_token": ""})
+
+
+def _cargar_env_del_proyecto() -> None:
+    """Vuelca el .env de la raíz al entorno, sin pisar lo que ya esté puesto.
+
+    `Settings` lee ese fichero para sus propios campos, pero el SDK de Anthropic
+    lee `ANTHROPIC_API_KEY` del entorno del proceso y no sabe nada del .env.
+    """
+    raiz = Path(__file__).parents[2] / ".env"
+    if not raiz.is_file():
+        return
+    for linea in raiz.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        clave, _, valor = linea.partition("=")
+        os.environ.setdefault(clave.strip(), valor.strip().strip("\"'"))
+
+
+def _definitivos(exports_dir: Path) -> list[Path]:
+    """Entregables DEFINITIVOS en disco, excluyendo borradores explícitamente.
+
+    `rglob("AMEF_*")` ya no casa con `BORRADOR_AMEF_*` porque fnmatch compara el
+    nombre completo, pero confiar en esa sutileza es cómo se reabre un agujero en
+    silencio el día que alguien cambie el prefijo. Se excluye a mano.
+    """
+    return [
+        p
+        for p in exports_dir.rglob(f"{PREFIJO_DEFINITIVO}_*.xlsx")
+        if not p.name.startswith(PREFIJO_BORRADOR)
+    ]
+
+
+def _guion_pendiente(
+    scenario: dict[str, Any], transcript: list[str], fase_actual: int = 1
+) -> str:
+    """Lo que a Carlos le queda por decir, recalculado en cada turno.
+
+    El facilitador compensa su ventana de 10 turnos con un digest del estado. El
+    simulador no tenía nada: con `num_history_runs=8`, a los treinta turnos ya no
+    recuerda qué modos mencionó ni qué sondas lanzó. La instrucción «menciona
+    TODOS los modos, incluido el no creíble» vive en el prompt de sistema (que
+    persiste), pero saber **si ya lo hizo** vivía en la historia (que se cae). Por
+    eso una corrida entera falló por un descarte que nadie llegó a enunciar.
+
+    Esto es determinismo por construcción, no por muestreo: no le fija el fraseo
+    —que es lo que el facilitador debe tolerar— sólo le recuerda su propia lista.
+    """
+    dichos = [t for t in transcript if t.startswith("[CARLOS")]
+    from tests.evals.acta import _dice, _tokens
+
+    # Carlos habla suelto ("el problema son los rodamientos"), no parafrasea la
+    # ficha del YAML, así que el parecido global del acta no sirve aquí. Se usan
+    # los tokens DISCRIMINANTES: los que separan un modo de los otros tres.
+    fichas = {
+        fm["ref"]: _tokens(f"{fm['description']} {fm['mechanism']}")
+        for fm in scenario["failure_modes"]
+    }
+    discriminantes = {
+        ref: t - set().union(*(o for r, o in fichas.items() if r != ref))
+        for ref, t in fichas.items()
+    }
+
+    def ya_lo_dijo(ref: str) -> bool:
+        marcas = discriminantes[ref]
+        if not marcas:
+            return False
+        # Dos marcas, no una: "eje" suelto puede aparecer hablando de rodamientos,
+        # y un falso "ya lo dijo" hace que se salte el modo — que es justo el fallo
+        # que esto viene a arreglar. Ante la duda, que lo repita.
+        hacen_falta = min(2, len(marcas))
+        return any(len(marcas & _tokens(t)) >= hacen_falta for t in dichos)
+
+    pendientes = [
+        f"{fm['ref']} ({fm['description']})"
+        for fm in scenario["failure_modes"]
+        if not ya_lo_dijo(fm["ref"])
+    ]
+    sin_lanzar = [
+        p for p in scenario.get("adversarial_probes", [])
+        if not _dice(dichos, p["utterance"])
+    ]
+    # La fase toca lanzarla cuando la conversación LA ALCANZA o la pasa: el guion
+    # dice «en la fase que indica su campo phase», y esa fase es estado del
+    # facilitador. Sin pasársela, la condición era inobservable para el simulador y
+    # las sondas no se lanzaban nunca — cero de cinco en veinte turnos.
+    toca_ahora = [p for p in sin_lanzar if p["phase"] <= fase_actual]
+    lineas = [
+        "Recordatorio de TU guion (no lo cites; úsalo para no repetirte).",
+        f"- El análisis va por la FASE {fase_actual}.",
+        "- Modos de falla que aún NO has mencionado: "
+        + (", ".join(pendientes) if pendientes else "ninguno, ya los diste todos"),
+    ]
+    if toca_ahora:
+        lineas.append(
+            "- SONDAS QUE TE TOCA LANZAR YA (una por turno, con su texto literal): "
+            + " | ".join(f'{p["id"]}: "{p["utterance"]}"' for p in toca_ahora)
+        )
+    else:
+        pendientes_futuras = [f'{p["id"]} (fase {p["phase"]})' for p in sin_lanzar]
+        resumen = (
+            ", ".join(pendientes_futuras) if pendientes_futuras
+            else "ninguna, ya las lanzaste todas"
+        )
+        lineas.append("- Sondas pendientes, aún no toca: " + resumen)
+    return "\n".join(lineas)
+
+
+def _estado_rcm(facilitator: Any, session_id: str) -> RCMSession | None:
     try:
-        return _run_llm_eval_once(max_turns=max_turns, token_budget=token_budget)
-    except AssertionError:
-        # Un único reintento automático: las conversaciones LLM son estocásticas.
-        return _run_llm_eval_once(max_turns=max_turns, token_budget=token_budget)
+        state = facilitator.get_session_state(session_id=session_id)
+    except Exception:
+        return None
+    raw = (state or {}).get(t.SESSION_KEY)
+    if raw is None:
+        return None
+    try:
+        return RCMSession.model_validate(raw)
+    except Exception:
+        return None
 
 
-def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
+def _run_llm_eval_once(max_turns: int, token_budget: int) -> ResultadoEval:
     from agno.agent import Agent
+    from agno.db.sqlite import SqliteDb
 
     from rcm_runbook.agent.factory import build_agent, build_model
-    from rcm_runbook.config import Settings
 
     scenario = load_scenario()
     scenario_yaml = SCENARIO_PATH.read_text(encoding="utf-8")
@@ -414,18 +710,27 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
     workdir = Path(tempfile.mkdtemp(prefix="rcm-llm-eval-"))
     exports_dir = workdir / "exports"
     exports_dir.mkdir()
-    cfg = Settings(db_path=str(workdir / "eval.db"), exports_dir=str(exports_dir))
+    cfg = _construye_settings_del_eval(workdir, exports_dir)
 
-    from agno.db.sqlite import SqliteDb
-
+    resultado = ResultadoEval(session=None, scenario=scenario, modelo=cfg.model_id)
     facilitator = build_agent(cfg)
+    # El simulador se queda con el muestreo del proveedor a propósito. Con
+    # temperature=0 entra en bucles —repite la misma frase hasta el corte— y, peor,
+    # fija el orden en que Carlos suelta los modos de falla: el eval empezaría a
+    # pasar por memorizar un guion en vez de por tolerar variedad de fraseo, que es
+    # justo lo que el facilitador tiene que saber hacer.
+    cfg_simulador = cfg.model_copy(update={"temperature": None})
     simulator = Agent(
         name="Carlos (simulador de interesado)",
-        model=build_model(cfg),
+        model=build_model(cfg_simulador),
         db=SqliteDb(db_file=str(workdir / "sim.db")),  # sin db no hay historial
         instructions=SIMULATOR_PROMPT_ES.format(scenario_yaml=scenario_yaml),
         add_history_to_context=True,
         num_history_runs=8,
+        dependencies={"guion_pendiente": lambda: _guion_pendiente(
+            scenario, resultado.transcript, resultado.fase_actual
+        )},
+        add_dependencies_to_context=True,
         markdown=False,
         telemetry=False,
     )
@@ -436,66 +741,74 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> RCMSession:
 
     session_id = f"eval-llm-{uuid.uuid4().hex[:8]}"
     sim_session_id = f"{session_id}-sim"
-    tokens_used = 0
-    export_confirmed = False
     message = (
         "Hola, soy Carlos Mendoza, ingeniero de mantenimiento. Con María Torres de "
         "operaciones queremos hacer el análisis RCM de la bomba P-101. ¿Empezamos?"
     )
-    transcript: list[str] = []
     try:
-        for _turn in range(max_turns):
+        for turno in range(max_turns):
+            resultado.turnos = turno + 1
             fac_out = _run_with_backoff(facilitator, message, session_id)
-            tokens_used += _tokens_of(fac_out)
+            resultado.tokens += _tokens_of(fac_out)
+            for llamada in getattr(fac_out, "tools", None) or []:
+                nombre = getattr(llamada, "tool_name", None)
+                if nombre:
+                    resultado.herramientas_usadas.add(nombre)
             reply = str(fac_out.content or "")
-            transcript.append(f"[FACILITADOR t{_turn}] {reply[:400]}")
-            # Estado, no prosa: el export definitivo se detecta por el .xlsx en disco
-            # (el agente puede parafrasear el resultado de la herramienta).
-            if list(exports_dir.rglob("AMEF_*.xlsx")):
-                export_confirmed = True
+            # Sin truncar: el transcript es la evidencia, y a 400 caracteres se
+            # perdía justo el turno que explicaba el fallo.
+            resultado.transcript.append(f"[FACILITADOR t{turno}] {reply}")
+
+            # El progreso se lee del ESTADO, no de la prosa: el agente parafrasea.
+            estado = _estado_rcm(facilitator, session_id)
+            if estado is not None:
+                resultado.fase_actual = estado.phase.value
+                llamadas = {
+                    getattr(c, "tool_name", None)
+                    for c in (getattr(fac_out, "tools", None) or [])
+                }
+                if "export_excel" in llamadas:
+                    resultado.intentos_de_export.append(
+                        (turno, estado.phase.value, len(compliance.export_blockers(estado)))
+                    )
+                if resultado.turnos_hasta_p5 is None and estado.phase.value >= 5:
+                    resultado.turnos_hasta_p5 = turno
+                if _definitivos(exports_dir) and resultado.definitivo_antes_de_p6 is None:
+                    # El definitivo sólo debe existir con el análisis cerrado.
+                    resultado.definitivo_antes_de_p6 = bool(
+                        compliance.export_blockers(estado)
+                    )
+
+            if _definitivos(exports_dir):
+                resultado.motivo_de_corte = "entregable definitivo en disco"
                 break
-            if any(marker in reply for marker in _EXPORT_DONE_MARKERS):
-                export_confirmed = True
-                break
-            if tokens_used > token_budget:
-                raise AssertionError(
-                    f"EVAL FALLIDO — presupuesto de tokens agotado "
-                    f"({tokens_used} > {token_budget}) antes de completar la sesión.\n"
-                    + _tail(transcript)
+            if resultado.tokens > token_budget:
+                raise AveriaDelInstrumento(
+                    f"presupuesto de tokens agotado ({resultado.tokens} > "
+                    f"{token_budget}) antes de completar la sesión"
                 )
+
             sim_out = _run_with_backoff(simulator, reply, sim_session_id)
-            tokens_used += _tokens_of(sim_out)
+            resultado.tokens += _tokens_of(sim_out)
             message = str(sim_out.content or "")
-            transcript.append(f"[CARLOS t{_turn}] {message[:400]}")
+            resultado.transcript.append(f"[CARLOS t{turno}] {message}")
             if _SIM_DONE_MARKER in message:
-                export_confirmed = bool(list(exports_dir.rglob("AMEF_*.xlsx")))
+                resultado.motivo_de_corte = "el simulador dio la sesión por terminada"
                 break
         else:
-            raise AssertionError(
-                f"EVAL FALLIDO — la sesión no terminó en {max_turns} turnos "
-                f"(tokens usados: {tokens_used}).\n" + _tail(transcript)
-            )
+            resultado.motivo_de_corte = f"no terminó en {max_turns} turnos"
 
-        if not export_confirmed:
-            raise AssertionError(
-                "EVAL FALLIDO — no se generó el export definitivo (.xlsx) en disco.\n"
-                + _tail(transcript)
-            )
+        resultado.session = _estado_rcm(facilitator, session_id)
+        if resultado.session is None and not resultado.motivo_de_corte:
+            resultado.motivo_de_corte = "no se encontró el estado RCM en la sesión"
 
-        # Estado final desde la base de sesiones del agente (no desde la prosa)
-        state = facilitator.get_session_state(session_id=session_id)
-        raw = (state or {}).get(t.SESSION_KEY)
-        if raw is None:
-            raise AssertionError(
-                "EVAL FALLIDO — no se encontró el estado RCM en la sesión del facilitador."
-            )
-        session = RCMSession.model_validate(raw)
-        _assert_final_state(session, scenario)
-
-        # El export debe reproducirse limpio desde el estado final
-        export_path = export_xlsx(session, str(exports_dir))
-        if not export_path.is_file():
-            raise AssertionError("EVAL FALLIDO — el archivo exportado no existe.")
-        return session
+        # El entregable debe reproducirse limpio desde el estado final.
+        if resultado.session is not None:
+            try:
+                camino = export_xlsx(resultado.session, str(exports_dir))
+                resultado.export_path = camino if camino.is_file() else None
+            except Exception as exc:  # el porqué importa más que el hecho
+                resultado.transcript.append(f"[ARNÉS] export desde estado final falló: {exc}")
+        return resultado
     finally:
         t.settings.exports_dir = previous_exports_dir

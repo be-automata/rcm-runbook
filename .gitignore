@@ -88,3 +88,9 @@ tests/unit/_arnes_tmp*/
 .agents/
 .codex/
 .swarm/
+
+# Volcados de corridas del eval largo: estado final, transcript y acta. Se
+# guardan bajo el proyecto para que sobrevivan a la limpieza de /tmp y poder
+# reanalizarlos con --eval-session sin gastar API, pero no se versionan: pesan
+# y son evidencia de una corrida concreta, no del código.
+data/evals/
