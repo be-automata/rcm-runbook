@@ -316,3 +316,46 @@ def test_el_volcado_dice_que_modelo_lo_produjo_y_donde_vive(escenario):
     partes = DIRECTORIO_DE_ARTEFACTOS.parts
     assert "tmp" not in partes and "temp" not in partes, DIRECTORIO_DE_ARTEFACTOS
     assert partes[-2:] == ("data", "evals"), DIRECTORIO_DE_ARTEFACTOS
+
+
+class TestElGuionDelSimulador:
+    """El simulador no puede cumplir una instrucción condicionada a algo que no ve.
+
+    Su guion dice «lanza cada sonda en la fase que indica su campo `phase`», pero la
+    fase es estado del FACILITADOR. La primera corrida real lanzó cero de cinco
+    sondas en veinte turnos: la condición era inobservable. El arnés ya leía la fase
+    en cada turno para otras cosas; ahora se la pasa.
+    """
+
+    def test_en_fase_1_solo_toca_la_sonda_de_fase_1(self, escenario):
+        from tests.evals.stakeholder_sim import _guion_pendiente
+
+        texto = _guion_pendiente(escenario, [], fase_actual=1)
+        assert "FASE 1" in texto
+        assert "premature_export" in texto
+        toca = texto.split("TE TOCA LANZAR YA")[1]
+        assert "vague_standard" not in toca and "ohf_on_safety_mode" not in toca
+
+    def test_al_avanzar_la_fase_se_acumulan_las_pendientes(self, escenario):
+        from tests.evals.stakeholder_sim import _guion_pendiente
+
+        toca = _guion_pendiente(escenario, [], fase_actual=5).split("TE TOCA LANZAR YA")[1]
+        for sid in ("premature_export", "vague_standard", "cause_restates_mode",
+                    "ohf_on_safety_mode"):
+            assert sid in toca, sid
+
+    def test_una_sonda_ya_lanzada_deja_de_pedirse(self, escenario):
+        """Sin esto, Carlos repetiría la misma sonda cada turno."""
+        from tests.evals.stakeholder_sim import _guion_pendiente
+
+        sonda = next(p for p in escenario["adversarial_probes"] if p["id"] == "premature_export")
+        texto = _guion_pendiente(escenario, [f"[CARLOS t2] {sonda['utterance']}"], fase_actual=1)
+        assert "premature_export" not in texto.split("- Modos")[0] + texto.split("\n")[-1]
+
+    def test_un_modo_ya_mencionado_deja_de_pedirse(self, escenario):
+        from tests.evals.stakeholder_sim import _guion_pendiente
+
+        dicho = "[CARLOS t3] El presostato PSL-101 se queda sin respuesta ante la caída de succión"
+        texto = _guion_pendiente(escenario, [dicho], fase_actual=3)
+        linea = next(l for l in texto.splitlines() if l.startswith("- Modos"))
+        assert "FM-003" not in linea and "FM-001" in linea

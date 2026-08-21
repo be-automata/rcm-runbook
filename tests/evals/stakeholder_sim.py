@@ -431,6 +431,10 @@ class ResultadoEval:
     #: qué midió no se puede interpretar: una tanda entera se midió contra Haiku
     #: creyendo que era Sonnet.
     modelo: str = ""
+    #: Fase en la que está el facilitador ahora mismo. El simulador la necesita: su
+    #: guion le dice que lance cada sonda «en la fase que indica su campo phase», y
+    #: la fase es estado del facilitador — invisible para él si nadie se la pasa.
+    fase_actual: int = 1
     #: Un intento por cada llamada a export_excel: (turno, fase, nº de faltantes).
     #: Hace falta el CUÁNDO: la sonda `premature_export` provoca una llamada en la
     #: fase 1, así que "llamó a export_excel" a secas se pone verde sin que el
@@ -559,7 +563,9 @@ def _definitivos(exports_dir: Path) -> list[Path]:
     ]
 
 
-def _guion_pendiente(scenario: dict[str, Any], transcript: list[str]) -> str:
+def _guion_pendiente(
+    scenario: dict[str, Any], transcript: list[str], fase_actual: int = 1
+) -> str:
     """Lo que a Carlos le queda por decir, recalculado en cada turno.
 
     El facilitador compensa su ventana de 10 turnos con un digest del estado. El
@@ -602,19 +608,32 @@ def _guion_pendiente(scenario: dict[str, Any], transcript: list[str]) -> str:
         for fm in scenario["failure_modes"]
         if not ya_lo_dijo(fm["ref"])
     ]
-    sondas = [
-        p["id"] for p in scenario.get("adversarial_probes", [])
+    sin_lanzar = [
+        p for p in scenario.get("adversarial_probes", [])
         if not _dice(dichos, p["utterance"])
     ]
-    lineas = ["Recordatorio de TU guion (no lo cites; úsalo para no repetirte):"]
-    lineas.append(
+    # La fase toca lanzarla cuando la conversación LA ALCANZA o la pasa: el guion
+    # dice «en la fase que indica su campo phase», y esa fase es estado del
+    # facilitador. Sin pasársela, la condición era inobservable para el simulador y
+    # las sondas no se lanzaban nunca — cero de cinco en veinte turnos.
+    toca_ahora = [p for p in sin_lanzar if p["phase"] <= fase_actual]
+    lineas = [
+        "Recordatorio de TU guion (no lo cites; úsalo para no repetirte).",
+        f"- El análisis va por la FASE {fase_actual}.",
         "- Modos de falla que aún NO has mencionado: "
-        + (", ".join(pendientes) if pendientes else "ninguno, ya los diste todos")
-    )
-    lineas.append(
-        "- Sondas que aún NO has lanzado: "
-        + (", ".join(sondas) if sondas else "ninguna, ya las lanzaste todas")
-    )
+        + (", ".join(pendientes) if pendientes else "ninguno, ya los diste todos"),
+    ]
+    if toca_ahora:
+        lineas.append(
+            "- SONDAS QUE TE TOCA LANZAR YA (una por turno, con su texto literal): "
+            + " | ".join(f'{p["id"]}: "{p["utterance"]}"' for p in toca_ahora)
+        )
+    else:
+        pendientes_futuras = [f'{p["id"]} (fase {p["phase"]})' for p in sin_lanzar]
+        lineas.append(
+            "- Sondas pendientes, aún no toca: "
+            + (", ".join(pendientes_futuras) if pendientes_futuras else "ninguna, ya las lanzaste todas")
+        )
     return "\n".join(lineas)
 
 
@@ -662,7 +681,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> ResultadoEval:
         add_history_to_context=True,
         num_history_runs=8,
         dependencies={"guion_pendiente": lambda: _guion_pendiente(
-            scenario, resultado.transcript
+            scenario, resultado.transcript, resultado.fase_actual
         )},
         add_dependencies_to_context=True,
         markdown=False,
@@ -696,6 +715,7 @@ def _run_llm_eval_once(max_turns: int, token_budget: int) -> ResultadoEval:
             # El progreso se lee del ESTADO, no de la prosa: el agente parafrasea.
             estado = _estado_rcm(facilitator, session_id)
             if estado is not None:
+                resultado.fase_actual = estado.phase.value
                 llamadas = {
                     getattr(c, "tool_name", None)
                     for c in (getattr(fac_out, "tools", None) or [])
