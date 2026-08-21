@@ -568,10 +568,31 @@ def _factura_contra_creditos_si_puede(cfg: Any) -> Any:
         return cfg
     if not cfg.claude_code_oauth_token:
         return cfg
-    # La clave puede venir del entorno o del .env que ya leyó Settings.
+    # Sólo se renuncia al OAuth si la clave está donde el SDK va a buscarla: en el
+    # entorno del proceso. `Settings` lee el .env por su cuenta, así que mirar allí
+    # dejaría el eval sin ninguna credencial cuando nadie ha cargado el fichero.
+    if not _os.environ.get("ANTHROPIC_API_KEY"):
+        _cargar_env_del_proyecto()
     if not _os.environ.get("ANTHROPIC_API_KEY"):
         return cfg
     return cfg.model_copy(update={"claude_code_oauth_token": ""})
+
+
+def _cargar_env_del_proyecto() -> None:
+    """Vuelca el .env de la raíz al entorno, sin pisar lo que ya esté puesto.
+
+    `Settings` lee ese fichero para sus propios campos, pero el SDK de Anthropic
+    lee `ANTHROPIC_API_KEY` del entorno del proceso y no sabe nada del .env.
+    """
+    raiz = Path(__file__).parents[2] / ".env"
+    if not raiz.is_file():
+        return
+    for linea in raiz.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if not linea or linea.startswith("#") or "=" not in linea:
+            continue
+        clave, _, valor = linea.partition("=")
+        os.environ.setdefault(clave.strip(), valor.strip().strip("\"'"))
 
 
 def _definitivos(exports_dir: Path) -> list[Path]:

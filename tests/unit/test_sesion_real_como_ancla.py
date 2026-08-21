@@ -155,6 +155,7 @@ def test_el_eval_no_quema_la_ventana_de_la_suscripcion(monkeypatch):
     import tempfile
     from pathlib import Path
 
+    import tests.evals.stakeholder_sim as sim
     from tests.evals.stakeholder_sim import _construye_settings_del_eval
 
     tmp = Path(tempfile.mkdtemp())
@@ -167,7 +168,10 @@ def test_el_eval_no_quema_la_ventana_de_la_suscripcion(monkeypatch):
     monkeypatch.setenv("RCM_EVAL_USAR_SUSCRIPCION", "1")
     assert _construye_settings_del_eval(tmp, tmp).claude_code_oauth_token == "oauth-test"
 
-    # Y sin clave de API no hay nada que preferir: se usa la suscripción.
+    # Y sin clave de API en ninguna parte no hay nada que preferir: suscripción.
+    # Se neutraliza el rescate desde el .env del proyecto, que en esta máquina sí
+    # tiene clave; lo que se prueba es el caso «no hay credencial de API».
     monkeypatch.delenv("RCM_EVAL_USAR_SUSCRIPCION")
     monkeypatch.delenv("ANTHROPIC_API_KEY")
+    monkeypatch.setattr(sim, "_cargar_env_del_proyecto", lambda: None)
     assert _construye_settings_del_eval(tmp, tmp).claude_code_oauth_token == "oauth-test"
