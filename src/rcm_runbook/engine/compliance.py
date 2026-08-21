@@ -241,18 +241,28 @@ def bloqueadores_de_incoherencia(session: RCMSession) -> list[str]:
     aunque esté completo. Un dispositivo de protección que se prueba más espaciado
     que su propio intervalo calculado no es "otro camino igualmente válido".
 
-    Se calcula llamando a las mismas funciones que alimentan `export_blockers`, no
-    buscando subcadenas en su prosa: si mañana cambia la redacción de un mensaje,
-    esta clasificación sigue siendo correcta.
+    Es siempre un SUBCONJUNTO de `export_blockers`, y lo es por construcción: se
+    parte de lo que la compuerta emitió y se seleccionan los que vienen de un
+    generador de incoherencias. Nunca se reconstruye el criterio de la compuerta.
+
+    La primera versión sí lo reconstruía —recorría los modos llamando a
+    `_residual_issues`— y divergía en dos condiciones que `_gate_p5` aplica y esta
+    función ignoraba: la compuerta sólo mira modos CREÍBLES, y hace `continue`
+    antes de llegar al residual cuando el modo aún no tiene decisión. El resultado
+    eran incoherencias que no existían como bloqueadores, con dos daños: rompían la
+    partición en la que se apoya `bloqueadores_por_clase` y podían poner en rojo el
+    criterio obligatorio `cero_incoherencias` del eval por algo que no bloqueaba
+    nada. Filtrar en vez de reconstruir hace imposible esa clase de deriva.
     """
-    incoherencias = tareas_contradictorias(session)
-    incoherencias += tareas_mas_lentas_que_el_ffi(session)
-    for fmid in session.failure_modes:
-        # _residual_issues vive dentro de la compuerta P5, así que aquí se
-        # reconstruye con el mismo prefijo que le pone export_blockers.
-        for issue in _residual_issues(session, fmid):
-            incoherencias.append(f"[Fase {Phase.P5_DECISION.value}] {issue}")
-    return incoherencias
+    de_plan = set(tareas_contradictorias(session)) | set(tareas_mas_lentas_que_el_ffi(session))
+    residuales = {
+        f"[Fase {Phase.P5_DECISION.value}] {issue}"
+        for fmid in session.failure_modes
+        for issue in _residual_issues(session, fmid)
+    }
+    delatores = de_plan | residuales
+    # Se conserva el orden de export_blockers: es el que ve quien lee el informe.
+    return [b for b in export_blockers(session) if b in delatores]
 
 
 def bloqueadores_por_clase(session: RCMSession) -> dict[str, list[str]]:

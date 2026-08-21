@@ -151,7 +151,12 @@ def test_perder_un_modo_del_escenario_se_nota(
 ):
     """Antes esto era «≥3 modos creíbles»: tres modos inventados también pasaban."""
     rota = sesion_buena.model_copy(deep=True)
+    # Se quita el modo Y todo lo que colgaba de él: una sesión real no puede tener
+    # una decisión ni una tarea para un modo que no existe — `_require` lo impide.
     del rota.failure_modes["FM-002"]
+    for coleccion in (rota.effects, rota.controls, rota.risk_scores, rota.residual_scores,
+                      rota.decisions, rota.actions, rota.tasks):
+        coleccion.pop("FM-002", None)
     acta = _acta_de(rota, escenario, transcript_con_sondas)
     assert acta["modos_del_escenario_presentes"].estado is Estado.ROJO
     assert "FM-002" in acta["modos_del_escenario_presentes"].evidencia

@@ -175,3 +175,82 @@ def test_el_eval_no_quema_la_ventana_de_la_suscripcion(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY")
     monkeypatch.setattr(sim, "_cargar_env_del_proyecto", lambda: None)
     assert _construye_settings_del_eval(tmp, tmp).claude_code_oauth_token == "oauth-test"
+
+
+# --- La partición no puede inventarse bloqueadores que no existen -----------
+
+
+def _sesion_con_severidad_residual_menor(credible: bool, con_decision: bool):
+    """Un modo cuya severidad residual bajó sin rediseño: incoherencia de manual."""
+    from rcm_runbook.engine.decision_logic import DecisionAnswers, decide
+    from rcm_runbook.models.domain import FunctionKind, RiskScore
+
+    s = RCMSession()
+    s.add_function(kind=FunctionKind.PRIMARIA, verb="bombear", object="crudo estabilizado",
+                   performance_standard="250 m3/h a 12 bar")
+    s.add_functional_failure(function_id="F-001", description="No entrega caudal alguno")
+    s.add_failure_mode(
+        functional_failure_id="FF-001",
+        description="Rotura del eje por defecto de material", mechanism="Falla de Material",
+        iso_code="BRD", cause="Defecto de fabricacion en la forja",
+        root_cause="Control de calidad insuficiente del proveedor",
+        failure_pattern="Mortalidad Infantil", credible=True,
+    )
+    s.set_effect(failure_mode_id="FM-001", local="Vibracion creciente",
+                 system="Parada de la bomba", plant="Perdida de despacho",
+                 is_hidden=False, operational=True)
+    s.set_risk_score(RiskScore(failure_mode_id="FM-001", severity=8, occurrence=3, detection=4))
+    s.set_risk_score(RiskScore(failure_mode_id="FM-001", severity=3, occurrence=3,
+                               detection=4, is_residual=True))
+    if con_decision:
+        fm, ef = s.failure_modes["FM-001"], s.effects["FM-001"]
+        s.set_decision(decide(fm, ef, DecisionAnswers(pf_interval_sufficient=True)))
+    if not credible:
+        s.failure_modes["FM-001"] = s.failure_modes["FM-001"].model_copy(
+            update={"credible": False,
+                    "non_credible_discard": "Eje sobredimensionado; 12 anios sin indicios"}
+        )
+    return s
+
+
+@pytest.mark.parametrize(
+    "credible,con_decision",
+    [(False, True), (False, False), (True, False), (True, True)],
+)
+def test_la_incoherencia_nunca_sale_de_los_bloqueadores_reales(credible, con_decision):
+    """`bloqueadores_de_incoherencia` es un SUBCONJUNTO de `export_blockers`.
+
+    La primera versión reconstruía el criterio de la compuerta en vez de filtrar lo
+    que emite, y divergía en dos condiciones que `_gate_p5` aplica: sólo mira modos
+    creíbles, y hace `continue` antes del residual cuando el modo aún no tiene
+    decisión. Salían incoherencias que no bloqueaban nada — rompiendo la partición
+    y pudiendo poner en rojo el criterio obligatorio `cero_incoherencias` del eval
+    por un motivo espurio.
+    """
+    from rcm_runbook.engine.compliance import bloqueadores_de_incoherencia
+
+    s = _sesion_con_severidad_residual_menor(credible, con_decision)
+    inventadas = set(bloqueadores_de_incoherencia(s)) - set(export_blockers(s))
+    assert not inventadas, inventadas
+
+
+@pytest.mark.parametrize(
+    "credible,con_decision",
+    [(False, True), (False, False), (True, False), (True, True)],
+)
+def test_las_dos_clases_particionan_exactamente(credible, con_decision):
+    """Ni se pierde ni se duplica un bloqueador al clasificarlo."""
+    s = _sesion_con_severidad_residual_menor(credible, con_decision)
+    clases = bloqueadores_por_clase(s)
+    assert (
+        len(clases["incoherencia"]) + len(clases["incompletitud"]) == len(export_blockers(s))
+    )
+    assert not set(clases["incoherencia"]) & set(clases["incompletitud"])
+
+
+def test_un_modo_creible_y_decidido_si_delata_su_severidad_residual():
+    """El contrapunto: al arreglar el falso positivo no se pierde el verdadero."""
+    from rcm_runbook.engine.compliance import bloqueadores_de_incoherencia
+
+    s = _sesion_con_severidad_residual_menor(credible=True, con_decision=True)
+    assert any("severidad residual" in b for b in bloqueadores_de_incoherencia(s))
