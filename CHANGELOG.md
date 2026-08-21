@@ -12,6 +12,25 @@ otro artefacto y lleva su propio número.
 
 ### Corregido
 
+- **El simulador no lanzaba ninguna sonda adversaria.** Cero de cinco en veinte
+  turnos. Su guion dice «lanza cada sonda en la fase que indica su campo
+  `phase`», pero la fase es estado del *facilitador*: la condición era
+  inobservable para él y nunca se cumplía. El arnés ya leía la fase en cada turno;
+  ahora se la pasa junto con las sondas que tocan y su texto literal.
+
+- **Los volcados de corrida vivían en `/tmp`.** El primero se perdió con la
+  limpieza del sistema —veinte minutos y 1,3M de tokens de evidencia— justo
+  después de escribir que «una corrida sin volcado es información perdida». Ahora
+  van a `data/evals/`, se numeran en vez de pisarse, y registran qué modelo los
+  produjo: un acta que no dice qué midió no se puede interpretar.
+
+- **El criterio de cierre medía lo contrario de lo que pretendía.** Miraba si
+  `export_excel` aparecía entre las herramientas usadas, pero la sonda de export
+  prematuro provoca esa llamada en la fase 1: el criterio se ponía verde sin que
+  el análisis avanzara. Ahora registra el turno, la fase y los faltantes de cada
+  intento.
+
+
 - **El eval largo medía Haiku 4.5 mientras producción sirve Sonnet 4.5.**
   `Settings` lee el `.env` de la raíz del proyecto, donde hay un `RCM_MODEL_ID`
   puesto para abaratar el desarrollo local; Cloudflare no lo sobrescribe, así que
@@ -48,7 +67,11 @@ otro artefacto y lleva su propio número.
 - **Las cinco sondas adversarias se comprueban.** Declaraban su
   `expected_behavior` en el escenario y ninguna se verificaba: el eval caro era el
   que menos conducta medía. Se miden por estado y por llamadas a herramienta,
-  nunca por prosa.
+  nunca por prosa. Son **condicionadas**: rojo si se lanzan y el facilitador las
+  maneja mal, sin evaluar si el simulador nunca las lanza. Estaban clasificadas
+  como obligatorias hasta que la primera corrida real puso cuatro criterios en
+  rojo contra el facilitador por algo que no había hecho — que es justo el defecto
+  de atribución que este rediseño venía a quitar.
 
 - **`validate_ja1011` pasa de compuerta a medición** en el eval. Está documentada
   como non-blocking en producción, y devuelve lista vacía tanto en la corrida
