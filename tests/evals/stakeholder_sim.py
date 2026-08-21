@@ -630,10 +630,11 @@ def _guion_pendiente(
         )
     else:
         pendientes_futuras = [f'{p["id"]} (fase {p["phase"]})' for p in sin_lanzar]
-        lineas.append(
-            "- Sondas pendientes, aún no toca: "
-            + (", ".join(pendientes_futuras) if pendientes_futuras else "ninguna, ya las lanzaste todas")
+        resumen = (
+            ", ".join(pendientes_futuras) if pendientes_futuras
+            else "ninguna, ya las lanzaste todas"
         )
+        lineas.append("- Sondas pendientes, aún no toca: " + resumen)
     return "\n".join(lineas)
 
 

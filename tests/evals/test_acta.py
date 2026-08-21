@@ -357,5 +357,5 @@ class TestElGuionDelSimulador:
 
         dicho = "[CARLOS t3] El presostato PSL-101 se queda sin respuesta ante la caída de succión"
         texto = _guion_pendiente(escenario, [dicho], fase_actual=3)
-        linea = next(l for l in texto.splitlines() if l.startswith("- Modos"))
+        linea = next(x for x in texto.splitlines() if x.startswith("- Modos"))
         assert "FM-003" not in linea and "FM-001" in linea
