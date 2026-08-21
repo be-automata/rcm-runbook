@@ -7,7 +7,7 @@ stakeholders when `advance_phase` or `export_excel` refuses.
 from __future__ import annotations
 
 from rcm_runbook.models.catalogs import FRECUENCIA_EN_HORAS, MaintenancePolicy
-from rcm_runbook.models.domain import FunctionKind, _sin_acentos
+from rcm_runbook.models.domain import FunctionKind, sin_acentos
 from rcm_runbook.models.session import Phase, RCMSession
 
 REDESIGN_FAMILY = {MaintenancePolicy.RD, MaintenancePolicy.EXED, MaintenancePolicy.CC}
@@ -199,7 +199,7 @@ def firma_es_identificable(firma: str) -> bool:
     marcadores genéricos conocidos. Es deliberadamente laxo — busca atajar el
     relleno, no validar identidades.
     """
-    limpia = _sin_acentos(firma).lower().strip()
+    limpia = sin_acentos(firma).lower().strip()
     if not limpia or limpia in _FIRMAS_GENERICAS:
         return False
     palabras = [p for p in limpia.replace(",", " ").split() if len(p) > 1]

@@ -121,8 +121,8 @@ class FailureMode(BaseModel):
         # validador no lo usaba, así que add_failure_mode consideraba
         # «vibracion» y «vibración» el mismo modo mientras este los veía
         # distintos.
-        cause = _sin_acentos(self.cause).strip().lower()
-        mode = _sin_acentos(self.description).strip().lower()
+        cause = sin_acentos(self.cause).strip().lower()
+        mode = sin_acentos(self.description).strip().lower()
         if cause == mode or (len(cause) > 12 and (cause in mode or mode in cause)):
             raise ValueError(
                 "La causa no puede ser una reformulación del modo de falla. "
@@ -131,7 +131,15 @@ class FailureMode(BaseModel):
         return self
 
 
-def _sin_acentos(t: str) -> str:
+def sin_acentos(t: str) -> str:
+    """Quita tildes y diacríticos para comparar textos que el usuario escribe a mano.
+
+    Público a propósito: lo necesitan el modelo de dominio, la sesión y el motor de
+    cumplimiento. Estuvo duplicado byte a byte entre `domain` y `RCMSession`, y
+    tener dos copias de un comparador es cómo se llega a que «vibración» y
+    «vibracion» sean el mismo modo para una y distintos para la otra —que es
+    exactamente el defecto que documenta el validador de `FailureMode`—.
+    """
     plano = unicodedata.normalize("NFKD", t)
     return "".join(c for c in plano if not unicodedata.combining(c))
 

@@ -7,7 +7,6 @@ errors in Spanish. Serialization crosses exactly one boundary:
 from __future__ import annotations
 
 import re
-import unicodedata
 from enum import IntEnum
 from typing import Any
 
@@ -29,6 +28,7 @@ from rcm_runbook.models.domain import (
     decision_snapshot,
     score_snapshot,
     sello_de_decision_heredado,
+    sin_acentos,
 )
 
 SCHEMA_VERSION = 1
@@ -194,18 +194,13 @@ class RCMSession(BaseModel):
         return distintos
 
     @staticmethod
-    def _sin_acentos(t: str) -> str:
-        plano = unicodedata.normalize("NFKD", t)
-        return "".join(c for c in plano if not unicodedata.combining(c))
-
-    @staticmethod
     def _normalizar(t: str) -> str:
         """Baja el texto a sus palabras: sin acentos, sin puntuación, sin
         paréntesis explicativos y sin espacios de más. Solo para _casi_igual —
         aplicarlo también a _same_text haría pasar por «la misma llamada» una
         corrección con paréntesis, y se descartaría el dato corregido."""
         sin_parentesis = re.sub(r"\([^)]*\)", " ", t)
-        plano = RCMSession._sin_acentos(sin_parentesis)
+        plano = sin_acentos(sin_parentesis)
         return " ".join(re.sub(r"[^\w\s]", " ", plano).casefold().split())
 
     @staticmethod
@@ -213,8 +208,8 @@ class RCMSession(BaseModel):
         """El mismo texto: el LLM repite la llamada literal tras un error de
         validación y no debe duplicar la entidad. Nada más que mayúsculas,
         acentos y espacios."""
-        return " ".join(RCMSession._sin_acentos(a).casefold().split()) == " ".join(
-            RCMSession._sin_acentos(b).casefold().split()
+        return " ".join(sin_acentos(a).casefold().split()) == " ".join(
+            sin_acentos(b).casefold().split()
         )
 
     @staticmethod

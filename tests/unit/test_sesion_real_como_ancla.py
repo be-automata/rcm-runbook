@@ -254,3 +254,23 @@ def test_un_modo_creible_y_decidido_si_delata_su_severidad_residual():
 
     s = _sesion_con_severidad_residual_menor(credible=True, con_decision=True)
     assert any("severidad residual" in b for b in bloqueadores_de_incoherencia(s))
+
+
+def test_hay_un_solo_comparador_de_acentos_en_el_proyecto():
+    """Una sola implementación, usada por dominio, sesión y motor.
+
+    Estuvo duplicada byte a byte entre `domain` y `RCMSession`. Dos copias de un
+    comparador es cómo se llega a que «vibración» y «vibracion» sean el mismo modo
+    para una y distintos para la otra — el defecto que ya documenta el validador de
+    `FailureMode`. Este test falla si alguien vuelve a copiarla.
+    """
+    from rcm_runbook.engine import compliance
+    from rcm_runbook.models import session as sesion_mod
+    from rcm_runbook.models.domain import sin_acentos
+
+    assert compliance.sin_acentos is sin_acentos
+    assert sesion_mod.sin_acentos is sin_acentos
+    assert not hasattr(RCMSession, "_sin_acentos"), "volvió a aparecer una copia privada"
+    # Y el comportamiento que justifica que sea una sola: acentos y mayúsculas no
+    # deben partir un mismo modo en dos.
+    assert RCMSession._same_text("Vibración creciente", "vibracion creciente")
