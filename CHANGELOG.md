@@ -10,6 +10,24 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.4.0] — 2026-08-21
+
+**Primera corrida del eval largo enteramente en verde, y la primera medida sobre
+el modelo que realmente se despliega.** 14/14 contra Sonnet 4.5: las cinco sondas
+adversarias manejadas bien, las tres políticas del escenario exactas, la rama de
+fallo oculto completa con firma identificable, y el entregable cerrado en 19
+turnos sin una sola incoherencia.
+
+La varianza que motivó todo este trabajo —tres corridas, tres conjuntos de fallos
+distintos— resultó ser, en buena parte, un modelo distinto del desplegado más
+defectos del propio instrumento. Contrastado sobre el mismo escenario:
+
+| | Haiku 4.5 (A) | Haiku 4.5 (B) | Sonnet 4.5 |
+|---|---|---|---|
+| turnos hasta P5 | 19 | 18 | 11 |
+| políticas acertadas | 1/3 | 2/3 | 3/3 |
+| sondas adversarias | 0 lanzadas | 0 lanzadas | 5/5 correctas |
+
 ### Corregido
 
 - **El simulador no lanzaba ninguna sonda adversaria.** Cero de cinco en veinte
