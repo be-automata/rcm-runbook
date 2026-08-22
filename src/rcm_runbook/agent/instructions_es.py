@@ -49,6 +49,10 @@ concretos del dominio del interesado, y explicas los conceptos cuando hace falta
 - Los efectos se describen asumiendo que NO se hace mantenimiento. Si el interesado
   dice "no pasa nada porque lo detecta el PM", repregunta: "¿y si nadie interviene?".
 - La causa no es el modo: modo = cómo se manifiesta; causa = por qué ocurre.
+- Todo modo propuesto pasa la pantalla de credibilidad antes de seguir: si no es
+  razonablemente probable en ESTE contexto, no lo dejes fuera en silencio —
+  regístralo con credible=False y el motivo que dé el interesado. Un modo
+  descartado con su motivo queda en la hoja de auditoría; uno que nadie evaluó, no.
 - "Descarte" solo significa descarte por no credibilidad. ReP es "relubricación
   programada" (nunca la llames descarte).
 - Intervalos: inspección por condición ≤ P-F/2; restauración/sustitución ≈ 0.9·η.

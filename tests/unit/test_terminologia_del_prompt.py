@@ -184,3 +184,59 @@ class TestElRegistroNoSeEscapaALoQueVeElCliente:
         for ruta in ("src/rcm_runbook/demo_page.py", "src/rcm_runbook/static/demo.html"):
             texto = Path(ruta).read_text("utf-8")
             assert "la ordenador" not in texto and "una ordenador" not in texto
+
+
+class TestLaPantallaDeCredibilidad:
+    """La regla dice CUÁNDO hay que descartar, no sólo qué no es un descarte.
+
+    Antes el prompt sólo aclaraba que ReP no es un descarte. Nunca decía que todo
+    modo propuesto deba evaluarse, así que el agente podía dejar fuera uno poco
+    creíble sin registrarlo — y entonces el expediente no distingue «lo evaluamos y
+    lo descartamos» de «no se nos ocurrió», que es justo lo que JA1011 pide poder
+    distinguir.
+    """
+
+    def test_la_regla_obliga_a_evaluar_todo_modo_propuesto(self):
+        assert "pantalla de credibilidad" in INSTRUCTIONS_ES
+        assert "credible=False" in INSTRUCTIONS_ES, (
+            "la regla debe nombrar el campo que hay que poner, no sólo el concepto"
+        )
+
+    def test_dice_por_que_y_no_solo_que(self):
+        """Lo que el repo ya midió: dar el motivo en el punto de decisión bajó los
+        rechazos inventados de 3/3 a 2/3 (comentario en tools.py). La regla lleva su
+        porqué —el rastro en la hoja de auditoría— y no sólo la orden."""
+        assert "hoja de auditoría" in INSTRUCTIONS_ES
+
+    def test_la_afirmacion_del_prompt_es_cierta(self):
+        """El prompt le dice al agente que el modo descartado queda en la hoja de
+        auditoría. Si el entregable dejara de escribirlo, el prompt pasaría a
+        afirmar algo falso y nadie se enteraría."""
+        from rcm_runbook.export import excel
+
+        fuente = inspect.getsource(excel._write_audit_sheet)
+        assert "Modos descartados por no credibilidad" in fuente
+        assert "non_credible_discard" in fuente, "y con su motivo, no sólo el id"
+
+    def test_la_regla_no_se_come_la_seccion(self):
+        """La regresión de la 0.3.0: el prompt creció un 43 % y diluyó la
+        instrucción de la compuerta. Un bullet que ocupa el triple que sus vecinos
+        es la misma enfermedad en pequeño."""
+        seccion = INSTRUCTIONS_ES.split("## Reglas inquebrantables")[1].split("\n## ")[0]
+        bullets = [b for b in seccion.split("\n- ") if b.strip()]
+        largos = [len(b.strip().splitlines()) for b in bullets]
+        credibilidad = next(
+            len(b.strip().splitlines()) for b in bullets if "pantalla de credibilidad" in b
+        )
+        assert credibilidad <= max(largos), "no puede ser el bullet más largo por sí solo"
+        assert credibilidad <= 4, f"ocupa {credibilidad} líneas; los vecinos rondan 2-3"
+
+    def test_credibilidad_y_terminologia_son_reglas_distintas(self):
+        """Una es procedimiento y la otra vocabulario. La 0.3.2 unificó dos reglas
+        que ERAN la misma; fundir dos que no lo son es el error simétrico."""
+        seccion = INSTRUCTIONS_ES.split("## Reglas inquebrantables")[1].split("\n## ")[0]
+        bullets = [b for b in seccion.split("\n- ") if b.strip()]
+        pantalla = [b for b in bullets if "pantalla de credibilidad" in b]
+        rep = [b for b in bullets if "relubricación" in b]
+        assert len(pantalla) == 1 and len(rep) == 1
+        assert pantalla[0] is not rep[0], "van en bullets separados"
