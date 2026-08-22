@@ -252,16 +252,16 @@ edición de diez líneas, reversible, sin dependencia del manifiesto, y **habrí
 evitado una de las dos citas del UAT**. Enterrarla detrás de la tarea más cara
 es la diferencia entre cerrar la mitad del defecto esta semana o dentro de tres.
 
-1. [ ] Enumerar en `INSTRUCTIONS_ES` las capacidades de corrección que existen
+1. [x] Enumerar en `INSTRUCTIONS_ES` las capacidades de corrección que existen
        (`reemplazar=True` en `record_function`, `record_failure_mode`,
        `record_task`) y prohibir afirmar límites del sistema no observados en
        un `❌` de herramienta. Criterio 4.
-2. [ ] **Test de sincronía de esa lista**: comparar los nombres del prompt
+2. [x] **Test de sincronía de esa lista**: comparar los nombres del prompt
        contra las firmas reales de las herramientas (`inspect.signature`,
        buscar el parámetro `reemplazar`). Sin él, la lista miente en cuanto
        alguien añada o quite un `reemplazar=` — es un `SCHEMA_VERSION` sin
        guardián. Hoy son tres herramientas.
-3. [ ] Añadir a `INSTRUCTIONS_ES` la regla de veracidad acotada (criterio 3).
+3. [x] Añadir a `INSTRUCTIONS_ES` la regla de veracidad acotada (criterio 3).
 4. [ ] Construir el manifiesto leyendo el `.xlsx` recién escrito con
        `read_only=True`, y devolverlo desde `export_xlsx` junto al `Path`.
 5. [ ] Incluirlo en el texto que devuelve `export_excel` (`tools.py:988-1010`),
