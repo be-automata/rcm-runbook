@@ -10,6 +10,32 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.4.1] — 2026-08-21
+
+### Cambiado
+
+- **La pantalla de credibilidad pasa a ser obligatoria en el prompt.** La regla
+  aclaraba que ReP no es un descarte, pero no pedía en ningún sitio que todo modo
+  propuesto se evaluara: uno poco creíble podía quedar fuera sin registrarse, y
+  entonces el expediente no distingue «lo evaluamos y lo descartamos» de «no se
+  nos ocurrió» — lo que JA1011 pide poder distinguir y la hoja AUDITORIA publica.
+
+  Sin evidencia medida de que ocurriera: `descarte_no_creible` sale verde en las
+  corridas guardadas y los 3 modos no creíbles de la sesión real llevan su motivo.
+  Cierra un hueco de las instrucciones, no un fallo observado.
+
+  Son +4 líneas sobre 214, en dos bullets proporcionados a sus vecinos. La 0.3.2
+  enseñó que subir el volumen de una regla la diluye; la versión inicial de este
+  cambio ocupaba 7 líneas en negrita y fundía dos reglas distintas.
+
+### Corregido
+
+- **Los dos evals de regresión del prompt reportaban un 429 como fallo del
+  producto**, y facturaban contra la ventana de la suscripción que comparte el
+  trabajo interactivo. Es el mismo defecto que la 0.4.0 arregló en el arnés largo
+  y que allí quedó sin arreglar; especialmente caro aquí, porque estos dos evals
+  son el detector de regresiones del prompt.
+
 ## [0.4.0] — 2026-08-21
 
 **Primera corrida del eval largo enteramente en verde, y la primera medida sobre
