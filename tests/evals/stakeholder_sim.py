@@ -595,6 +595,40 @@ def _cargar_env_del_proyecto() -> None:
         os.environ.setdefault(clave.strip(), valor.strip().strip("\"'"))
 
 
+def ajustes_de_agente_suelto(tmp_path: Path) -> Any:
+    """Settings para los evals que hablan con UN agente, sin conversación guiada.
+
+    Comparten dos disciplinas con el arnés largo, y por el mismo motivo: facturan
+    contra créditos —una tanda de evals no debe agotar la ventana de la suscripción,
+    que se comparte con el trabajo interactivo— y fijan el modelo en el default del
+    código, para medir lo que se despliega y no lo que tenga el .env local.
+    """
+    from rcm_runbook.config import Settings
+
+    cfg = Settings(
+        db_path=str(tmp_path / "eval.db"),
+        exports_dir=str(tmp_path / "exports"),
+        model_id=os.environ.get("RCM_EVAL_MODEL_ID")
+        or Settings.model_fields["model_id"].default,
+    )
+    return _factura_contra_creditos_si_puede(cfg)
+
+
+def sin_429(agente: Any, mensaje: str) -> Any:
+    """Un turno, distinguiendo «no se pudo medir» de «el producto falló».
+
+    Sin esto, un 429 hacía fallar el test igual que un defecto real. Estos dos
+    evals son los que cazaron la regresión de la 0.3.2, así que confundir las dos
+    cosas aquí es especialmente caro: haría desconfiar del detector.
+    """
+    salida = agente.run(mensaje)
+    if _is_rate_limited(salida):
+        raise AveriaDelInstrumento(
+            "el proveedor devolvió 429 en un turno suelto; el eval no llegó a medir"
+        )
+    return salida
+
+
 def _definitivos(exports_dir: Path) -> list[Path]:
     """Entregables DEFINITIVOS en disco, excluyendo borradores explícitamente.
 

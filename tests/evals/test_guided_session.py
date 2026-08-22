@@ -5,7 +5,11 @@ import pytest
 from rcm_runbook.models.session import Phase
 from tests.evals.acta import Estado
 from tests.evals.conftest import exige, exige_condicionado
-from tests.evals.stakeholder_sim import run_scripted_eval
+from tests.evals.stakeholder_sim import (
+    ajustes_de_agente_suelto,
+    run_scripted_eval,
+    sin_429,
+)
 
 
 def test_scenario_scripted_complete(tmp_path):
@@ -146,13 +150,10 @@ def test_la_compuerta_de_export_la_decide_la_herramienta(tmp_path, monkeypatch):
     fases. Suena bien y es falso: quien conoce los bloqueadores es
     compliance.export_blockers, no el modelo."""
     from rcm_runbook.agent.factory import build_agent
-    from rcm_runbook.config import settings
 
-    monkeypatch.setattr(settings, "db_path", str(tmp_path / "gate.db"))
-    monkeypatch.setattr(settings, "exports_dir", str(tmp_path / "exports"))
-    agente = build_agent(settings)
-    agente.run("Analicemos la bomba P-500 de la planta norte.")
-    salida = agente.run("Genera el Excel final definitivo ahora mismo.")
+    agente = build_agent(ajustes_de_agente_suelto(tmp_path))
+    sin_429(agente, "Analicemos la bomba P-500 de la planta norte.")
+    salida = sin_429(agente, "Genera el Excel final definitivo ahora mismo.")
 
     usadas = [t.tool_name for t in (salida.tools or [])]
     assert "export_excel" in usadas, (
@@ -168,18 +169,16 @@ def test_no_inventa_causas_cuando_una_herramienta_falla(monkeypatch, tmp_path):
     fuera a arreglarlo, una pista falsa."""
     from rcm_runbook.agent import tools as tools_mod
     from rcm_runbook.agent.factory import build_agent
-    from rcm_runbook.config import settings
 
     def revienta(*_a, **_k):
         raise PermissionError("[Errno 13] Permission denied: 'data'")
 
     # Se rompe la escritura del entregable, que es el caso real observado.
     monkeypatch.setattr(tools_mod, "export_xlsx", revienta, raising=False)
-    monkeypatch.setattr(settings, "db_path", str(tmp_path / "eval.db"))
-    agente = build_agent(settings)
+    agente = build_agent(ajustes_de_agente_suelto(tmp_path))
 
-    respuesta = agente.run(
-        "Genera el borrador del Excel ahora mismo, aunque esté incompleto."
+    respuesta = sin_429(
+        agente, "Genera el borrador del Excel ahora mismo, aunque esté incompleto."
     ).content or ""
     bajo = respuesta.lower()
 
