@@ -230,21 +230,21 @@ glosa española la primera vez.
 ## 5. Tareas
 
 1. [x] ~~Confirmar el mercado.~~ **España.**
-2. [ ] Reescribir `docs/GLOSARIO.md` en dos partes marcadas: la tabla de
+2. [x] Reescribir `docs/GLOSARIO.md` en dos partes marcadas: la tabla de
        correspondencia (para quien programa, no conectada) y el contrato de
        terminología (el que gobierna al agente).
-3. [ ] Llevar el contrato a `INSTRUCTIONS_ES`: eje fallo/avería, regla verbatim
+3. [x] Llevar el contrato a `INSTRUCTIONS_ES`: eje fallo/avería, regla verbatim
        para toda cadena congelada, frase de encuadre, las cuatro equivalencias,
        y la glosa obligatoria de frecuencias en horas.
-4. [ ] Renombrar el error de software a «error del sistema» (`app.py:211-246`,
+4. [x] Renombrar el error de software a «error del sistema» (`app.py:211-246`,
        `instructions_es.py:76-96`) para deshacer la colisión.
-5. [ ] Correcciones de registro de una palabra: `confiabilidad`→`fiabilidad`,
+5. [x] Correcciones de registro de una palabra: `confiabilidad`→`fiabilidad`,
        `monitoreo`→`monitorización`, `costos`→`costes`,
        `computadora`→`ordenador`, y `MECHANISMS_ES`/`CAUSE_CATEGORIES_ES`.
-6. [ ] Test del criterio 1 (las reglas viajan en cada turno) y del criterio 3
+6. [x] Test del criterio 1 (las reglas viajan en cada turno) y del criterio 3
        (una cadena congelada se cita verbatim).
-7. [ ] Test del criterio 6: `test_golden.py` pasa sin modificar.
-8. [ ] `spec-verifier` antes del PR (`.claude/rules/specs.md:22`) y
+7. [x] Test del criterio 6: `test_golden.py` pasa sin modificar.
+8. [x] `spec-verifier` antes del PR (`.claude/rules/specs.md:22`) y
        `production-validator` en local.
 
 ## Supuestos
