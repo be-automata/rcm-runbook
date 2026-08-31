@@ -51,6 +51,66 @@ alcance en `specs/trazabilidad-y-clasificacion-en-el-excel.md` y en
 
 Si alguno vuelve a la mesa, entra como feature con su spec, no como corrección.
 
+## Tres cosas de la llamada que la lista de cinco no recogió
+
+Releyendo la transcripción del 11-ago contra los cinco hallazgos, aparecen tres
+peticiones que se perdieron al resumir. No estaban descartadas: estaban ausentes.
+
+### El informe exportable, que no es lo mismo que el costo-beneficio
+
+Textual: *«lo que sí hay que añadirle es lo de la exportación, **que elabore un
+informe para exportar**… quiero un archivo Word. Se lo pedí y me lo dio, pero
+**debería ser parte del final del trabajo**. Y darle un modelo de cómo debería
+estructurarlo».* Y **después**, como algo que él acostumbra a incluir dentro de
+ese informe: *«yo acostumbro… un análisis de costo beneficio»*.
+
+Son dos cosas: el informe es el continente, el costo-beneficio es una sección.
+La lista de cinco las fundió en «Informe con análisis costo-beneficio por
+actividad», y la spec excluyó el conjunto razonando sólo sobre el
+costo-beneficio —que sí necesita datos que hoy no se recogen—. **El informe se
+descartó por arrastre.**
+
+Y es mucho más barato de lo que esa exclusión sugiere: el agente **ya lo produce
+si se lo piden** («se lo pedí y me lo dio»). Lo que falta es que forme parte del
+cierre y que tenga una plantilla. Henry se ofreció a mandar la suya.
+
+### El agente habla en sintaxis interna
+
+Textual: *«a veces una instrucción de tal cosa **igual a true**»*. No es fuga de
+inglés —eso es el hallazgo 4— sino fuga de **implementación**: el agente le
+enseña al usuario nombres de parámetro.
+
+La causa está a la vista en `instructions_es.py`, que usa `draft=True`,
+`reemplazar=True` y `es_busqueda_de_fallas=True` en su propio texto y nunca dice
+que eso no se le cuenta al interesado. Henry lo restó importancia («aquí todo el
+mundo habla inglés»), pero un ingeniero de mantenimiento no tiene por qué saber
+qué es `es_busqueda_de_fallas`.
+
+### Los códigos se inventan en vez de consultarse
+
+Textual: *«los códigos se van creando nuevo, parece que **para que utilice uno
+existente hay que explicarle bien**»*.
+
+Hay dos herramientas para esto —`lookup_iso14224` y `explain_iso_code`— y
+**ninguna se nombra en el prompt**, así que nada le dice al agente que consulte
+antes de asignar. Observado tres veces de forma independiente: Henry en la
+llamada, las corridas del eval (inventó `BA3113`, `BR1140`, `ME4340`, que son
+códigos de *equipo* y no de modo de fallo) y el criterio [29] del verificador de
+producción, que sigue marcado como «requiere ojo humano».
+
+La validación determinista rechaza los inventados, así que no llegan al
+entregable — pero el interesado ve el intento y tiene que corregirlo a mano.
+
+## Dos cosas que dependen de Henry, comprometidas en la llamada
+
+| Entrega | Textual |
+|---|---|
+| Excel de referencia actualizado | *«te voy a actualizar el Excel para que te lo metas como yo quiero»* |
+| Plantilla del informe | *«te voy a mandar el informe también para que se lo incluya»* |
+
+Sin la segunda, el informe exportable no se puede cerrar: falta el modelo de
+estructura que él mismo pidió que se le diera al agente.
+
 ## Lo que salió después, y no venía en la lista de cinco
 
 | Tema | Estado |
