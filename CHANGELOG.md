@@ -10,6 +10,44 @@ otro artefacto y lleva su propio número.
 
 ## [No publicado]
 
+## [0.4.2] — 2026-09-01
+
+Dos peticiones de la llamada de UAT del 11-ago que la lista de cinco hallazgos
+no recogió. Ninguna estaba descartada: estaban ausentes.
+
+### Corregido
+
+- **El código ISO 14224 se consulta en vez de deducirse.** Existían
+  `lookup_iso14224` y `explain_iso_code` y ninguna se nombraba en el prompt, así
+  que nada le decía al agente que consultara antes de asignar: adivinaba, el enum
+  lo rechazaba, y el interesado veía el intento —«para que utilice uno existente
+  hay que explicarle bien»—. Los que inventó en las corridas (`BA3113`, `ME4340`)
+  son de la tabla de **equipos** de la misma norma: mezclaba dos familias. La
+  regla lo dice y da salida con `OTH`/`UNK`, porque «consulta el catálogo» sin
+  escapatoria devuelve al agente a inventar.
+
+  Verificado contra Sonnet 4.5: el acta trae `consulto_el_catalogo_iso:
+  lookup_iso14224`. El criterio es nuevo y se añadió **antes** de correr — sin él
+  la corrida no podía decir nada del arreglo.
+
+- **El agente ya no habla en sintaxis de herramienta.** «A veces una instrucción
+  de tal cosa igual a true»: no es fuga de inglés sino de implementación, y la
+  causa estaba en el propio prompt, que usa `draft=True` y `reemplazar=True` sin
+  decir que eso no se le cuenta a una persona. La regla prohíbe citarlos y da el
+  reemplazo en castellano; prohibir sin alternativa deja una regla incumplible.
+
+  Verificado a nivel de prompt, **no conductualmente**: medirlo exigiría juzgar
+  prosa, que es lo que el arnés tiene prohibido.
+
+- **El arnés de evals confundía dos averías del proveedor con fallos del
+  producto.** Un saldo agotado llega como 400 con «credit balance is too low» y
+  la detección sólo miraba 429: 80 turnos contra una cuenta vacía se leyeron como
+  siete criterios en rojo contra el facilitador. Y la lista que decidía si
+  reintentar seguía siendo propia, así que «429 too many requests» —transitorio
+  para `app.py`— abortaba la corrida. Ahora la clasificación transitorio/
+  definitivo es una columna explícita de `_FALLOS_DEL_PROVEEDOR` y el arnés la
+  lee, en vez de mantener dos listas condenadas a divergir.
+
 ## [0.4.1] — 2026-08-21
 
 ### Cambiado

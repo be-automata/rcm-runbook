@@ -1,6 +1,6 @@
 [project]
 name = "rcm-runbook"
-version = "0.4.1"
+version = "0.4.2"
 description = "Agente facilitador RCM (SAE J1739 FMEA + lógica de decisión RCM) — Agno + AgentOS"
 readme = "README.md"
 requires-python = ">=3.12"
