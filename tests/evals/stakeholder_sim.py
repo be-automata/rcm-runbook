@@ -367,14 +367,36 @@ class AveriaDelInstrumento(RuntimeError):
     """
 
 
-_RATE_LIMIT_MARKERS = ("rate_limit_error", "Error code: 429")
-# Backoff ante 429 (ventana de suscripción saturada): espera hasta ~25 min en total.
+# Backoff ante saturación (la ventana se recupera sola): hasta ~25 min en total.
 _BACKOFF_SCHEDULE_S = (60, 120, 240, 480, 600)
 
+#: Sólo estos se reintentan: pasan solos. Un saldo agotado no.
+_SATURACION = ("rate_limit_error", "Error code: 429", "overloaded_error")
 
-def _is_rate_limited(output: Any) -> bool:
-    content = str(getattr(output, "content", "") or "")
-    return any(m in content for m in _RATE_LIMIT_MARKERS)
+
+def _averia_del_proveedor(output: Any) -> str:
+    """Qué le pasa al proveedor, leído del contenido del turno. Cadena vacía = nada.
+
+    agno captura el error del proveedor y lo devuelve como CONTENIDO del turno,
+    no como excepción, así que se detecta leyendo. La clasificación se reusa de
+    `app._FALLOS_DEL_PROVEEDOR`, que ya distingue saldo de saturación para
+    hablarle al cliente: tener dos listas de patrones es cómo se llega a que el
+    producto reconozca una avería y el instrumento no —que es exactamente lo que
+    pasó—.
+    """
+    from rcm_runbook.app import _FALLOS_DEL_PROVEEDOR
+
+    contenido = str(getattr(output, "content", "") or "")
+    for patron, _mensaje in _FALLOS_DEL_PROVEEDOR:
+        if patron.search(contenido):
+            return patron.pattern
+    return ""
+
+
+def _es_saturacion(output: Any) -> bool:
+    """¿Es de las que se arreglan esperando?"""
+    contenido = str(getattr(output, "content", "") or "")
+    return any(m in contenido for m in _SATURACION)
 
 
 def _run_with_backoff(agent: Any, message: str, session_id: str) -> Any:
@@ -386,13 +408,26 @@ def _run_with_backoff(agent: Any, message: str, session_id: str) -> Any:
     en vez de quemar turnos conversando con errores.
     """
     out = agent.run(message, session_id=session_id)
-    if not _is_rate_limited(out):
+    averia = _averia_del_proveedor(out)
+    if not averia:
         return out
+    if not _es_saturacion(out):
+        # Saldo agotado, credenciales inválidas: esperar no arregla ninguna, y
+        # quemar 80 turnos contra un error convierte siete criterios en rojo
+        # contra el facilitador por algo que no hizo. Se aborta de inmediato.
+        raise AveriaDelInstrumento(
+            f"el proveedor rechaza las peticiones ({averia}); el eval no llegó a medir"
+        )
     for wait in _BACKOFF_SCHEDULE_S:
         time.sleep(wait)
         out = agent.run(message, session_id=session_id)
-        if not _is_rate_limited(out):
+        if not _averia_del_proveedor(out):
             return out
+        if not _es_saturacion(out):
+            raise AveriaDelInstrumento(
+                f"el proveedor rechaza las peticiones ({_averia_del_proveedor(out)}); "
+                "el eval no llegó a medir"
+            )
     raise AveriaDelInstrumento(
         "la ventana de uso de la suscripción sigue saturada (429) tras "
         f"{sum(_BACKOFF_SCHEDULE_S) // 60} minutos de backoff. Reintente cuando la "
@@ -622,7 +657,7 @@ def sin_429(agente: Any, mensaje: str) -> Any:
     cosas aquí es especialmente caro: haría desconfiar del detector.
     """
     salida = agente.run(mensaje)
-    if _is_rate_limited(salida):
+    if _averia_del_proveedor(salida):
         raise AveriaDelInstrumento(
             "el proveedor devolvió 429 en un turno suelto; el eval no llegó a medir"
         )

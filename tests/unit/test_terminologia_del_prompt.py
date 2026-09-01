@@ -240,3 +240,89 @@ class TestLaPantallaDeCredibilidad:
         rep = [b for b in bullets if "relubricación" in b]
         assert len(pantalla) == 1 and len(rep) == 1
         assert pantalla[0] is not rep[0], "van en bullets separados"
+
+
+class TestElCodigoISOSeConsulta:
+    """Henry: «los códigos se van creando nuevo, para que utilice uno existente
+    hay que explicarle bien».
+
+    Existían `lookup_iso14224` y `explain_iso_code` y ninguna se nombraba en el
+    prompt, así que nada le decía al agente que consultara antes de asignar. El
+    modelo adivinaba, el enum lo rechazaba, y el interesado veía el intento.
+    Observado tres veces por caminos independientes: la llamada de UAT, las
+    corridas del eval y el criterio [29] del verificador de producción.
+    """
+
+    def test_el_prompt_nombra_las_dos_herramientas(self):
+        assert "lookup_iso14224" in INSTRUCTIONS_ES
+        assert "explain_iso_code" in INSTRUCTIONS_ES
+
+    def test_las_herramientas_que_nombra_existen(self):
+        """Anti-pudrición: si alguien las renombra, el prompt manda al agente a
+        llamar a algo que no está."""
+        for nombre in ("lookup_iso14224", "explain_iso_code"):
+            assert hasattr(tools_mod, nombre), nombre
+
+    def test_los_codigos_de_ejemplo_estan_en_el_catalogo_del_cliente(self):
+        """El prompt cita códigos concretos. Si el catálogo cambia y ellos no,
+        el prompt enseña a usar valores que la herramienta rechazará."""
+        from rcm_runbook.models.catalogs import fixture
+
+        catalogo = {c.code for c in fixture().menu.iso14224_failure_mode_codes}
+        for codigo in ("FTS", "BRD", "LOO", "VIB", "OTH", "UNK"):
+            assert codigo in INSTRUCTIONS_ES, f"el prompt ya no cita {codigo}"
+            assert codigo in catalogo, f"{codigo} salió del catálogo del cliente"
+
+    def test_los_contraejemplos_siguen_siendo_invalidos(self):
+        """`BA3113` y `ME4340` son de la tabla de EQUIPOS de la misma norma —los
+        inventó el agente en las corridas del eval—. El prompt los usa como
+        contraejemplo; si alguno entrara al catálogo, dejaría de serlo."""
+        from rcm_runbook.models.catalogs import fixture
+
+        catalogo = {c.code for c in fixture().menu.iso14224_failure_mode_codes}
+        for codigo in ("BA3113", "ME4340"):
+            assert codigo in INSTRUCTIONS_ES
+            assert codigo not in catalogo, f"{codigo} ya no sirve de contraejemplo"
+
+    def test_hay_salida_cuando_ninguno_encaja(self):
+        """Sin `OTH`/`UNK` explícitos, «consulta el catálogo» se convierte en un
+        callejón sin salida y el agente vuelve a inventar."""
+        assert "OTH" in INSTRUCTIONS_ES and "UNK" in INSTRUCTIONS_ES
+
+
+class TestNoSeHablaEnSintaxisDeHerramienta:
+    """Henry: «a veces una instrucción de tal cosa igual a true».
+
+    No es fuga de inglés —eso es otra regla— sino de implementación: el agente le
+    enseña al interesado nombres de parámetro. La causa estaba en el propio
+    prompt, que usa `draft=True` y `reemplazar=True` en su texto y nunca decía
+    que eso no se le cuenta a una persona.
+    """
+
+    def test_la_regla_existe_y_prohibe_citarlos(self):
+        assert "Nunca cites nombres ni valores de parámetro al interesado" in INSTRUCTIONS_ES
+
+    def test_los_parametros_que_cita_la_regla_son_reales(self):
+        """Anti-pudrición, y la razón es fina: la regla vale como ejemplo sólo si
+        esos parámetros existen. Si `reemplazar` se renombrara, el prompt estaría
+        prohibiendo decir algo que ya nadie dice, y dejaría fuera lo que sí."""
+        reales = set()
+        for nombre in dir(tools_mod):
+            fn = getattr(getattr(tools_mod, nombre), "entrypoint", None)
+            if fn is None or not callable(fn):
+                continue
+            try:
+                reales.update(inspect.signature(fn).parameters)
+            except (TypeError, ValueError):
+                continue
+        for parametro in ("draft", "reemplazar", "credible", "es_busqueda_de_fallas"):
+            assert parametro in reales, f"la regla cita '{parametro}' y ya no existe"
+
+    def test_ofrece_la_alternativa_en_castellano(self):
+        """Prohibir sin dar el reemplazo deja al agente sin cómo decirlo, y una
+        regla que no se puede cumplir se ignora entera."""
+        # El prompt va envuelto a 88 columnas: se comparan espacios normalizados,
+        # no la cadena literal, o el test se rompe al reajustar un párrafo.
+        plano = " ".join(INSTRUCTIONS_ES.split())
+        for frase in ("te preparo un borrador", "lo corrijo sobre el que ya estaba"):
+            assert frase in plano, frase

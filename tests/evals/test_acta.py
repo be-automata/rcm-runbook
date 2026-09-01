@@ -364,3 +364,71 @@ class TestElGuionDelSimulador:
         texto = _guion_pendiente(escenario, [dicho], fase_actual=3)
         linea = next(x for x in texto.splitlines() if x.startswith("- Modos"))
         assert "FM-003" not in linea and "FM-001" in linea
+
+
+def test_se_mide_si_consulto_el_catalogo_iso(sesion_buena, escenario, transcript_con_sondas):
+    """El criterio que permite verificar el arreglo de los códigos ISO.
+
+    Antes de esto el acta no observaba la conducta que la regla pide, así que una
+    corrida no podía decir si el arreglo funcionó. Mide y no vota: el campo es un
+    enum —un código inventado nunca llega al estado— y una sesión donde el
+    interesado dicta los códigos correctos es legítima.
+    """
+    acta = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                    herramientas_usadas={"export_excel", "lookup_iso14224"})
+    c = acta["consulto_el_catalogo_iso"]
+    assert c.estado is Estado.MEDIDO and not c.obligatorio
+    assert "lookup_iso14224" in c.evidencia
+
+    sin_consultar = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                             herramientas_usadas={"export_excel"})
+    assert "de memoria" in sin_consultar["consulto_el_catalogo_iso"].evidencia
+    # Y no tumba la corrida: sigue sin haber rojos.
+    assert not sin_consultar.rojos(), sin_consultar.informe()
+
+
+def test_el_saldo_agotado_aborta_en_vez_de_quemar_ochenta_turnos():
+    """El caso que se escapó, y costó una corrida entera de lectura equivocada.
+
+    La detección sólo miraba 429. Un saldo agotado llega como **400** con
+    «Your credit balance is too low», así que el arnés lo tomó por una respuesta
+    normal: 80 turnos, cero modos registrados, y SIETE criterios en rojo contra el
+    facilitador por una cuenta vacía.
+
+    Y hay algo peor que el falso rojo: esperar no arregla un saldo. Reintentar con
+    backoff habría gastado 25 minutos garantizando el mismo resultado.
+    """
+    from tests.evals.stakeholder_sim import AveriaDelInstrumento, _run_with_backoff
+
+    class SinSaldo:
+        class _Salida:
+            content = (
+                "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+                "'message': 'Your credit balance is too low to access the Anthropic API. "
+                "Please go to Plans & Billing to upgrade or purchase credits.'}}"
+            )
+
+        def __init__(self):
+            self.llamadas = 0
+
+        def run(self, *_a, **_k):
+            self.llamadas += 1
+            return self._Salida()
+
+    agente = SinSaldo()
+    with pytest.raises(AveriaDelInstrumento) as exc:
+        _run_with_backoff(agente, "hola", "sid")
+    assert "no llegó a medir" in str(exc.value)
+    assert agente.llamadas == 1, "no debe reintentar lo que no se arregla esperando"
+
+
+def test_el_producto_y_el_arnes_usan_la_misma_lista_de_averias():
+    """Dos listas de patrones es cómo se llega a que el producto reconozca una
+    avería del proveedor y el instrumento no. Pasó: `app.py` distinguía saldo de
+    saturación desde la ronda 27, y el arnés seguía mirando sólo 429."""
+    import inspect as _inspect
+
+    from tests.evals import stakeholder_sim
+
+    fuente = _inspect.getsource(stakeholder_sim._averia_del_proveedor)
+    assert "_FALLOS_DEL_PROVEEDOR" in fuente, "el arnés volvió a tener su propia lista"
