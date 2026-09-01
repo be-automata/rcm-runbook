@@ -370,10 +370,6 @@ class AveriaDelInstrumento(RuntimeError):
 # Backoff ante saturación (la ventana se recupera sola): hasta ~25 min en total.
 _BACKOFF_SCHEDULE_S = (60, 120, 240, 480, 600)
 
-#: Sólo estos se reintentan: pasan solos. Un saldo agotado no.
-_SATURACION = ("rate_limit_error", "Error code: 429", "overloaded_error")
-
-
 def _averia_del_proveedor(output: Any) -> str:
     """Qué le pasa al proveedor, leído del contenido del turno. Cadena vacía = nada.
 
@@ -387,16 +383,28 @@ def _averia_del_proveedor(output: Any) -> str:
     from rcm_runbook.app import _FALLOS_DEL_PROVEEDOR
 
     contenido = str(getattr(output, "content", "") or "")
-    for patron, _mensaje in _FALLOS_DEL_PROVEEDOR:
+    for patron, _mensaje, _transitorio in _FALLOS_DEL_PROVEEDOR:
         if patron.search(contenido):
             return patron.pattern
     return ""
 
 
 def _es_saturacion(output: Any) -> bool:
-    """¿Es de las que se arreglan esperando?"""
+    """¿Es de las que se arreglan esperando?
+
+    Se lee de la MISMA tabla que decide si hay avería. Tenía su propia lista de
+    subcadenas y ya había divergido: «429 too many requests» —que `app.py`
+    clasifica como saturación— no llevaba la literal `rate_limit_error`, así que
+    se abortaba una corrida por algo transitorio. Arreglar la lista que detecta y
+    dejar duplicada la que clasifica reproduce el defecto un nivel más abajo.
+    """
+    from rcm_runbook.app import _FALLOS_DEL_PROVEEDOR
+
     contenido = str(getattr(output, "content", "") or "")
-    return any(m in contenido for m in _SATURACION)
+    for patron, _mensaje, transitorio in _FALLOS_DEL_PROVEEDOR:
+        if patron.search(contenido):
+            return transitorio
+    return False
 
 
 def _run_with_backoff(agent: Any, message: str, session_id: str) -> Any:

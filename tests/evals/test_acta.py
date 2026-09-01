@@ -432,3 +432,76 @@ def test_el_producto_y_el_arnes_usan_la_misma_lista_de_averias():
 
     fuente = _inspect.getsource(stakeholder_sim._averia_del_proveedor)
     assert "_FALLOS_DEL_PROVEEDOR" in fuente, "el arnés volvió a tener su propia lista"
+
+
+class TestQueSeReintentaYQueNo:
+    """La misma tabla decide si hay avería y si se arregla esperando.
+
+    Arreglé la lista que DETECTA reusando `app._FALLOS_DEL_PROVEEDOR` y dejé
+    duplicada la que CLASIFICA, con sus propias subcadenas. Ya había divergido:
+    «429 too many requests» —que `app.py` trata como saturación— no lleva la
+    literal `rate_limit_error`, así que se abortaba una corrida entera por algo
+    que se arregla esperando. El mismo defecto, un nivel más abajo.
+    """
+
+    @pytest.mark.parametrize(
+        "contenido,transitorio",
+        [
+            ("Error: 429 too many requests, please slow down", True),
+            ("Error code: 429 - {'type':'rate_limit_error'}", True),
+            ("{'type':'overloaded_error'}", True),
+            ("Your credit balance is too low to access the Anthropic API.", False),
+            ("{'type':'authentication_error'}", False),
+            ("invalid x-api-key", False),
+        ],
+    )
+    def test_cada_averia_se_clasifica_como_en_el_producto(self, contenido, transitorio):
+        from rcm_runbook.app import _FALLOS_DEL_PROVEEDOR
+        from tests.evals.stakeholder_sim import _averia_del_proveedor, _es_saturacion
+
+        salida = type("S", (), {"content": contenido})()
+        assert _averia_del_proveedor(salida), "no la reconoció como avería"
+        assert _es_saturacion(salida) is transitorio
+        # Y coincide con lo que el producto le diría al cliente.
+        esperado = next(t for p, _m, t in _FALLOS_DEL_PROVEEDOR if p.search(contenido))
+        assert esperado is transitorio
+
+    def test_un_turno_normal_no_es_averia(self):
+        from tests.evals.stakeholder_sim import _averia_del_proveedor
+
+        salida = type("S", (), {"content": "El impulsor presenta desgaste erosivo."})()
+        assert not _averia_del_proveedor(salida)
+
+    def test_la_clasificacion_tampoco_tiene_lista_propia(self):
+        """El gemelo del test que ya vigila `_averia_del_proveedor`. Faltaba éste,
+        y por eso el defecto sobrevivió al arreglo anterior."""
+        import inspect as _inspect
+
+        from tests.evals import stakeholder_sim
+
+        fuente = _inspect.getsource(stakeholder_sim._es_saturacion)
+        assert "_FALLOS_DEL_PROVEEDOR" in fuente
+        assert not hasattr(stakeholder_sim, "_SATURACION"), "volvió la lista paralela"
+
+    def test_una_saturacion_si_se_reintenta(self):
+        """El contrapunto: al arreglar el aborto indebido no se rompe el backoff."""
+        import tests.evals.stakeholder_sim as sim
+        from tests.evals.stakeholder_sim import _run_with_backoff
+
+        class SaturadoYLuegoBien:
+            def __init__(self):
+                self.n = 0
+
+            def run(self, *_a, **_k):
+                self.n += 1
+                texto = "429 too many requests" if self.n == 1 else "listo"
+                return type("S", (), {"content": texto})()
+
+        agente = SaturadoYLuegoBien()
+        original = sim._BACKOFF_SCHEDULE_S
+        sim._BACKOFF_SCHEDULE_S = (0,)
+        try:
+            salida = _run_with_backoff(agente, "hola", "sid")
+        finally:
+            sim._BACKOFF_SCHEDULE_S = original
+        assert salida.content == "listo" and agente.n == 2
