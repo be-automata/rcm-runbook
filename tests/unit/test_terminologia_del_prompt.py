@@ -263,15 +263,31 @@ class TestElCodigoISOSeConsulta:
         for nombre in ("lookup_iso14224", "explain_iso_code"):
             assert hasattr(tools_mod, nombre), nombre
 
-    def test_los_codigos_de_ejemplo_estan_en_el_catalogo_del_cliente(self):
-        """El prompt cita códigos concretos. Si el catálogo cambia y ellos no,
-        el prompt enseña a usar valores que la herramienta rechazará."""
+    def _regla_iso(self) -> str:
+        """El párrafo de la regla, para no confundir códigos con siglas del método
+        (RCM, RPN, MBC…) que viven en otras partes del prompt."""
+        return next(
+            b for b in INSTRUCTIONS_ES.split("\n- ") if "lookup_iso14224" in b
+        )
+
+    def test_todo_codigo_citado_en_la_regla_esta_en_el_catalogo(self):
+        """Derivado del texto, no de una lista escrita a mano.
+
+        La primera versión de este test enumeraba los seis códigos: añadir un
+        séptimo a la regla lo dejaba sin vigilar. Es la misma deriva que se coló
+        en `_es_saturacion` —una lista paralela a la fuente— y no tiene sentido
+        arreglarla allí y repetirla aquí.
+        """
+        import re as _re
+
         from rcm_runbook.models.catalogs import fixture
 
         catalogo = {c.code for c in fixture().menu.iso14224_failure_mode_codes}
-        for codigo in ("FTS", "BRD", "LOO", "VIB", "OTH", "UNK"):
-            assert codigo in INSTRUCTIONS_ES, f"el prompt ya no cita {codigo}"
-            assert codigo in catalogo, f"{codigo} salió del catálogo del cliente"
+        regla = self._regla_iso()
+        citados = set(_re.findall(r"\b[A-Z]{3}\b", regla)) - {"ISO", "MODO"}
+        assert citados, "la regla dejó de citar códigos de ejemplo"
+        fuera = citados - catalogo
+        assert not fuera, f"la regla cita códigos que no existen en el catálogo: {fuera}"
 
     def test_los_contraejemplos_siguen_siendo_invalidos(self):
         """`BA3113` y `ME4340` son de la tabla de EQUIPOS de la misma norma —los
