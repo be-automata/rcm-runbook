@@ -125,6 +125,7 @@ CONDICIONADOS = (
 )
 
 MEDIDOS = (
+    "consulto_el_catalogo_iso",
     "cobertura_por_modo",
     "politicas_coincidentes",
     "advertencias_ja1011",
@@ -214,7 +215,32 @@ def levantar_acta(
     _mide_lo_que_no_vota(acta, session, scenario, turnos_hasta_p5)
 
     _mide_el_intento_de_cierre(acta, intentos_de_export, herramientas_usadas)
+    _mide_la_consulta_del_catalogo(acta, herramientas_usadas)
     return acta
+
+
+def _mide_la_consulta_del_catalogo(acta: Acta, herramientas_usadas: set[str]) -> None:
+    """¿Consultó el catálogo ISO en vez de deducir el código?
+
+    El interesado lo reportó así: «los códigos se van creando nuevo, para que
+    utilice uno existente hay que explicarle bien». Y las corridas anteriores lo
+    confirmaron: inventó `BA3113`, `BR1140` y `ME4340`, que son de la tabla de
+    EQUIPOS de la misma norma.
+
+    **Mide, no vota**, y la razón importa: el campo es un enum, así que un código
+    inventado nunca llega al estado final — comprobar el resultado sería vacuo.
+    Lo que se observa es la CONDUCTA, la llamada a la herramienta. Y una sesión
+    donde el interesado dicta los códigos correctos sin que nadie consulte nada
+    es un resultado legítimo, así que ponerlo a votar convertiría en rojo algo que
+    no lo es.
+    """
+    consultadas = {"lookup_iso14224", "explain_iso_code"} & herramientas_usadas
+    acta.anota(
+        "consulto_el_catalogo_iso", Estado.MEDIDO,
+        ", ".join(sorted(consultadas)) if consultadas
+        else "no llamó a ninguna de las dos; asignó los códigos de memoria",
+        obligatorio=False,
+    )
 
 
 def _mide_el_intento_de_cierre(

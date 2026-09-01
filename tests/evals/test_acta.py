@@ -364,3 +364,144 @@ class TestElGuionDelSimulador:
         texto = _guion_pendiente(escenario, [dicho], fase_actual=3)
         linea = next(x for x in texto.splitlines() if x.startswith("- Modos"))
         assert "FM-003" not in linea and "FM-001" in linea
+
+
+def test_se_mide_si_consulto_el_catalogo_iso(sesion_buena, escenario, transcript_con_sondas):
+    """El criterio que permite verificar el arreglo de los códigos ISO.
+
+    Antes de esto el acta no observaba la conducta que la regla pide, así que una
+    corrida no podía decir si el arreglo funcionó. Mide y no vota: el campo es un
+    enum —un código inventado nunca llega al estado— y una sesión donde el
+    interesado dicta los códigos correctos es legítima.
+    """
+    acta = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                    herramientas_usadas={"export_excel", "lookup_iso14224"})
+    c = acta["consulto_el_catalogo_iso"]
+    assert c.estado is Estado.MEDIDO and not c.obligatorio
+    assert "lookup_iso14224" in c.evidencia
+
+    sin_consultar = _acta_de(sesion_buena, escenario, transcript_con_sondas,
+                             herramientas_usadas={"export_excel"})
+    assert "de memoria" in sin_consultar["consulto_el_catalogo_iso"].evidencia
+    # Y no tumba la corrida: sigue sin haber rojos.
+    assert not sin_consultar.rojos(), sin_consultar.informe()
+
+
+def test_el_saldo_agotado_aborta_en_vez_de_quemar_ochenta_turnos():
+    """El caso que se escapó, y costó una corrida entera de lectura equivocada.
+
+    La detección sólo miraba 429. Un saldo agotado llega como **400** con
+    «Your credit balance is too low», así que el arnés lo tomó por una respuesta
+    normal: 80 turnos, cero modos registrados, y SIETE criterios en rojo contra el
+    facilitador por una cuenta vacía.
+
+    Y hay algo peor que el falso rojo: esperar no arregla un saldo. Reintentar con
+    backoff habría gastado 25 minutos garantizando el mismo resultado.
+    """
+    from tests.evals.stakeholder_sim import AveriaDelInstrumento, _run_with_backoff
+
+    class SinSaldo:
+        class _Salida:
+            content = (
+                "Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+                "'message': 'Your credit balance is too low to access the Anthropic API. "
+                "Please go to Plans & Billing to upgrade or purchase credits.'}}"
+            )
+
+        def __init__(self):
+            self.llamadas = 0
+
+        def run(self, *_a, **_k):
+            self.llamadas += 1
+            return self._Salida()
+
+    agente = SinSaldo()
+    with pytest.raises(AveriaDelInstrumento) as exc:
+        _run_with_backoff(agente, "hola", "sid")
+    assert "no llegó a medir" in str(exc.value)
+    assert agente.llamadas == 1, "no debe reintentar lo que no se arregla esperando"
+
+
+def test_el_producto_y_el_arnes_usan_la_misma_lista_de_averias():
+    """Dos listas de patrones es cómo se llega a que el producto reconozca una
+    avería del proveedor y el instrumento no. Pasó: `app.py` distinguía saldo de
+    saturación desde la ronda 27, y el arnés seguía mirando sólo 429."""
+    import inspect as _inspect
+
+    from tests.evals import stakeholder_sim
+
+    fuente = _inspect.getsource(stakeholder_sim._averia_del_proveedor)
+    assert "_FALLOS_DEL_PROVEEDOR" in fuente, "el arnés volvió a tener su propia lista"
+
+
+class TestQueSeReintentaYQueNo:
+    """La misma tabla decide si hay avería y si se arregla esperando.
+
+    Arreglé la lista que DETECTA reusando `app._FALLOS_DEL_PROVEEDOR` y dejé
+    duplicada la que CLASIFICA, con sus propias subcadenas. Ya había divergido:
+    «429 too many requests» —que `app.py` trata como saturación— no lleva la
+    literal `rate_limit_error`, así que se abortaba una corrida entera por algo
+    que se arregla esperando. El mismo defecto, un nivel más abajo.
+    """
+
+    @pytest.mark.parametrize(
+        "contenido,transitorio",
+        [
+            ("Error: 429 too many requests, please slow down", True),
+            ("Error code: 429 - {'type':'rate_limit_error'}", True),
+            ("{'type':'overloaded_error'}", True),
+            ("Your credit balance is too low to access the Anthropic API.", False),
+            ("{'type':'authentication_error'}", False),
+            ("invalid x-api-key", False),
+        ],
+    )
+    def test_cada_averia_se_clasifica_como_en_el_producto(self, contenido, transitorio):
+        from rcm_runbook.app import _FALLOS_DEL_PROVEEDOR
+        from tests.evals.stakeholder_sim import _averia_del_proveedor, _es_saturacion
+
+        salida = type("S", (), {"content": contenido})()
+        assert _averia_del_proveedor(salida), "no la reconoció como avería"
+        assert _es_saturacion(salida) is transitorio
+        # Y coincide con lo que el producto le diría al cliente.
+        esperado = next(t for p, _m, t in _FALLOS_DEL_PROVEEDOR if p.search(contenido))
+        assert esperado is transitorio
+
+    def test_un_turno_normal_no_es_averia(self):
+        from tests.evals.stakeholder_sim import _averia_del_proveedor
+
+        salida = type("S", (), {"content": "El impulsor presenta desgaste erosivo."})()
+        assert not _averia_del_proveedor(salida)
+
+    def test_la_clasificacion_tampoco_tiene_lista_propia(self):
+        """El gemelo del test que ya vigila `_averia_del_proveedor`. Faltaba éste,
+        y por eso el defecto sobrevivió al arreglo anterior."""
+        import inspect as _inspect
+
+        from tests.evals import stakeholder_sim
+
+        fuente = _inspect.getsource(stakeholder_sim._es_saturacion)
+        assert "_FALLOS_DEL_PROVEEDOR" in fuente
+        assert not hasattr(stakeholder_sim, "_SATURACION"), "volvió la lista paralela"
+
+    def test_una_saturacion_si_se_reintenta(self):
+        """El contrapunto: al arreglar el aborto indebido no se rompe el backoff."""
+        import tests.evals.stakeholder_sim as sim
+        from tests.evals.stakeholder_sim import _run_with_backoff
+
+        class SaturadoYLuegoBien:
+            def __init__(self):
+                self.n = 0
+
+            def run(self, *_a, **_k):
+                self.n += 1
+                texto = "429 too many requests" if self.n == 1 else "listo"
+                return type("S", (), {"content": texto})()
+
+        agente = SaturadoYLuegoBien()
+        original = sim._BACKOFF_SCHEDULE_S
+        sim._BACKOFF_SCHEDULE_S = (0,)
+        try:
+            salida = _run_with_backoff(agente, "hola", "sid")
+        finally:
+            sim._BACKOFF_SCHEDULE_S = original
+        assert salida.content == "listo" and agente.n == 2

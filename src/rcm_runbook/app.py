@@ -208,20 +208,31 @@ _ENVOLTURA_DEL_PROVEEDOR = re.compile(
     re.I,
 )
 
-_FALLOS_DEL_PROVEEDOR: tuple[tuple[re.Pattern[str], str], ...] = (
+#: (patrón, mensaje en español, ¿se arregla esperando?).
+#:
+#: La tercera columna ya estaba, implícita, en el propio mensaje: los transitorios
+#: dicen «espere unos segundos» y los demás «avise a quien le compartió el
+#: enlace». Hacerla explícita evita que quien necesite esa distinción —el arnés de
+#: evals decide con ella si reintenta o aborta— se escriba su propia lista y
+#: acabe divergiendo de ésta.
+_FALLOS_DEL_PROVEEDOR: tuple[tuple[re.Pattern[str], str, bool], ...] = (
     (re.compile(r"credit balance is too low|billing", re.I),
      "El servicio no está disponible en este momento por un problema de la "
      "cuenta del sistema. Avise a quien le compartió este enlace; su análisis "
-     "queda guardado y puede retomarlo después."),
+     "queda guardado y puede retomarlo después.",
+     False),
     (re.compile(r"rate_limit_error|too many requests", re.I),
      "El sistema está recibiendo muchas consultas a la vez. Espere unos "
-     "segundos y vuelva a enviar su mensaje."),
+     "segundos y vuelva a enviar su mensaje.",
+     True),
     (re.compile(r"overloaded_error", re.I),
      "El servicio está saturado en este momento. Espere unos segundos y vuelva "
-     "a intentarlo."),
+     "a intentarlo.",
+     True),
     (re.compile(r"authentication_error|permission_error|invalid x-api-key", re.I),
      "El servicio no está disponible por un problema de configuración del "
-     "sistema. Avise a quien le compartió este enlace."),
+     "sistema. Avise a quien le compartió este enlace.",
+     False),
 )
 
 # Un error del proveedor que no reconozco sigue siendo un error del proveedor:
@@ -243,7 +254,7 @@ def en_espanol_si_es_fallo_del_proveedor(texto: str) -> str:
     # Sin adjuntar el original: lleva dentro el estado de facturación del
     # operador, que no es asunto del cliente.
     logger.warning("fallo del proveedor servido al cliente: %s", texto[:200])
-    for patron, en_espanol in _FALLOS_DEL_PROVEEDOR:
+    for patron, en_espanol, _transitorio in _FALLOS_DEL_PROVEEDOR:
         if patron.search(texto):
             return en_espanol
     return _FALLO_GENERICO
