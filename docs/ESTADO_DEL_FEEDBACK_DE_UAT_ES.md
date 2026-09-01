@@ -11,7 +11,7 @@ cuando cambie el estado de un hallazgo, no cuando entre un PR.
 |---|---|---|
 | 1 | Los identificadores `FF-`/`FM-` no llegan al Excel | **Cerrado** — PR #1 |
 | 2 | Modos sin clasificar evidente/oculta, sin razón visible | **Cerrado** — PR #1 |
-| 3 | Informe con análisis costo-beneficio por actividad | **No se hará (decidido)** |
+| 3 | Informe con análisis costo-beneficio por actividad | **Partido en dos** — el costo-beneficio no se hará; el informe exportable sigue abierto, ver [«Tres cosas de la llamada que la lista de cinco no recogió»](#tres-cosas-de-la-llamada-que-la-lista-de-cinco-no-recogió) |
 | 4 | Glosario de terminología; usar «fallo» en vez de «falla» | **Cerrado, con un matiz** |
 | 5 | Colaboración asíncrona por correo | **No se hará (decidido)** |
 
@@ -45,7 +45,8 @@ alcance en `specs/trazabilidad-y-clasificacion-en-el-excel.md` y en
 
 - **3, informe costo-beneficio por actividad.** Es una feature de producto, no un
   defecto. Requiere datos que hoy no se recogen (coste de la tarea, coste de la
-  falla, horas de parada).
+  falla, horas de parada). Esto aplica sólo al costo-beneficio: el informe
+  exportable que lo contenía es un pendiente aparte, ver más abajo.
 - **5, colaboración asíncrona por correo.** Es multiusuario: notificaciones,
   identidad y permisos. Hoy la demo no tiene ninguno de los tres.
 
